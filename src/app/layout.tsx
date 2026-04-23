@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { SessionProvider } from 'next-auth/react'
 import { auth } from '@/lib/utils/auth'
 import './globals.css'
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title:       'SendFlow — Gestión logística',
