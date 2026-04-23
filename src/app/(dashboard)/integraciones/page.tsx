@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { getSessionUser } from '@/lib/utils/auth'
 import { prisma } from '@/lib/db/prisma'
 import IntegracionesClient from './client'

@@ -1,8 +1,16 @@
 {
   "crons": [
+    { "path": "/api/sync",              "schedule": "*/15 * * * *" },
+    { "path": "/api/retention-cleanup", "schedule": "0 3 * * *"   }
+  ],
+  "headers": [
     {
-      "path": "/api/retention-cleanup",
-      "schedule": "0 3 * * *"
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PATCH, DELETE, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Authorization, Content-Type" }
+      ]
     }
   ]
 }

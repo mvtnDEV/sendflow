@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { getSessionUser } from '@/lib/utils/auth'
 import { listOrders, getDashboardStats } from '@/lib/services/order.service'
 import Link from 'next/link'

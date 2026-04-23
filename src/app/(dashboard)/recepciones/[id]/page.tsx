@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { notFound, redirect } from 'next/navigation'
 import { getSessionUser, canAccessStore } from '@/lib/utils/auth'
 import { prisma } from '@/lib/db/prisma'
