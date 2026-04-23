@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  STORE_ADMIN
+  DRIVER
+}
+
+enum Platform {
+  SHOPIFY
+  MERCADOLIBRE
+  WOOCOMMERCE
+  JUMPSELLER
+  MANUAL
+}
+
+enum OrderStatus {
+  PENDING
+  RECEIVED
+  IN_TRANSIT
+  DELIVERED
+  INCIDENT
+  CANCELLED
+}
+
+// ─── Tablas ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  password     String
+  role         UserRole  @default(STORE_ADMIN)
+  storeId      String?
+  pin          String?   // conductores: PIN de 4 dígitos (bcrypt)
+  phone        String?
+  isActive     Boolean   @default(true)
+  // Ley 21.719: registro de último acceso
+  lastLoginAt  DateTime?
+  lastLoginIp  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  store        Store?       @relation(fields: [storeId], references: [id])
+  auditLogs    AuditLog[]
+  orderEvents  OrderEvent[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Store {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  email       String?
+  phone       String?
+  rut         String?  // RUT empresa para ley 21.719
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users        User[]
+  integrations StoreIntegration[]
+  orders       Order[]
+
+  @@map("stores")
+}
+
+model StoreIntegration {
+  id              String    @id @default(cuid())
+  storeId         String
+  platform        Platform
+  externalStoreId String?
+  apiKeyEnc       String    // AES-256-GCM
+  webhookSecret   String?
+  isActive        Boolean   @default(true)
+  lastSyncAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  store    Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders   Order[]
+  syncLogs SyncLog[]
+
+  @@unique([storeId, platform])
+  @@map("store_integrations")
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique
+  storeId         String
+  integrationId   String?
+  externalId      String?
+  platform        Platform    @default(MANUAL)
+
+  // Datos personales del cliente (ley 21.719: mínimo necesario)
+  customerName    String
+  customerPhone   String?
+  customerEmail   String?
+  addressStreet   String
+  addressComuna   String
+  addressRegion   String
+  addressNotes    String?
+
+  // Logística
+  status          OrderStatus @default(PENDING)
+  bultos          Int         @default(1)
+  weightKg        Decimal?    @db.Decimal(6,2)
+  qrCode          String      @unique
+  labelUrl        String?
+
+  // Evidencia de entrega (URLs en Supabase Storage — no base64 en DB)
+  evidencePhoto1  String?     // URL storage
+  evidencePhoto2  String?     // URL storage
+  evidenceNote    String?
+  evidenceTakenAt DateTime?
+  evidenceTakenBy String?     // userId del conductor
+
+  // Timestamps
+  receivedAt      DateTime?
+  inTransitAt     DateTime?
+  deliveredAt     DateTime?
+
+  // Ley 21.719: datos de retención
+  dataRetentionDate DateTime? // fecha límite de retención (default: +2 años)
+  anonymizedAt      DateTime? // si fue anonimizado
+  rawPayload        Json?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store       Store             @relation(fields: [storeId], references: [id])
+  integration StoreIntegration? @relation(fields: [integrationId], references: [id])
+  events      OrderEvent[]
+
+  @@index([storeId, status])
+  @@index([qrCode])
+  @@index([externalId, integrationId])
+  @@index([dataRetentionDate])
+  @@map("orders")
+}
+
+model OrderEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  note      String?
+  createdBy String?     // userId | "system" | "webhook" | "driver:<id>"
+  ipAddress String?     // Ley 21.719: trazabilidad
+  createdAt DateTime    @default(now())
+
+  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user      User?  @relation(fields: [createdBy], references: [id])
+
+  @@index([orderId])
+  @@map("order_events")
+}
+
+model SyncLog {
+  id             String   @id @default(cuid())
+  integrationId  String
+  ordersImported Int      @default(0)
+  errors         Int      @default(0)
+  errorDetails   String?
+  createdAt      DateTime @default(now())
+
+  integration StoreIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@map("sync_logs")
+}
+
+// ─── Ley 21.719: Auditoría y privacidad ──────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String   // LOGIN | VIEW_ORDER | EXPORT_DATA | DELETE_DATA | etc.
+  resource   String?  // "order:cuid123" | "store:cuid456"
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model DataDeletionRequest {
+  id          String   @id @default(cuid())
+  // Ley 21.719 Art. 14: Derecho de supresión
+  requesterName  String
+  requesterEmail String
+  orderId        String?  // pedido específico o null = todo
+  reason         String?
+  status         String   @default("PENDING") // PENDING | PROCESSING | COMPLETED
+  requestedAt    DateTime @default(now())
+  processedAt    DateTime?
+  processedBy    String?  // userId del admin
+
+  @@index([status])
+  @@map("data_deletion_requests")
+}

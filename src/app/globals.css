@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --navy:      #0B1628;
+  --navy-2:    #0F1E38;
+  --navy-3:    #162544;
+  --accent:    #2563EB;
+  --accent-dk: #1D4ED8;
+  --gold:      #F5C518;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: #F0F4F8;
+  color: #1C1C1E;
+}
+
+/* Scrollbar sutil */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #CBD5E1; border-radius: 3px; }
+
+/* Print styles para etiquetas */
+@media print {
+  body { background: white; }
+  .no-print { display: none !important; }
+}
