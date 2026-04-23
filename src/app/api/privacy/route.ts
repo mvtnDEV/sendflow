@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/utils/auth'
 import { requestDataDeletion, anonymizeOrder, PRIVACY_POLICY } from '@/lib/services/privacy.service'

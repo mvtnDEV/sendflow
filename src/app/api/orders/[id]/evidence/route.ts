@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, canAccessStore } from '@/lib/utils/auth'
 import { uploadEvidenceToStorage, saveOrderEvidence } from '@/lib/services/evidence.service'
