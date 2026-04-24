@@ -168,24 +168,21 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             </a>
           </div>
 
-          {order.status === 'DELIVERED' ? (
-            <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:12, padding:20, textAlign:'center' }}>
-              <div style={{ fontSize:22, marginBottom:6 }}>✅</div>
-              <div style={{ fontSize:14, fontWeight:500, color:'#166534' }}>Pedido entregado</div>
-              {order.deliveredAt && (
-                <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
-                  {new Date(order.deliveredAt).toLocaleString('es-CL')}
-                </div>
-              )}
-              <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
-                {order.evidencePhoto1 ? '📷 Con evidencia fotográfica' : '⚠ Sin evidencia'}
-              </div>
-            </div>
-          ) : (
-            <OrderActions orderId={order.id} currentStatus={order.status} />
-          )}
+         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+           
+  {order.status === 'DELIVERED' && (
+    <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:12, padding:16, textAlign:'center' }}>
+      <div style={{ fontSize:20, marginBottom:4 }}>✅</div>
+      <div style={{ fontSize:14, fontWeight:500, color:'#166534' }}>Pedido entregado</div>
+      {order.deliveredAt && (
+        <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
+          {new Date(order.deliveredAt).toLocaleString('es-CL')}
         </div>
+      )}
+      <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
+        {order.evidencePhoto1 ? '📷 Con evidencia fotográfica' : '⚠ Sin evidencia'}
       </div>
     </div>
-  )
-}
+  )}
+  <OrderActions orderId={order.id} currentStatus={order.status} />
+</div>
