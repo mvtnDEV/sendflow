@@ -1,53 +1,54 @@
-async function exportExcel() {
-  // Construir URL con los mismos filtros activos
-  const params = new URLSearchParams(window.location.search)
-  if (todayOnly) params.set('todayOnly', '1')
+export const dynamic = 'force-dynamic'
 
-  const res  = await fetch(`/api/orders/export?${params.toString()}`)
-  const data = await res.json()
+import { NextRequest, NextResponse } from 'next/server'
+import { getSessionUser } from '@/lib/utils/auth'
+import { prisma } from '@/lib/db/prisma'
 
-  if (!data.ok) { alert('Error exportando pedidos'); return }
+export async function GET(req: NextRequest) {
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
 
-  const XLSX = await import('xlsx')
+  const { searchParams } = req.nextUrl
+  const storeId   = user.role === 'STORE_ADMIN'
+    ? (user.storeId ?? undefined)
+    : (searchParams.get('storeId') || undefined)
+  const status    = searchParams.get('status')   || undefined
+  const platform  = searchParams.get('platform') || undefined
+  const search    = searchParams.get('search')   || undefined
+  const dateFrom  = searchParams.get('dateFrom') || undefined
+  const dateTo    = searchParams.get('dateTo')   || undefined
+  const todayOnly = searchParams.get('todayOnly') === '1'
 
-  const STATUS_LABEL: Record<string, string> = {
-    PENDING:'Pendiente', RECEIVED:'Recepcionado',
-    IN_TRANSIT:'En camino', DELIVERED:'Entregado',
-    INCIDENT:'Incidencia', CANCELLED:'Cancelado',
+  const where: any = {}
+  if (storeId)  where.storeId  = storeId
+  if (status)   where.status   = status
+  if (platform) where.platform = platform
+
+  if (search) {
+    where.OR = [
+      { customerName:  { contains: search, mode: 'insensitive' } },
+      { orderNumber:   { contains: search, mode: 'insensitive' } },
+      { addressStreet: { contains: search, mode: 'insensitive' } },
+    ]
   }
-  const PLATFORM_LABEL: Record<string, string> = {
-    SHOPIFY:'Shopify', MERCADOLIBRE:'ML Flex',
-    WOOCOMMERCE:'WooCommerce', JUMPSELLER:'Jumpseller', MANUAL:'Manual',
+
+  if (todayOnly) {
+    const start = new Date(); start.setHours(0,0,0,0)
+    const end   = new Date(); end.setHours(23,59,59,999)
+    where.createdAt = { gte: start, lte: end }
+  } else if (dateFrom || dateTo) {
+    where.createdAt = {
+      ...(dateFrom && { gte: new Date(dateFrom) }),
+      ...(dateTo   && { lte: new Date(dateTo + 'T23:59:59') }),
+    }
   }
 
-  const rows = data.data.map((o: any) => ({
-    'N° Pedido':    o.orderNumber,
-    'Tienda':       o.store?.name || '',
-    'Cliente':      o.customerName,
-    'Teléfono':     o.customerPhone || '',
-    'Email':        o.customerEmail || '',
-    'Dirección':    o.addressStreet,
-    'Comuna':       o.addressComuna,
-    'Región':       o.addressRegion,
-    'Plataforma':   PLATFORM_LABEL[o.platform] ?? o.platform,
-    'Bultos':       o.bultos,
-    'Estado':       STATUS_LABEL[o.status] ?? o.status,
-    'Creado':       new Date(o.createdAt).toLocaleString('es-CL'),
-    'Entregado':    o.deliveredAt ? new Date(o.deliveredAt).toLocaleString('es-CL') : '',
-  }))
+  const orders = await prisma.order.findMany({
+    where,
+    include: { store: { select: { name: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 10000,
+  })
 
-  const ws = XLSX.utils.json_to_sheet(rows)
-  ws['!cols'] = [
-    {wch:12},{wch:20},{wch:22},{wch:14},{wch:24},{wch:28},
-    {wch:16},{wch:16},{wch:14},{wch:8},{wch:14},{wch:18},{wch:18},
-  ]
-
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Pedidos')
-
-  const fecha    = new Date().toLocaleDateString('es-CL').replace(/\//g,'-')
-  const periodo  = todayOnly ? 'hoy' : 'filtrado'
-  const filename = `sendflow_${storeName}_${periodo}_${fecha}.xlsx`
-
-  XLSX.writeFile(wb, filename)
+  return NextResponse.json({ ok: true, data: orders })
 }
