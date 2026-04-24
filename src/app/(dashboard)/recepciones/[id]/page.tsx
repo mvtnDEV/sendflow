@@ -55,6 +55,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
       <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:16 }}>
         <div>
+          {/* Datos del pedido */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20, marginBottom:14 }}>
             <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14 }}>Datos del pedido</div>
             {[
@@ -144,6 +145,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </div>
 
         <div>
+          {/* QR */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20, marginBottom:14, textAlign:'center' }}>
             <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14, textAlign:'left' }}>Etiqueta / QR</div>
             <div style={{ width:140, height:140, background:'#F0F4F8', borderRadius:8, margin:'0 auto 12px', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -168,21 +170,26 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             </a>
           </div>
 
-         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-           
-  {order.status === 'DELIVERED' && (
-    <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:12, padding:16, textAlign:'center' }}>
-      <div style={{ fontSize:20, marginBottom:4 }}>✅</div>
-      <div style={{ fontSize:14, fontWeight:500, color:'#166534' }}>Pedido entregado</div>
-      {order.deliveredAt && (
-        <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
-          {new Date(order.deliveredAt).toLocaleString('es-CL')}
+          {/* Estado + Acciones */}
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {order.status === 'DELIVERED' && (
+              <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:12, padding:16, textAlign:'center' }}>
+                <div style={{ fontSize:20, marginBottom:4 }}>✅</div>
+                <div style={{ fontSize:14, fontWeight:500, color:'#166534' }}>Pedido entregado</div>
+                {order.deliveredAt && (
+                  <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
+                    {new Date(order.deliveredAt).toLocaleString('es-CL')}
+                  </div>
+                )}
+                <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
+                  {order.evidencePhoto1 ? '📷 Con evidencia fotográfica' : '⚠ Sin evidencia'}
+                </div>
+              </div>
+            )}
+            <OrderActions orderId={order.id} currentStatus={order.status} />
+          </div>
         </div>
-      )}
-      <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
-        {order.evidencePhoto1 ? '📷 Con evidencia fotográfica' : '⚠ Sin evidencia'}
       </div>
     </div>
-  )}
-  <OrderActions orderId={order.id} currentStatus={order.status} />
-</div>
+  )
+}
