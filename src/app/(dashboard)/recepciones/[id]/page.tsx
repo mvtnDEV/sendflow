@@ -39,7 +39,6 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
   return (
     <div>
-      {/* Header */}
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
         <Link href="/recepciones" style={{ color:'#6B7280', textDecoration:'none', fontSize:13 }}>
           ← Recepciones
@@ -56,7 +55,6 @@ export default async function OrderDetailPage({ params }: { params: { id: string
 
       <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:16 }}>
         <div>
-          {/* Datos del pedido */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20, marginBottom:14 }}>
             <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14 }}>Datos del pedido</div>
             {[
@@ -95,16 +93,18 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               <div style={{ display:'grid', gridTemplateColumns:order.evidencePhoto2?'1fr 1fr':'1fr', gap:12, marginBottom:12 }}>
                 <div>
                   <div style={{ fontSize:11, color:'#6B7280', marginBottom:5 }}>Foto 1</div>
-                  <img src={order.evidencePhoto1} alt="Evidencia 1"
-                    onClick={() => window.open(order.evidencePhoto1!, '_blank')}
-                    style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
+                  <a href={order.evidencePhoto1} target="_blank">
+                    <img src={order.evidencePhoto1} alt="Evidencia 1"
+                      style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
+                  </a>
                 </div>
                 {order.evidencePhoto2 && (
                   <div>
                     <div style={{ fontSize:11, color:'#6B7280', marginBottom:5 }}>Foto 2</div>
-                    <img src={order.evidencePhoto2} alt="Evidencia 2"
-                      onClick={() => window.open(order.evidencePhoto2!, '_blank')}
-                      style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
+                    <a href={order.evidencePhoto2} target="_blank">
+                      <img src={order.evidencePhoto2} alt="Evidencia 2"
+                        style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
+                    </a>
                   </div>
                 )}
               </div>
@@ -144,7 +144,6 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </div>
 
         <div>
-          {/* QR */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20, marginBottom:14, textAlign:'center' }}>
             <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14, textAlign:'left' }}>Etiqueta / QR</div>
             <div style={{ width:140, height:140, background:'#F0F4F8', borderRadius:8, margin:'0 auto 12px', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -169,7 +168,6 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             </a>
           </div>
 
-          {/* Estado entregado */}
           {order.status === 'DELIVERED' ? (
             <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:12, padding:20, textAlign:'center' }}>
               <div style={{ fontSize:22, marginBottom:6 }}>✅</div>
