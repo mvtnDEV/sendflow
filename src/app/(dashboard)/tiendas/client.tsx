@@ -91,7 +91,7 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
                       const pc = PLATFORM_COLOR[int.platform] ?? { bg: '#F1F5F9', color: '#475569' }
                       return (
                         <div key={int.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 500, background: pc.bg, color: pc.color }}>
+                          <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 12, fontWeight: 500, background: pc.bg, color: pc.color }}>
                             {platformLabel[int.platform] ?? int.platform}
                           </span>
                           <span style={{ fontSize: 11, color: int.isActive ? '#16A34A' : '#9CA3AF' }}>
