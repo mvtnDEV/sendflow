@@ -3,8 +3,6 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
-// GET /api/driver/list
-// Devuelve la lista de conductores para el selector de login
 export async function GET() {
   try {
     const drivers = await prisma.user.findMany({
@@ -14,6 +12,7 @@ export async function GET() {
     })
     return NextResponse.json({ ok: true, data: drivers })
   } catch (err) {
+    console.error('[driver/list]', err)
     return NextResponse.json({ ok: false, error: 'Error' }, { status: 500 })
   }
 }
