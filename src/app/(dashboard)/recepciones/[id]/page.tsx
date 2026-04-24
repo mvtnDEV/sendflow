@@ -16,8 +16,7 @@ const PLATFORM_LABEL: Record<string, string> = {
 }
 
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
-  const user = await getSessionUser()
-
+  const user  = await getSessionUser()
   const order = await prisma.order.findUnique({
     where:   { id: params.id },
     include: {
@@ -38,26 +37,28 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   }
   const sc = statusBadge[order.status] ?? statusBadge.PENDING
 
-  const ORDERED_STATUSES = ['PENDING', 'RECEIVED', 'IN_TRANSIT', 'DELIVERED']
-
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <Link href="/recepciones" style={{ color: '#6B7280', textDecoration: 'none', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
+        <Link href="/recepciones" style={{ color:'#6B7280', textDecoration:'none', fontSize:13 }}>
           ← Recepciones
         </Link>
-        <h1 style={{ fontSize: 20, fontWeight: 500 }}>{order.orderNumber}</h1>
-        <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500, background: sc.bg, color: sc.color }}>
+        <h1 style={{ fontSize:20, fontWeight:500 }}>{order.orderNumber}</h1>
+        <span style={{ padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:500, background:sc.bg, color:sc.color }}>
           {STATUS_LABEL[order.status]}
         </span>
+        <a href={`/api/labels/${order.id}`} target="_blank"
+          style={{ marginLeft:'auto', padding:'7px 14px', background:'#0B1628', color:'white', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none' }}>
+          🖨 Imprimir etiqueta
+        </a>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:16 }}>
         <div>
           {/* Datos del pedido */}
-          <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 12, padding: 20, marginBottom: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 14 }}>Datos del pedido</div>
+          <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20, marginBottom:14 }}>
+            <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14 }}>Datos del pedido</div>
             {[
               ['N° pedido',  order.orderNumber],
               ['Tienda',     `${order.store.name} · ${PLATFORM_LABEL[order.platform] ?? order.platform}`],
@@ -69,41 +70,69 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               ['Región',     order.addressRegion],
               ['Bultos',     String(order.bultos)],
               ['Creado',     new Date(order.createdAt).toLocaleString('es-CL')],
+              ...(order.receivedAt  ? [['Recepcionado', new Date(order.receivedAt).toLocaleString('es-CL')]]  : []),
+              ...(order.inTransitAt ? [['En camino',    new Date(order.inTransitAt).toLocaleString('es-CL')]] : []),
+              ...(order.deliveredAt ? [['Entregado',    new Date(order.deliveredAt).toLocaleString('es-CL')]] : []),
             ].map(([label, value]) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #F1F5F9', fontSize: 13 }}>
-                <span style={{ color: '#6B7280' }}>{label}</span>
-                <span style={{ fontWeight: 500 }}>{value}</span>
+              <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>
+                <span style={{ color:'#6B7280' }}>{label}</span>
+                <span style={{ fontWeight:500 }}>{value}</span>
               </div>
             ))}
           </div>
 
+          {/* Evidencia de entrega */}
+          {order.evidencePhoto1 && (
+            <div style={{ background:'white', border:'1px solid #BBF7D0', borderRadius:12, padding:20, marginBottom:14 }}>
+              <div style={{ fontSize:12, fontWeight:500, color:'#166534', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14, display:'flex', alignItems:'center', gap:6 }}>
+                📷 Evidencia de entrega
+                {order.evidenceTakenAt && (
+                  <span style={{ fontSize:11, color:'#6B7280', fontWeight:400, marginLeft:'auto' }}>
+                    {new Date(order.evidenceTakenAt).toLocaleString('es-CL')}
+                  </span>
+                )}
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:order.evidencePhoto2?'1fr 1fr':'1fr', gap:12, marginBottom:12 }}>
+                <div>
+                  <div style={{ fontSize:11, color:'#6B7280', marginBottom:5 }}>Foto 1</div>
+                  <img src={order.evidencePhoto1} alt="Evidencia 1"
+                    onClick={() => window.open(order.evidencePhoto1!, '_blank')}
+                    style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
+                </div>
+                {order.evidencePhoto2 && (
+                  <div>
+                    <div style={{ fontSize:11, color:'#6B7280', marginBottom:5 }}>Foto 2</div>
+                    <img src={order.evidencePhoto2} alt="Evidencia 2"
+                      onClick={() => window.open(order.evidencePhoto2!, '_blank')}
+                      style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
+                  </div>
+                )}
+              </div>
+              {order.evidenceNote && (
+                <div style={{ background:'#F0FDF4', borderRadius:8, padding:'10px 12px', fontSize:13, color:'#166534' }}>
+                  💬 {order.evidenceNote}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Timeline */}
-          <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 12, padding: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 16 }}>Historial</div>
-            <div style={{ position: 'relative', paddingLeft: 24 }}>
-              <div style={{ position: 'absolute', left: 8, top: 0, bottom: 0, width: 1, background: '#E2E8F0' }} />
+          <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
+            <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:16 }}>Historial</div>
+            <div style={{ position:'relative', paddingLeft:24 }}>
+              <div style={{ position:'absolute', left:8, top:0, bottom:0, width:1, background:'#E2E8F0' }}/>
               {order.events.map((ev, i) => {
-                const isDone  = true
-                const isLast  = i === order.events.length - 1
+                const isLast = i === order.events.length - 1
                 return (
-                  <div key={ev.id} style={{ position: 'relative', paddingBottom: isLast ? 0 : 20 }}>
-                    <div style={{
-                      position: 'absolute', left: -20, top: 2,
-                      width: 16, height: 16, borderRadius: '50%',
-                      background: isLast && order.status !== 'DELIVERED' ? 'white' : '#2563EB',
-                      border: `2px solid ${isLast && order.status !== 'DELIVERED' ? '#2563EB' : '#2563EB'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      zIndex: 1,
-                    }}>
-                      {!(isLast && order.status !== 'DELIVERED') && (
-                        <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2">
-                          <polyline points="1 5 4 8 9 2"/>
-                        </svg>
-                      )}
+                  <div key={ev.id} style={{ position:'relative', paddingBottom:isLast?0:20 }}>
+                    <div style={{ position:'absolute', left:-20, top:2, width:16, height:16, borderRadius:'50%', background:'#2563EB', border:'2px solid #2563EB', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1 }}>
+                      <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2">
+                        <polyline points="1 5 4 8 9 2"/>
+                      </svg>
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{STATUS_LABEL[ev.status] ?? ev.status}</div>
-                    {ev.note && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 1 }}>{ev.note}</div>}
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+                    <div style={{ fontSize:13, fontWeight:500 }}>{STATUS_LABEL[ev.status] ?? ev.status}</div>
+                    {ev.note && <div style={{ fontSize:12, color:'#6B7280', marginTop:1 }}>{ev.note}</div>}
+                    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:2 }}>
                       {new Date(ev.createdAt).toLocaleString('es-CL')}
                       {ev.createdBy && ev.createdBy !== 'system' && ev.createdBy !== 'webhook' && ` · ${ev.createdBy}`}
                     </div>
@@ -115,10 +144,10 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </div>
 
         <div>
-          {/* QR / Etiqueta */}
-          <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 12, padding: 20, marginBottom: 14, textAlign: 'center' }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 14, textAlign: 'left' }}>Etiqueta / QR</div>
-            <div style={{ width: 140, height: 140, background: '#F0F4F8', borderRadius: 8, margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* QR */}
+          <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20, marginBottom:14, textAlign:'center' }}>
+            <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14, textAlign:'left' }}>Etiqueta / QR</div>
+            <div style={{ width:140, height:140, background:'#F0F4F8', borderRadius:8, margin:'0 auto 12px', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <svg viewBox="0 0 80 80" width="100" height="100" fill="#0B1628">
                 <rect x="5" y="5" width="28" height="28" fill="none" stroke="#0B1628" strokeWidth="3"/>
                 <rect x="11" y="11" width="16" height="16"/>
@@ -132,20 +161,31 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 <rect x="56" y="65" width="19" height="5"/><rect x="70" y="65" width="5" height="10"/>
               </svg>
             </div>
-            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{order.orderNumber}</div>
-            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 14, fontFamily: 'monospace' }}>{order.qrCode}</div>
-            <a
-              href={`/api/labels/${order.id}`}
-              target="_blank"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '9px', background: '#2563EB', color: 'white', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 13h12v1H2zm6-2L4 7h3V1h2v6h3l-4 4z"/></svg>
-              Imprimir etiqueta
+            <div style={{ fontSize:14, fontWeight:500, marginBottom:2 }}>{order.orderNumber}</div>
+            <div style={{ fontSize:11, color:'#9CA3AF', marginBottom:14, fontFamily:'monospace' }}>{order.qrCode}</div>
+            <a href={`/api/labels/${order.id}`} target="_blank"
+              style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'9px', background:'#2563EB', color:'white', borderRadius:8, textDecoration:'none', fontSize:13, fontWeight:500 }}>
+              🖨 Imprimir etiqueta
             </a>
           </div>
 
-          {/* Acciones */}
-          <OrderActions orderId={order.id} currentStatus={order.status} />
+          {/* Estado entregado */}
+          {order.status === 'DELIVERED' ? (
+            <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:12, padding:20, textAlign:'center' }}>
+              <div style={{ fontSize:22, marginBottom:6 }}>✅</div>
+              <div style={{ fontSize:14, fontWeight:500, color:'#166534' }}>Pedido entregado</div>
+              {order.deliveredAt && (
+                <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
+                  {new Date(order.deliveredAt).toLocaleString('es-CL')}
+                </div>
+              )}
+              <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
+                {order.evidencePhoto1 ? '📷 Con evidencia fotográfica' : '⚠ Sin evidencia'}
+              </div>
+            </div>
+          ) : (
+            <OrderActions orderId={order.id} currentStatus={order.status} />
+          )}
         </div>
       </div>
     </div>
