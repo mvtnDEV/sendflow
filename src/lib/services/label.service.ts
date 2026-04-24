@@ -20,7 +20,7 @@ interface LabelData {
 
 export async function generateQRImage(qrCode: string): Promise<string> {
   // URL pública de tracking que el cliente puede escanear
-  const trackingUrl = `${process.env.APP_URL}/tracking?qr=${qrCode}`
+ const trackingUrl = `${process.env.APP_URL}/tracking?q=${qrCode}`
 
   return QRCode.toDataURL(trackingUrl, {
     errorCorrectionLevel: 'M',
