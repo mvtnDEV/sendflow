@@ -1,0 +1,69 @@
+export const dynamic = 'force-dynamic'
+
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db/prisma'
+import { encrypt } from '@/lib/utils/crypto'
+
+// GET /api/auth/ml/callback
+// ML redirige aquí después de que el usuario autoriza
+export async function GET(req: NextRequest) {
+  const code    = req.nextUrl.searchParams.get('code')
+  const storeId = req.nextUrl.searchParams.get('state')
+
+  if (!code) {
+    return NextResponse.redirect(`${process.env.APP_URL}/integraciones?error=ml_no_code`)
+  }
+
+  try {
+    // Intercambiar código por access token
+    const res = await fetch('https://api.mercadolibre.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type:    'authorization_code',
+        client_id:     process.env.ML_CLIENT_ID!,
+        client_secret: process.env.ML_CLIENT_SECRET!,
+        code,
+        redirect_uri:  `${process.env.APP_URL}/api/auth/ml/callback`,
+      }),
+    })
+
+    const tokens = await res.json()
+    if (!tokens.access_token) throw new Error('No access token')
+
+    // Obtener info del usuario de ML
+    const userRes  = await fetch('https://api.mercadolibre.com/users/me', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    })
+    const mlUser = await userRes.json()
+
+    // Guardar en DB — cifrado
+    const credentials = JSON.stringify({
+      accessToken:  tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn:    tokens.expires_in,
+      userId:       mlUser.id,
+      expiresAt:    Date.now() + tokens.expires_in * 1000,
+    })
+
+    if (storeId) {
+      await prisma.storeIntegration.upsert({
+        where:  { storeId_platform: { storeId, platform: 'MERCADOLIBRE' } },
+        update: { apiKeyEnc: encrypt(credentials), isActive: true, lastSyncAt: new Date() },
+        create: {
+          storeId,
+          platform:   'MERCADOLIBRE',
+          apiKeyEnc:  encrypt(credentials),
+          isActive:   true,
+          lastSyncAt: new Date(),
+        },
+      })
+    }
+
+    return NextResponse.redirect(`${process.env.APP_URL}/integraciones?success=ml`)
+
+  } catch (err) {
+    console.error('[ML OAuth callback]', err)
+    return NextResponse.redirect(`${process.env.APP_URL}/integraciones?error=ml_auth_failed`)
+  }
+}
