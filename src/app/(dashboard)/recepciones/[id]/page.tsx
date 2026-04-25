@@ -6,6 +6,9 @@ import { prisma } from '@/lib/db/prisma'
 import Link from 'next/link'
 import OrderActions from '@/components/orders/OrderActions'
 
+const TZ = 'America/Santiago'
+const fmt = (d: Date | string) => new Date(d).toLocaleString('es-CL', { timeZone: TZ, day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
+
 const STATUS_LABEL: Record<string, string> = {
   PENDING:'Pedido creado', RECEIVED:'Recepcionado en bodega',
   IN_TRANSIT:'En camino', DELIVERED:'Entregado', INCIDENT:'Incidencia', CANCELLED:'Cancelado',
@@ -68,10 +71,10 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               ['Comuna',     order.addressComuna],
               ['Región',     order.addressRegion],
               ['Bultos',     String(order.bultos)],
-              ['Creado',     new Date(order.createdAt).toLocaleString('es-CL')],
-              ...(order.receivedAt  ? [['Recepcionado', new Date(order.receivedAt).toLocaleString('es-CL')]]  : []),
-              ...(order.inTransitAt ? [['En camino',    new Date(order.inTransitAt).toLocaleString('es-CL')]] : []),
-              ...(order.deliveredAt ? [['Entregado',    new Date(order.deliveredAt).toLocaleString('es-CL')]] : []),
+              ['Creado',     fmt(order.createdAt)],
+              ...(order.receivedAt  ? [['Recepcionado', fmt(order.receivedAt)]]  : []),
+              ...(order.inTransitAt ? [['En camino',    fmt(order.inTransitAt)]] : []),
+              ...(order.deliveredAt ? [['Entregado',    fmt(order.deliveredAt)]] : []),
             ].map(([label, value]) => (
               <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>
                 <span style={{ color:'#6B7280' }}>{label}</span>
@@ -87,7 +90,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 📷 Evidencia de entrega
                 {order.evidenceTakenAt && (
                   <span style={{ fontSize:11, color:'#6B7280', fontWeight:400, marginLeft:'auto' }}>
-                    {new Date(order.evidenceTakenAt).toLocaleString('es-CL')}
+                    {fmt(order.evidenceTakenAt)}
                   </span>
                 )}
               </div>
@@ -134,8 +137,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                     <div style={{ fontSize:13, fontWeight:500 }}>{STATUS_LABEL[ev.status] ?? ev.status}</div>
                     {ev.note && <div style={{ fontSize:12, color:'#6B7280', marginTop:1 }}>{ev.note}</div>}
                     <div style={{ fontSize:11, color:'#9CA3AF', marginTop:2 }}>
-                      {new Date(ev.createdAt).toLocaleString('es-CL')}
-                      {ev.createdBy && ev.createdBy !== 'system' && ev.createdBy !== 'webhook' && ` · ${ev.createdBy}`}
+                      {fmt(ev.createdAt)}
+                      {ev.createdBy && ev.createdBy !== 'system' && ev.createdBy !== 'webhook' && ev.createdBy !== 'enviosnow-webhook' && ` · ${ev.createdBy}`}
                     </div>
                   </div>
                 )
@@ -178,7 +181,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 <div style={{ fontSize:14, fontWeight:500, color:'#166534' }}>Pedido entregado</div>
                 {order.deliveredAt && (
                   <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
-                    {new Date(order.deliveredAt).toLocaleString('es-CL')}
+                    {fmt(order.deliveredAt)}
                   </div>
                 )}
                 <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
