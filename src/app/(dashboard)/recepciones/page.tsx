@@ -21,6 +21,15 @@ const PLATFORM_LABEL: Record<string, string> = {
   WOOCOMMERCE:'WooCommerce', JUMPSELLER:'Jumpseller', MANUAL:'Manual',
 }
 
+const TZ = 'America/Santiago'
+
+function fmtTime(date: Date | string) {
+  return new Date(date).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit', timeZone: TZ })
+}
+function fmtDate(date: Date | string) {
+  return new Date(date).toLocaleDateString('es-CL', { day:'2-digit', month:'short', timeZone: TZ })
+}
+
 interface Props {
   searchParams: {
     status?: string; search?: string; platform?: string
@@ -37,7 +46,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
   const verTodo     = searchParams.historial === '1'
   const todayOnly   = !verTodo && !searchParams.dateFrom && !searchParams.dateTo
   const today       = new Date()
-  const todayStr    = today.toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long' })
+  const todayStr    = today.toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long', timeZone: TZ })
 
   const [stats, result, stores] = await Promise.all([
     getDashboardStats(filterStore, todayOnly),
@@ -115,15 +124,11 @@ export default async function RecepcionesPage({ searchParams }: Props) {
       <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', alignItems:'center' }}>
         <form method="GET" style={{ display:'flex', gap:8, flex:1, flexWrap:'wrap' }}>
           {verTodo && <input type="hidden" name="historial" value="1"/>}
-
-          {/* Buscador */}
           <div style={{ display:'flex', alignItems:'center', gap:8, background:'white', border:'1px solid #E2E8F0', borderRadius:8, padding:'7px 12px', flex:1, minWidth:200 }}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="#9CA3AF"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.868-3.834zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/></svg>
             <input name="search" defaultValue={searchParams.search} placeholder="Cliente, N° pedido, dirección..."
               style={{ border:'none', outline:'none', fontSize:13, flex:1, fontFamily:'inherit' }}/>
           </div>
-
-          {/* Filtro por tienda - solo SUPER_ADMIN */}
           {stores.length > 0 && (
             <select name="storeId" defaultValue={searchParams.storeId ?? ''}
               style={{ padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', fontFamily:'inherit' }}>
@@ -131,34 +136,26 @@ export default async function RecepcionesPage({ searchParams }: Props) {
               {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-
-          {/* Estado */}
           <select name="status" defaultValue={searchParams.status ?? ''}
             style={{ padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', fontFamily:'inherit' }}>
             <option value="">Todos los estados</option>
             {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-
-          {/* Plataforma */}
           <select name="platform" defaultValue={searchParams.platform ?? ''}
             style={{ padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', fontFamily:'inherit' }}>
             <option value="">Todas las plataformas</option>
             {Object.entries(PLATFORM_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-
-          {/* Fechas */}
           {verTodo && (<>
             <input type="date" name="dateFrom" defaultValue={searchParams.dateFrom}
               style={{ padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, fontFamily:'inherit' }}/>
             <input type="date" name="dateTo" defaultValue={searchParams.dateTo}
               style={{ padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, fontFamily:'inherit' }}/>
           </>)}
-
           <button type="submit"
             style={{ padding:'7px 14px', background:'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>
             Filtrar
           </button>
-
           {(searchParams.search || searchParams.status || searchParams.platform || searchParams.dateFrom || searchParams.storeId) && (
             <Link href={verTodo ? '/recepciones?historial=1' : '/recepciones'}
               style={{ padding:'7px 12px', border:'1px solid #FECDD3', borderRadius:8, fontSize:13, background:'#FFF1F2', color:'#9F1239', textDecoration:'none' }}>
@@ -166,9 +163,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
             </Link>
           )}
         </form>
-
         <div style={{ display:'flex', gap:8 }}>
-          {/* Exportar Excel */}
           <RecepcionesClient
             orders={result.items as any}
             storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
@@ -244,10 +239,10 @@ export default async function RecepcionesPage({ searchParams }: Props) {
                         {(order as any).evidencePhoto1 && <span style={{ marginLeft:4, fontSize:11 }}>📷</span>}
                       </td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
-                        {new Date(order.createdAt).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' })}
+                        {fmtTime(order.createdAt)}
                         {!todayOnly && (
                           <div style={{ fontSize:11 }}>
-                            {new Date(order.createdAt).toLocaleDateString('es-CL', { day:'2-digit', month:'short' })}
+                            {fmtDate(order.createdAt)}
                           </div>
                         )}
                       </td>
