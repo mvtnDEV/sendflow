@@ -73,3 +73,16 @@ export async function DELETE(
   await prisma.user.update({ where:{ id:params.id }, data:{ isActive:false } })
   return NextResponse.json({ ok:true })
 }
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const me = await getSessionUser()
+  if (!me || me.role !== 'SUPER_ADMIN')
+    return NextResponse.json({ ok:false, error:'Sin permisos' }, { status:403 })
+  if (params.id === me.id)
+    return NextResponse.json({ ok:false, error:'No puedes eliminarte a ti mismo' }, { status:400 })
+
+  await prisma.user.delete({ where: { id: params.id } })
+  return NextResponse.json({ ok: true })
+}
