@@ -31,13 +31,13 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   if (!order) notFound()
   if (!canAccessStore(user!, order.storeId)) redirect('/recepciones')
 
-  const statusBadge: Record<string, { bg: string; color: string }> = {
-    PENDING:    { bg: '#FFFBEB', color: '#92400E' },
-    RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
-    IN_TRANSIT: { bg: '#F0FDF4', color: '#166534' },
-    DELIVERED:  { bg: '#F5F3FF', color: '#5B21B6' },
-    INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
-  }
+const statusBadge: Record<string, { bg: string; color: string }> = {
+  PENDING:    { bg: '#FFFBEB', color: '#92400E' },
+  RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
+  IN_TRANSIT: { bg: '#F5F3FF', color: '#5B21B6' },
+  DELIVERED:  { bg: '#F0FDF4', color: '#166534' },
+  INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
+}
   const sc = statusBadge[order.status] ?? statusBadge.PENDING
 
   return (
