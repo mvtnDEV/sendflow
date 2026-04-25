@@ -10,6 +10,7 @@ import type { Platform } from '@prisma/client'
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+  if (user.role === 'VIEWER') return NextResponse.json({ ok:false, error:'Sin permisos — modo solo lectura' }, { status:403 })
 
   const { storeId, storeName, platform, rows } = await req.json().catch(() => ({}))
 
