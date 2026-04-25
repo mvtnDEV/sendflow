@@ -31,16 +31,16 @@ export default function OrderActions({
   orderId: string
   currentStatus: string
 }) {
-  const router  = useRouter()
+  const router   = useRouter()
   const photoRef = useRef<HTMLInputElement>(null)
 
-  const [loading,    setLoading]    = useState<string | null>(null)
-  const [error,      setError]      = useState('')
-  const [showModal,  setShowModal]  = useState(false)
-  const [photo,      setPhoto]      = useState('')
-  const [receptor,   setReceptor]   = useState('')
-  const [rut,        setRut]        = useState('')
-  const [note,       setNote]       = useState('')
+  const [loading,   setLoading]   = useState<string | null>(null)
+  const [error,     setError]     = useState('')
+  const [showModal, setShowModal] = useState(false)
+  const [photo,     setPhoto]     = useState('')
+  const [receptor,  setReceptor]  = useState('')
+  const [rut,       setRut]       = useState('')
+  const [note,      setNote]      = useState('')
 
   const actions = NEXT_STATUSES[currentStatus] ?? []
 
@@ -63,6 +63,20 @@ export default function OrderActions({
     }
   }
 
+  async function sendToEnviosNow() {
+    setLoading('ENVIOSNOW'); setError('')
+    try {
+      const res  = await fetch(`/api/orders/${orderId}/send-enviosnow`, { method:'POST' })
+      const data = await res.json()
+      if (data.ok) alert('✅ Enviado a Envios Now correctamente')
+      else setError(`Error Envios Now: ${data.error}`)
+    } catch {
+      setError('Error de conexión con Envios Now')
+    } finally {
+      setLoading(null)
+    }
+  }
+
   function loadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -79,8 +93,8 @@ export default function OrderActions({
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          status: 'DELIVERED',
-          note:   note || undefined,
+          status:         'DELIVERED',
+          note:           note || undefined,
           evidencePhoto1: photo || undefined,
           receptorName:   receptor || undefined,
           receptorRut:    rut || undefined,
@@ -101,18 +115,20 @@ export default function OrderActions({
     <>
       <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
         <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:12 }}>Acciones</div>
+
         {error && (
           <div style={{ background:'#FFF1F2', border:'1px solid #FECDD3', borderRadius:8, padding:'8px 12px', fontSize:12, color:'#9F1239', marginBottom:10 }}>
             {error}
           </div>
         )}
-        {actions.length === 0 ? (
-          <div style={{ fontSize:13, color:'#9CA3AF', textAlign:'center', padding:'10px 0' }}>
-            Sin acciones disponibles
-          </div>
-        ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-            {actions.map(action => (
+
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {actions.length === 0 ? (
+            <div style={{ fontSize:13, color:'#9CA3AF', textAlign:'center', padding:'10px 0' }}>
+              Sin acciones de estado disponibles
+            </div>
+          ) : (
+            actions.map(action => (
               <button key={action.status} onClick={() => changeStatus(action.status)} disabled={!!loading}
                 style={{
                   padding:'10px', borderRadius:8, fontSize:13, fontWeight:500,
@@ -131,9 +147,24 @@ export default function OrderActions({
                 }}>
                 {loading === action.status ? 'Actualizando...' : action.label}
               </button>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+
+          {/* Separador */}
+          <div style={{ borderTop:'1px solid #F1F5F9', margin:'4px 0' }}/>
+
+          {/* Botón Envios Now */}
+          <button onClick={sendToEnviosNow} disabled={!!loading}
+            style={{
+              padding:'10px', borderRadius:8, fontSize:13, fontWeight:500,
+              cursor:loading?'not-allowed':'pointer', fontFamily:'inherit',
+              border:'1px solid #E2E8F0', background:'white', color:'#374151',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+              opacity: loading && loading !== 'ENVIOSNOW' ? 0.5 : 1,
+            }}>
+            {loading === 'ENVIOSNOW' ? 'Enviando...' : '🚚 Reenviar a Envios Now'}
+          </button>
+        </div>
       </div>
 
       {/* Modal entrega manual */}
