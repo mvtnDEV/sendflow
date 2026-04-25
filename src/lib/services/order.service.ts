@@ -219,9 +219,20 @@ export async function listOrders(filters: OrderFilters) {
 // ─── Stats para el dashboard ──────────────────────────────────────────────────
 
 function todayRange() {
-  const start = new Date(); start.setHours(0,0,0,0)
-  const end   = new Date(); end.setHours(23,59,59,999)
-  return { gte: start, lte: end }
+  // Usar hora de Chile (UTC-3 / UTC-4 en verano)
+  const now      = new Date()
+  const santiago = new Date(now.toLocaleString('en-US', { timeZone: 'America/Santiago' }))
+  const diff     = now.getTime() - santiago.getTime()
+
+  const start = new Date()
+  start.setHours(0,0,0,0)
+  const startUTC = new Date(start.getTime() + diff)
+
+  const end = new Date()
+  end.setHours(23,59,59,999)
+  const endUTC = new Date(end.getTime() + diff)
+
+  return { gte: startUTC, lte: endUTC }
 }
 
 export async function getDashboardStats(storeId?: string, todayOnly = true): Promise<DashboardStats> {
