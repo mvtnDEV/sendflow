@@ -76,7 +76,7 @@ export default async function BusquedaPage({ searchParams }: Props) {
               </select>
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 500, color: '#4B5563', display: 'block', marginBottom: 5 }}>Desde</label>
+              <label style={{ fontSize: 13, fontWeight: 500, color: '#4B5563', display: 'block', marginBottom: 5 }}>Desde</label>
               <input
                 type="date"
                 name="dateFrom"

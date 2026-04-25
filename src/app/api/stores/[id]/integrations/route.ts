@@ -13,6 +13,7 @@ export async function POST(
 ) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+  if (user.role === 'VIEWER') return NextResponse.json({ ok:false, error:'Sin permisos — modo solo lectura' }, { status:403 })
   if (!canAccessStore(user, params.id)) {
     return NextResponse.json({ ok: false, error: 'Sin acceso' }, { status: 403 })
   }

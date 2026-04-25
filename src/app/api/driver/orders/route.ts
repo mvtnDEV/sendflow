@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const orders = await prisma.order.findMany({
     where: {
       createdAt: { gte: today },
-      status:    { notIn: ['CANCELLED'] },
+      status: { notIn: ['CANCELLED', 'PENDING'] },
       OR: [
         { evidenceTakenBy: null },
         { evidenceTakenBy: driver.id },

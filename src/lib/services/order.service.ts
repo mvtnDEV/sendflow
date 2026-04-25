@@ -6,21 +6,21 @@ import type { OrderStatus, Platform } from '@prisma/client'
 // ─── Crear pedido (manual o desde integración) ────────────────────────────────
 
 interface CreateOrderInput {
-  storeId:       string
+  storeId:        string
   integrationId?: string
-  platform:      Platform
-  customerName:  string
+  platform:       Platform
+  customerName:   string
   customerPhone?: string
   customerEmail?: string
-  addressStreet: string
-  addressComuna: string
-  addressRegion: string
-  addressNotes?: string
-  bultos:        number
-  weightKg?:     number
-  externalId?:   string
-  rawPayload?:   Record<string, unknown>
-  createdBy?:    string
+  addressStreet:  string
+  addressComuna:  string
+  addressRegion:  string
+  addressNotes?:  string
+  bultos:         number
+  weightKg?:      number
+  externalId?:    string
+  rawPayload?:    Record<string, unknown>
+  createdBy?:     string
 }
 
 export async function createOrder(input: CreateOrderInput) {
@@ -59,6 +59,17 @@ export async function createOrder(input: CreateOrderInput) {
     include: { store: true, events: true },
   })
 
+  // Enviar automáticamente a Envios Now
+  try {
+    const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
+    const payload = toEnviosNowPayload(order)
+    const result  = await createEnviosNowDelivery(payload)
+    if (!result.ok) console.warn('[EnviosNow] No se pudo crear el envío:', result.error)
+    else console.log('[EnviosNow] Envío creado:', result.id)
+  } catch (err) {
+    console.error('[EnviosNow] Error enviando pedido:', err)
+  }
+
   return order
 }
 
@@ -69,7 +80,6 @@ export async function upsertOrderFromWebhook(
   integrationId: string,
   data:          NormalizedOrder,
 ) {
-  // Si ya existe, solo actualiza datos del cliente (no sobreescribe estado)
   const existing = await prisma.order.findFirst({
     where: { integrationId, externalId: data.externalId },
   })
@@ -115,9 +125,9 @@ const STATUS_TIMESTAMP: Partial<Record<OrderStatus, string>> = {
 }
 
 export async function updateOrderStatus(
-  orderId:   string,
-  status:    OrderStatus,
-  note?:     string,
+  orderId:    string,
+  status:     OrderStatus,
+  note?:      string,
   createdBy?: string,
 ) {
   const timestampField = STATUS_TIMESTAMP[status]
@@ -142,13 +152,13 @@ export async function updateOrderStatus(
   return order
 }
 
-// ─── Buscar por QR (para conductor) ──────────────────────────────────────────
+// ─── Buscar por QR ────────────────────────────────────────────────────────────
 
 export async function findOrderByQr(qrCode: string) {
   return prisma.order.findUnique({
     where: { qrCode },
     include: {
-      store: { select: { id: true, name: true } },
+      store:  { select: { id: true, name: true } },
       events: { orderBy: { createdAt: 'asc' } },
     },
   })
@@ -163,9 +173,8 @@ export async function listOrders(filters: OrderFilters) {
 
   const where: any = {}
 
-  // STORE_ADMIN solo ve su tienda — se fuerza desde el API route
-  if (filters.storeId)  where.storeId = filters.storeId
-  if (filters.status)   where.status  = filters.status
+  if (filters.storeId)  where.storeId  = filters.storeId
+  if (filters.status)   where.status   = filters.status
   if (filters.platform) where.platform = filters.platform
   if (filters.comuna)   where.addressComuna = { contains: filters.comuna, mode: 'insensitive' }
 
@@ -178,15 +187,9 @@ export async function listOrders(filters: OrderFilters) {
     ]
   }
 
-  // Vista del día: solo pedidos creados hoy (00:00 → 23:59)
-  // Se ignora si ya vienen dateFrom/dateTo explícitos
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date()
-    todayEnd.setHours(23, 59, 59, 999)
-    where.createdAt = { gte: todayStart, lte: todayEnd }
-  } else if (filters.dateFrom || filters.dateTo) {
+  where.createdAt = todayRange()
+} else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
       ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
       ...(filters.dateTo   && { lte: new Date(filters.dateTo + 'T23:59:59') }),
@@ -213,14 +216,26 @@ export async function listOrders(filters: OrderFilters) {
 
 // ─── Stats para el dashboard ──────────────────────────────────────────────────
 
-// Helper: inicio del día en Chile (UTC-3 / UTC-4 en verano)
-// Usamos UTC y el cliente ajusta si necesita
 function todayRange() {
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const end = new Date()
-  end.setHours(23, 59, 59, 999)
-  return { gte: start, lte: end }
+  // Chile es UTC-3 (invierno) / UTC-4 (verano)
+  // Calculamos el inicio y fin del día en Santiago
+  const now = new Date()
+  
+  // Obtener fecha actual en Santiago
+  const santiagoParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now)
+  
+  const year  = santiagoParts.find(p => p.type === 'year')!.value
+  const month = santiagoParts.find(p => p.type === 'month')!.value
+  const day   = santiagoParts.find(p => p.type === 'day')!.value
+
+  // Crear inicio y fin del día en Santiago como UTC
+  const startSantiago = new Date(`${year}-${month}-${day}T00:00:00-03:00`)
+  const endSantiago   = new Date(`${year}-${month}-${day}T23:59:59-03:00`)
+
+  return { gte: startSantiago, lte: endSantiago }
 }
 
 export async function getDashboardStats(storeId?: string, todayOnly = true): Promise<DashboardStats> {
@@ -229,41 +244,26 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
   if (todayOnly) where.createdAt = todayRange()
 
   const [counts, byPlatform, byStore] = await Promise.all([
-    prisma.order.groupBy({
-      by: ['status'],
-      where,
-      _count: { _all: true },
+    prisma.order.groupBy({ by:['status'], where, _count:{ _all:true } }),
+    prisma.order.groupBy({ by:['platform'], where, _count:{ _all:true } }),
+    storeId ? [] : prisma.order.groupBy({
+      by: ['storeId'], where, _count:{ _all:true },
+      orderBy: { _count: { storeId: 'desc' } }, take: 5,
     }),
-    prisma.order.groupBy({
-      by: ['platform'],
-      where,
-      _count: { _all: true },
-    }),
-    storeId
-      ? []
-      : prisma.order.groupBy({
-          by: ['storeId'],
-          where,
-          _count: { _all: true },
-          orderBy: { _count: { storeId: 'desc' } },
-          take: 5,
-        }),
   ])
 
   const countMap: Record<string, number> = {}
   counts.forEach(c => { countMap[c.status] = c._count._all })
+  const total = Object.values(countMap).reduce((a,b) => a+b, 0)
 
-  const total = Object.values(countMap).reduce((a, b) => a + b, 0)
-
-  // Resolver nombres de tiendas
   let byStoreWithNames: DashboardStats['byStore'] = []
   if (!storeId && byStore.length > 0) {
     const stores = await prisma.store.findMany({
-      where: { id: { in: (byStore as any[]).map((s: any) => s.storeId) } },
-      select: { id: true, name: true },
+      where:  { id: { in: (byStore as any[]).map((s:any) => s.storeId) } },
+      select: { id:true, name:true },
     })
     const storeMap = Object.fromEntries(stores.map(s => [s.id, s.name]))
-    byStoreWithNames = (byStore as any[]).map((s: any) => ({
+    byStoreWithNames = (byStore as any[]).map((s:any) => ({
       storeId:   s.storeId,
       storeName: storeMap[s.storeId] ?? 'Desconocida',
       count:     s._count._all,
@@ -272,15 +272,12 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
 
   return {
     total,
-    pending:   countMap['PENDING']    ?? 0,
-    received:  countMap['RECEIVED']   ?? 0,
-    inTransit: countMap['IN_TRANSIT'] ?? 0,
-    delivered: countMap['DELIVERED']  ?? 0,
-    incident:  countMap['INCIDENT']   ?? 0,
-    byPlatform: byPlatform.map(p => ({
-      platform: p.platform,
-      count:    p._count._all,
-    })),
-    byStore: byStoreWithNames,
+    pending:    countMap['PENDING']    ?? 0,
+    received:   countMap['RECEIVED']   ?? 0,
+    inTransit:  countMap['IN_TRANSIT'] ?? 0,
+    delivered:  countMap['DELIVERED']  ?? 0,
+    incident:   countMap['INCIDENT']   ?? 0,
+    byPlatform: byPlatform.map(p => ({ platform:p.platform, count:p._count._all })),
+    byStore:    byStoreWithNames,
   }
 }

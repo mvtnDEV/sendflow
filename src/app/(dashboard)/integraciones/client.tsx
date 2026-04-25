@@ -228,22 +228,34 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
             </div>
           </>)}
 
-          {tab === 'MERCADOLIBRE' && (<>
-            <div style={{ marginBottom:13 }}>
-              <label style={lbl}>Client ID</label>
-              <input style={inp} placeholder="App ID de ML" value={form.key1} onChange={e=>set('key1',e.target.value)}/>
-              <div style={hint}>developers.mercadolibre.com → tu aplicación</div>
-            </div>
-            <div style={{ marginBottom:13 }}>
-              <label style={lbl}>Client Secret</label>
-              <input style={inp} type="password" placeholder="Secret Key" value={form.key2} onChange={e=>set('key2',e.target.value)}/>
-            </div>
-            <div style={{ marginBottom:0, background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, padding:'10px 14px' }}>
-              <div style={{ fontSize:12, color:'#92400E', lineHeight:1.6 }}>
-                <strong>ML Flex requiere OAuth.</strong> Después de guardar las credenciales, el usuario de ML Flex debe autorizar la app para que pueda recibir notificaciones de pedidos.
-              </div>
-            </div>
-          </>)}
+{tab === 'MERCADOLIBRE' && (<>
+  <div style={{ marginBottom:13 }}>
+    <label style={lbl}>Client ID</label>
+    <input style={inp} placeholder="4369995248896598" value={form.key1} onChange={e=>set('key1',e.target.value)}/>
+    <div style={hint}>Solo el número — developers.mercadolibre.com → tu aplicación → Client ID</div>
+  </div>
+  <div style={{ marginBottom:13 }}>
+    <label style={lbl}>Client Secret</label>
+    <input style={inp} type="password" placeholder="Secret Key" value={form.key2} onChange={e=>set('key2',e.target.value)}/>
+  </div>
+
+  {/* Botón OAuth */}
+  <div style={{ marginBottom:13 }}>
+    <a href={`/api/auth/ml?state=${storeId}`}
+      style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', padding:'11px', background:'#FFE600', color:'#333', borderRadius:8, fontSize:13, fontWeight:600, textDecoration:'none' }}>
+      🔗 Conectar con Mercado Libre
+    </a>
+    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:5, textAlign:'center' }}>
+      El vendedor debe autorizar tu app con su cuenta de ML
+    </div>
+  </div>
+
+  <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, padding:'10px 14px' }}>
+    <div style={{ fontSize:12, color:'#92400E', lineHeight:1.6 }}>
+      <strong>Pasos:</strong> 1) Guarda las credenciales → 2) Haz clic en "Conectar con ML" → 3) El vendedor autoriza con su cuenta → 4) Listo, los pedidos llegarán automáticamente.
+    </div>
+  </div>
+</>)}
 
           <div style={{ display:'flex', gap:8, marginTop:18 }}>
             <button onClick={handleTest}
