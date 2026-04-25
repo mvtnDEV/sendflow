@@ -188,10 +188,8 @@ export async function listOrders(filters: OrderFilters) {
   }
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
-    const todayStart = new Date(); todayStart.setHours(0,0,0,0)
-    const todayEnd   = new Date(); todayEnd.setHours(23,59,59,999)
-    where.createdAt  = { gte: todayStart, lte: todayEnd }
-  } else if (filters.dateFrom || filters.dateTo) {
+  where.createdAt = todayRange()
+} else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
       ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
       ...(filters.dateTo   && { lte: new Date(filters.dateTo + 'T23:59:59') }),
