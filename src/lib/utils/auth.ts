@@ -78,3 +78,12 @@ export function canAccessStore(user: SessionUser, storeId: string): boolean {
   if (user.role === 'SUPER_ADMIN') return true
   return user.storeId === storeId
 }
+// ─── Helper para verificar si el usuario es solo visualizador ─────────────────
+export function isViewer(user: SessionUser): boolean {
+  return user.role === 'VIEWER'
+}
+
+// ─── Helper para verificar si puede escribir (no es VIEWER ni DRIVER) ─────────
+export function canWrite(user: SessionUser): boolean {
+  return !['VIEWER', 'DRIVER'].includes(user.role)
+}
