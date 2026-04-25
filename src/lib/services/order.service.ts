@@ -219,20 +219,25 @@ export async function listOrders(filters: OrderFilters) {
 // ─── Stats para el dashboard ──────────────────────────────────────────────────
 
 function todayRange() {
-  // Usar hora de Chile (UTC-3 / UTC-4 en verano)
-  const now      = new Date()
-  const santiago = new Date(now.toLocaleString('en-US', { timeZone: 'America/Santiago' }))
-  const diff     = now.getTime() - santiago.getTime()
+  // Chile es UTC-3 (invierno) / UTC-4 (verano)
+  // Calculamos el inicio y fin del día en Santiago
+  const now = new Date()
+  
+  // Obtener fecha actual en Santiago
+  const santiagoParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now)
+  
+  const year  = santiagoParts.find(p => p.type === 'year')!.value
+  const month = santiagoParts.find(p => p.type === 'month')!.value
+  const day   = santiagoParts.find(p => p.type === 'day')!.value
 
-  const start = new Date()
-  start.setHours(0,0,0,0)
-  const startUTC = new Date(start.getTime() + diff)
+  // Crear inicio y fin del día en Santiago como UTC
+  const startSantiago = new Date(`${year}-${month}-${day}T00:00:00-03:00`)
+  const endSantiago   = new Date(`${year}-${month}-${day}T23:59:59-03:00`)
 
-  const end = new Date()
-  end.setHours(23,59,59,999)
-  const endUTC = new Date(end.getTime() + diff)
-
-  return { gte: startUTC, lte: endUTC }
+  return { gte: startSantiago, lte: endSantiago }
 }
 
 export async function getDashboardStats(storeId?: string, todayOnly = true): Promise<DashboardStats> {
