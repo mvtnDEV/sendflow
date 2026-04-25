@@ -8,8 +8,8 @@ import RecepcionesClient from './client'
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   PENDING:    { bg: '#FFFBEB', color: '#92400E' },
   RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
-  IN_TRANSIT: { bg: '#F0FDF4', color: '#166534' },
-  DELIVERED:  { bg: '#F5F3FF', color: '#5B21B6' },
+  IN_TRANSIT: { bg: '#F5F3FF', color: '#5B21B6' },
+  DELIVERED:  { bg: '#F0FDF4', color: '#166534' },
   INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
 }
 const STATUS_LABEL: Record<string, string> = {
