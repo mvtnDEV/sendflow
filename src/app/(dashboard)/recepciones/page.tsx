@@ -13,12 +13,18 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
 }
 const STATUS_LABEL: Record<string, string> = {
-  PENDING:'Pendiente', RECEIVED:'Recepcionado',
-  IN_TRANSIT:'En camino', DELIVERED:'Entregado', INCIDENT:'Incidencia',
+  PENDING:    'Pendiente',
+  RECEIVED:   'Recepcionado',
+  IN_TRANSIT: 'En camino',
+  DELIVERED:  'Entregado',
+  INCIDENT:   'No entregado',
 }
 const PLATFORM_LABEL: Record<string, string> = {
-  SHOPIFY:'Shopify', MERCADOLIBRE:'ML Flex',
-  WOOCOMMERCE:'WooCommerce', JUMPSELLER:'Jumpseller', MANUAL:'Manual',
+  SHOPIFY:       'Shopify',
+  MERCADOLIBRE:  'ML Flex',
+  WOOCOMMERCE:   'WooCommerce',
+  JUMPSELLER:    'Jumpseller',
+  MANUAL:        'Manual',
 }
 
 const TZ = 'America/Santiago'
@@ -94,12 +100,12 @@ export default async function RecepcionesPage({ searchParams }: Props) {
       {/* Stat bar */}
       <div style={{ background:'#0B1628', borderRadius:12, padding:'14px 20px', display:'flex', marginBottom:16 }}>
         {[
-          { label:'Total',       value:stats.total,     ring:null,                 color:'' },
-          { label:'Envíos',      value:stats.total,     ring:null,                 color:'' },
-          { label:'En camino',   value:stats.inTransit, ring:pct(stats.inTransit), color:'#3B82F6' },
-          { label:'Entregados',  value:stats.delivered, ring:pct(stats.delivered), color:'#38BDF8' },
-          { label:'Pendientes',  value:stats.pending,   ring:null,                 color:'' },
-          { label:'Incidencias', value:stats.incident,  ring:null,                 color:'' },
+          { label:'Total',         value:stats.total,     ring:null,                 color:'' },
+          { label:'Envíos',        value:stats.total,     ring:null,                 color:'' },
+          { label:'En camino',     value:stats.inTransit, ring:pct(stats.inTransit), color:'#3B82F6' },
+          { label:'Entregados',    value:stats.delivered, ring:pct(stats.delivered), color:'#38BDF8' },
+          { label:'Pendientes',    value:stats.pending,   ring:null,                 color:'' },
+          { label:'No entregados', value:stats.incident,  ring:null,                 color:'' },
         ].map((s, i, arr) => (
           <div key={s.label} style={{ flex:1, padding:'0 14px', borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.08)':'none' }}>
             <div style={{ fontSize:9, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:3 }}>{s.label}</div>
