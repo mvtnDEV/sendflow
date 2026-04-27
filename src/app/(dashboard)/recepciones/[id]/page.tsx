@@ -10,12 +10,19 @@ const TZ = 'America/Santiago'
 const fmt = (d: Date | string) => new Date(d).toLocaleString('es-CL', { timeZone: TZ, day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING:'Pedido creado', RECEIVED:'Recepcionado en bodega',
-  IN_TRANSIT:'En camino', DELIVERED:'Entregado', INCIDENT:'Incidencia', CANCELLED:'Cancelado',
+  PENDING:    'Pedido creado',
+  RECEIVED:   'Recepcionado en bodega',
+  IN_TRANSIT: 'En camino',
+  DELIVERED:  'Entregado',
+  INCIDENT:   'No entregado',
+  CANCELLED:  'Cancelado',
 }
 const PLATFORM_LABEL: Record<string, string> = {
-  SHOPIFY:'Shopify', MERCADOLIBRE:'ML Flex',
-  WOOCOMMERCE:'WooCommerce', JUMPSELLER:'Jumpseller', MANUAL:'Manual',
+  SHOPIFY:      'Shopify',
+  MERCADOLIBRE: 'ML Flex',
+  WOOCOMMERCE:  'WooCommerce',
+  JUMPSELLER:   'Jumpseller',
+  MANUAL:       'Manual',
 }
 
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
@@ -31,13 +38,14 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   if (!order) notFound()
   if (!canAccessStore(user!, order.storeId)) redirect('/recepciones')
 
-const statusBadge: Record<string, { bg: string; color: string }> = {
-  PENDING:    { bg: '#FFFBEB', color: '#92400E' },
-  RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
-  IN_TRANSIT: { bg: '#F5F3FF', color: '#5B21B6' },
-  DELIVERED:  { bg: '#F0FDF4', color: '#166534' },
-  INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
-}
+  const statusBadge: Record<string, { bg: string; color: string }> = {
+    PENDING:    { bg: '#FFFBEB', color: '#92400E' },
+    RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
+    IN_TRANSIT: { bg: '#F5F3FF', color: '#5B21B6' },
+    DELIVERED:  { bg: '#F0FDF4', color: '#166534' },
+    INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
+    CANCELLED:  { bg: '#F1F5F9', color: '#475569' },
+  }
   const sc = statusBadge[order.status] ?? statusBadge.PENDING
 
   return (
@@ -187,6 +195,21 @@ const statusBadge: Record<string, { bg: string; color: string }> = {
                 <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
                   {order.evidencePhoto1 ? '📷 Con evidencia fotográfica' : '⚠ Sin evidencia'}
                 </div>
+              </div>
+            )}
+            {order.status === 'INCIDENT' && (
+              <div style={{ background:'#FFF1F2', border:'1px solid #FECDD3', borderRadius:12, padding:16, textAlign:'center' }}>
+                <div style={{ fontSize:20, marginBottom:4 }}>❌</div>
+                <div style={{ fontSize:14, fontWeight:500, color:'#9F1239' }}>No entregado</div>
+                <div style={{ fontSize:12, color:'#9F1239', marginTop:4 }}>
+                  Puedes reintentar la entrega desde las acciones
+                </div>
+              </div>
+            )}
+            {order.status === 'CANCELLED' && (
+              <div style={{ background:'#F1F5F9', border:'1px solid #E2E8F0', borderRadius:12, padding:16, textAlign:'center' }}>
+                <div style={{ fontSize:20, marginBottom:4 }}>🚫</div>
+                <div style={{ fontSize:14, fontWeight:500, color:'#475569' }}>Pedido anulado</div>
               </div>
             )}
             <OrderActions orderId={order.id} currentStatus={order.status} />
