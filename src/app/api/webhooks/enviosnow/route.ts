@@ -1,14 +1,17 @@
 export const dynamic = 'force-dynamic'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
-// Mapeo de estados de Envios Now → SendFlow
 const STATE_MAP: Record<string, string> = {
-  'entregado':   'DELIVERED',
-  'cancelado':   'CANCELLED',
-  'por entregar':'IN_TRANSIT',
-  'pendiente':   'RECEIVED',
+  'entregado':    'DELIVERED',
+  'cancelado':    'CANCELLED',
+  'por entregar': 'IN_TRANSIT',
+  'pendiente':    'RECEIVED',
+}
+
+const STATUS_PRIORITY: Record<string, number> = {
+  PENDING: 0, RECEIVED: 1, IN_TRANSIT: 2,
+  DELIVERED: 3, INCIDENT: 4, CANCELLED: 5,
 }
 
 export async function POST(req: NextRequest) {
@@ -28,12 +31,15 @@ export async function POST(req: NextRequest) {
       const newStatus = STATE_MAP[state]
       if (!newStatus) continue
 
-      // Buscar el pedido en SendFlow por externalId o orderNumber
+      const extId = String(externalId)
+
+      // Buscar por externalId, orderNumber sin # y orderNumber con #
       const order = await prisma.order.findFirst({
         where: {
           OR: [
-            { externalId: String(externalId) },
-            { orderNumber: String(externalId) },
+            { externalId: extId },
+            { orderNumber: extId },
+            { orderNumber: `#${extId}` },
           ],
         },
       })
@@ -44,33 +50,28 @@ export async function POST(req: NextRequest) {
       }
 
       // No retroceder estados
-      const STATUS_PRIORITY: Record<string, number> = {
-        PENDING: 0, RECEIVED: 1, IN_TRANSIT: 2,
-        DELIVERED: 3, INCIDENT: 4, CANCELLED: 5,
-      }
       if ((STATUS_PRIORITY[newStatus] ?? 0) <= (STATUS_PRIORITY[order.status] ?? 0)) {
         results.push({ externalId, status: 'skipped', reason: 'lower_priority' })
         continue
       }
 
-      const note = deliveryComment || commentary || `Actualizado desde Envios Now`
+      const note = deliveryComment || commentary || 'Actualizado desde Envios Now'
       const now  = new Date()
 
-      // Actualizar el pedido
       await prisma.order.update({
         where: { id: order.id },
         data: {
-          status:       newStatus as any,
+          status: newStatus as any,
           ...(newStatus === 'DELIVERED'  && { deliveredAt: now }),
           ...(newStatus === 'IN_TRANSIT' && { inTransitAt: now }),
           ...(newStatus === 'RECEIVED'   && { receivedAt:  now }),
           ...(images?.[0] && { evidencePhoto1: images[0] }),
           ...(images?.[1] && { evidencePhoto2: images[1] }),
-          ...(note && { evidenceNote: note }),
+          evidenceNote: note,
           events: {
             create: {
               status:    newStatus as any,
-              note:      note,
+              note,
               createdBy: 'enviosnow-webhook',
             },
           },
