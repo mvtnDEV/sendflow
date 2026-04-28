@@ -6,7 +6,7 @@ const STATE_MAP: Record<string, string> = {
   'entregado':    'DELIVERED',
   'cancelado':    'CANCELLED',
   'por entregar': 'IN_TRANSIT',
-  'pendiente':    'RECEIVED',
+  'pendiente':    'INCIDENT',
 }
 
 const STATUS_PRIORITY: Record<string, number> = {
