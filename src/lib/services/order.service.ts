@@ -60,15 +60,24 @@ export async function createOrder(input: CreateOrderInput) {
   })
 
   // Enviar automáticamente a Envios Now
-  try {
-    const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
-    const payload = toEnviosNowPayload(order)
-    const result  = await createEnviosNowDelivery(payload)
-    if (!result.ok) console.warn('[EnviosNow] No se pudo crear el envío:', result.error)
-    else console.log('[EnviosNow] Envío creado:', result.id)
-  } catch (err) {
-    console.error('[EnviosNow] Error enviando pedido:', err)
+// Enviar automáticamente a Envios Now y guardar su ID
+try {
+  const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
+  const payload = toEnviosNowPayload(order)
+  const result  = await createEnviosNowDelivery(payload)
+  if (!result.ok) {
+    console.warn('[EnviosNow] No se pudo crear el envío:', result.error)
+  } else if (result.id && result.id !== 'duplicate') {
+    // Guardar el ID de Envios Now en externalId para que el webhook lo encuentre
+    await prisma.order.update({
+      where: { id: order.id },
+      data:  { externalId: String(result.id) },
+    })
+    console.log('[EnviosNow] Envío creado y ID guardado:', result.id)
   }
+} catch (err) {
+  console.error('[EnviosNow] Error enviando pedido:', err)
+}
 
   return order
 }
