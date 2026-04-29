@@ -16,45 +16,66 @@ const STATUS_PRIORITY: Record<string, number> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => null)
+    // Leer el body como texto primero para loggearlo
+    const rawBody = await req.text()
+    console.log('[EnviosNow] Raw body recibido:', rawBody)
+    console.log('[EnviosNow] Headers:', JSON.stringify(Object.fromEntries(req.headers)))
 
-    // Log para ver qué envía Envios Now
-    console.log('[EnviosNow] Payload recibido:', JSON.stringify(body))
-
-    if (!body) {
-      console.log('[EnviosNow] Body vacío')
-      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
+    let body: any
+    try {
+      body = JSON.parse(rawBody)
+    } catch {
+      console.log('[EnviosNow] Error parseando JSON')
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
     }
 
-    // Envios Now puede enviar { data: [...] } o directamente un array o un objeto
-    const deliveries = Array.isArray(body)
-      ? body
-      : Array.isArray(body.data)
-      ? body.data
-      : [body]
+    console.log('[EnviosNow] Body parseado:', JSON.stringify(body))
 
-    console.log('[EnviosNow] Deliveries a procesar:', deliveries.length)
+    // Aceptar cualquier estructura posible
+    let deliveries: any[] = []
+
+    if (Array.isArray(body)) {
+      deliveries = body
+    } else if (Array.isArray(body?.data)) {
+      deliveries = body.data
+    } else if (body?.data && typeof body.data === 'object') {
+      deliveries = [body.data]
+    } else if (typeof body === 'object') {
+      deliveries = [body]
+    }
+
+    console.log('[EnviosNow] Deliveries encontrados:', deliveries.length)
 
     const results = []
 
     for (const delivery of deliveries) {
-      console.log('[EnviosNow] Procesando delivery:', JSON.stringify(delivery))
+      console.log('[EnviosNow] Delivery:', JSON.stringify(delivery))
 
-      const externalId    = delivery.externalId ?? delivery.external_id ?? delivery.id
-      const state         = delivery.state ?? delivery.status ?? delivery.estado
-      const deliveryComment = delivery.deliveryComment ?? delivery.commentary ?? delivery.comment ?? ''
-      const images        = delivery.images ?? []
+      // Buscar externalId en múltiples campos posibles
+      const externalId = delivery.externalId
+        ?? delivery.external_id
+        ?? delivery.sourceSystemId
+        ?? delivery.orderId
+        ?? null
+
+      // Buscar state en múltiples campos posibles
+      const state = delivery.state
+        ?? delivery.status
+        ?? delivery.estado
+        ?? null
 
       console.log('[EnviosNow] externalId:', externalId, '| state:', state)
 
       if (!externalId || !state) {
-        console.log('[EnviosNow] Skipping - sin externalId o state')
+        console.log('[EnviosNow] Sin externalId o state, skip')
+        results.push({ delivery, status: 'skipped_no_id_or_state' })
         continue
       }
 
-      const newStatus = STATE_MAP[state]
+      const newStatus = STATE_MAP[String(state).toLowerCase()]
       if (!newStatus) {
         console.log('[EnviosNow] Estado no mapeado:', state)
+        results.push({ externalId, state, status: 'unknown_state' })
         continue
       }
 
@@ -82,8 +103,13 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      const note = deliveryComment || 'Actualizado desde Envios Now'
-      const now  = new Date()
+      const note = delivery.deliveryComment
+        ?? delivery.commentary
+        ?? delivery.comment
+        ?? 'Actualizado desde Envios Now'
+
+      const images = delivery.images ?? []
+      const now = new Date()
 
       await prisma.order.update({
         where: { id: order.id },
@@ -112,7 +138,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true, results })
 
   } catch (err) {
-    console.error('[EnviosNow] Error:', err)
+    console.error('[EnviosNow] Error general:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
