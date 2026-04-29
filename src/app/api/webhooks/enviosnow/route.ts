@@ -75,8 +75,9 @@ export async function POST(req: NextRequest) {
       const now    = new Date()
       const images = delivery.images ?? []
       const note   = delivery.deliveryComment || delivery.commentary || 'Actualizado desde Envios Now'
+      const receiverName = delivery.receiverName || null
+      const receiverRut  = delivery.receiverRut && delivery.receiverRut !== 'No da rut' ? delivery.receiverRut : null
 
-      // Actualizar pedido SIN crear evento (evita el error de foreign key)
       await prisma.order.update({
         where: { id: order.id },
         data: {
@@ -86,7 +87,18 @@ export async function POST(req: NextRequest) {
           ...(newStatus === 'RECEIVED'   && { receivedAt:  now }),
           ...(images?.[0] && { evidencePhoto1: images[0] }),
           ...(images?.[1] && { evidencePhoto2: images[1] }),
-          evidenceNote: note,
+          evidenceNote: [
+            note,
+            receiverName ? `Recibió: ${receiverName}` : null,
+            receiverRut  ? `RUT: ${receiverRut}`       : null,
+          ].filter(Boolean).join(' · '),
+          events: {
+            create: {
+              status:    newStatus as any,
+              note:      `Envios Now · ${note}${receiverName ? ` · Recibió: ${receiverName}` : ''}`,
+              createdBy: 'enviosnow',
+            },
+          },
         },
       })
 
