@@ -16,71 +16,40 @@ const STATUS_PRIORITY: Record<string, number> = {
 
 export async function POST(req: NextRequest) {
   try {
-    // Leer el body como texto primero para loggearlo
     const rawBody = await req.text()
-    console.log('[EnviosNow] Raw body recibido:', rawBody)
-    console.log('[EnviosNow] Headers:', JSON.stringify(Object.fromEntries(req.headers)))
+    console.log('[EnviosNow] Raw body:', rawBody)
 
     let body: any
-    try {
-      body = JSON.parse(rawBody)
-    } catch {
-      console.log('[EnviosNow] Error parseando JSON')
+    try { body = JSON.parse(rawBody) } catch {
       return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
     }
 
-    console.log('[EnviosNow] Body parseado:', JSON.stringify(body))
-
-    // Aceptar cualquier estructura posible
     let deliveries: any[] = []
-
-    if (Array.isArray(body)) {
-      deliveries = body
-    } else if (Array.isArray(body?.data)) {
-      deliveries = body.data
-    } else if (body?.data && typeof body.data === 'object') {
-      deliveries = [body.data]
-    } else if (typeof body === 'object') {
-      deliveries = [body]
-    }
-
-    console.log('[EnviosNow] Deliveries encontrados:', deliveries.length)
+    if (Array.isArray(body)) deliveries = body
+    else if (Array.isArray(body?.data)) deliveries = body.data
+    else if (body?.data && typeof body.data === 'object') deliveries = [body.data]
+    else if (typeof body === 'object') deliveries = [body]
 
     const results = []
 
     for (const delivery of deliveries) {
-      console.log('[EnviosNow] Delivery:', JSON.stringify(delivery))
-
-      // Buscar externalId en múltiples campos posibles
-      const externalId = delivery.externalId
-        ?? delivery.external_id
-        ?? delivery.sourceSystemId
-        ?? delivery.orderId
-        ?? null
-
-      // Buscar state en múltiples campos posibles
-      const state = delivery.state
-        ?? delivery.status
-        ?? delivery.estado
-        ?? null
+      const externalId = delivery.externalId ?? delivery.external_id ?? null
+      const state      = delivery.state ?? delivery.status ?? null
 
       console.log('[EnviosNow] externalId:', externalId, '| state:', state)
 
       if (!externalId || !state) {
-        console.log('[EnviosNow] Sin externalId o state, skip')
-        results.push({ delivery, status: 'skipped_no_id_or_state' })
+        results.push({ status: 'skipped_no_id_or_state' })
         continue
       }
 
       const newStatus = STATE_MAP[String(state).toLowerCase()]
       if (!newStatus) {
-        console.log('[EnviosNow] Estado no mapeado:', state)
         results.push({ externalId, state, status: 'unknown_state' })
         continue
       }
 
       const extId = String(externalId)
-
       const order = await prisma.order.findFirst({
         where: {
           OR: [
@@ -91,7 +60,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      console.log('[EnviosNow] Pedido encontrado:', order ? order.orderNumber : 'NO ENCONTRADO')
+      console.log('[EnviosNow] Pedido:', order ? order.orderNumber : 'NO ENCONTRADO')
 
       if (!order) {
         results.push({ externalId, status: 'not_found' })
@@ -103,14 +72,11 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      const note = delivery.deliveryComment
-        ?? delivery.commentary
-        ?? delivery.comment
-        ?? 'Actualizado desde Envios Now'
-
+      const now    = new Date()
       const images = delivery.images ?? []
-      const now = new Date()
+      const note   = delivery.deliveryComment || delivery.commentary || 'Actualizado desde Envios Now'
 
+      // Actualizar pedido SIN crear evento (evita el error de foreign key)
       await prisma.order.update({
         where: { id: order.id },
         data: {
@@ -121,16 +87,10 @@ export async function POST(req: NextRequest) {
           ...(images?.[0] && { evidencePhoto1: images[0] }),
           ...(images?.[1] && { evidencePhoto2: images[1] }),
           evidenceNote: note,
-          events: {
-            create: {
-              status:    newStatus as any,
-              note,
-              createdBy: 'null',
-            },
-          },
         },
       })
 
+      console.log('[EnviosNow] Actualizado:', extId, '->', newStatus)
       results.push({ externalId, status: 'updated', newStatus })
     }
 
@@ -138,7 +98,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true, results })
 
   } catch (err) {
-    console.error('[EnviosNow] Error general:', err)
+    console.error('[EnviosNow] Error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
