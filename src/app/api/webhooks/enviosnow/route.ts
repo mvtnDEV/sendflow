@@ -17,23 +17,49 @@ const STATUS_PRIORITY: Record<string, number> = {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null)
-    if (!body?.data || !Array.isArray(body.data)) {
+
+    // Log para ver qué envía Envios Now
+    console.log('[EnviosNow] Payload recibido:', JSON.stringify(body))
+
+    if (!body) {
+      console.log('[EnviosNow] Body vacío')
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
 
+    // Envios Now puede enviar { data: [...] } o directamente un array o un objeto
+    const deliveries = Array.isArray(body)
+      ? body
+      : Array.isArray(body.data)
+      ? body.data
+      : [body]
+
+    console.log('[EnviosNow] Deliveries a procesar:', deliveries.length)
+
     const results = []
 
-    for (const delivery of body.data) {
-      const { externalId, state, deliveryComment, commentary, images } = delivery
+    for (const delivery of deliveries) {
+      console.log('[EnviosNow] Procesando delivery:', JSON.stringify(delivery))
 
-      if (!externalId || !state) continue
+      const externalId    = delivery.externalId ?? delivery.external_id ?? delivery.id
+      const state         = delivery.state ?? delivery.status ?? delivery.estado
+      const deliveryComment = delivery.deliveryComment ?? delivery.commentary ?? delivery.comment ?? ''
+      const images        = delivery.images ?? []
+
+      console.log('[EnviosNow] externalId:', externalId, '| state:', state)
+
+      if (!externalId || !state) {
+        console.log('[EnviosNow] Skipping - sin externalId o state')
+        continue
+      }
 
       const newStatus = STATE_MAP[state]
-      if (!newStatus) continue
+      if (!newStatus) {
+        console.log('[EnviosNow] Estado no mapeado:', state)
+        continue
+      }
 
       const extId = String(externalId)
 
-      // Buscar por externalId, orderNumber sin # y orderNumber con #
       const order = await prisma.order.findFirst({
         where: {
           OR: [
@@ -44,18 +70,19 @@ export async function POST(req: NextRequest) {
         },
       })
 
+      console.log('[EnviosNow] Pedido encontrado:', order ? order.orderNumber : 'NO ENCONTRADO')
+
       if (!order) {
         results.push({ externalId, status: 'not_found' })
         continue
       }
 
-      // No retroceder estados
       if ((STATUS_PRIORITY[newStatus] ?? 0) <= (STATUS_PRIORITY[order.status] ?? 0)) {
         results.push({ externalId, status: 'skipped', reason: 'lower_priority' })
         continue
       }
 
-      const note = deliveryComment || commentary || 'Actualizado desde Envios Now'
+      const note = deliveryComment || 'Actualizado desde Envios Now'
       const now  = new Date()
 
       await prisma.order.update({
@@ -81,10 +108,11 @@ export async function POST(req: NextRequest) {
       results.push({ externalId, status: 'updated', newStatus })
     }
 
+    console.log('[EnviosNow] Resultados:', JSON.stringify(results))
     return NextResponse.json({ received: true, results })
 
   } catch (err) {
-    console.error('[Envios Now webhook]', err)
+    console.error('[EnviosNow] Error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
