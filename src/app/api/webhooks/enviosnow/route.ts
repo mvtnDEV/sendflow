@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
             create: {
               status:    newStatus as any,
               note,
-              createdBy: 'system',
+              createdBy: 'null',
             },
           },
         },
