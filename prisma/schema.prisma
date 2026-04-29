@@ -157,12 +157,13 @@ model OrderEvent {
   orderId   String
   status    OrderStatus
   note      String?
-  createdBy String?     // userId | "system" | "webhook" | "driver:<id>"
-  ipAddress String?     // Ley 21.719: trazabilidad
+  createdBy String?     // texto libre: "system" | "webhook" | "enviosnow" | userId
+  createdByUserId String? // FK real al usuario si aplica
+  ipAddress String?
   createdAt DateTime    @default(now())
 
   order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  user      User?  @relation(fields: [createdBy], references: [id])
+  user      User?  @relation(fields: [createdByUserId], references: [id])
 
   @@index([orderId])
   @@map("order_events")
