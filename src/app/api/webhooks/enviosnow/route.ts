@@ -67,10 +67,13 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      if ((STATUS_PRIORITY[newStatus] ?? 0) <= (STATUS_PRIORITY[order.status] ?? 0)) {
-        results.push({ externalId, status: 'skipped', reason: 'lower_priority' })
-        continue
-      }
+     // Permitir DELIVERED aunque venga desde INCIDENT
+const isDeliveredFromIncident = newStatus === 'DELIVERED' && order.status === 'INCIDENT'
+
+if (!isDeliveredFromIncident && (STATUS_PRIORITY[newStatus] ?? 0) <= (STATUS_PRIORITY[order.status] ?? 0)) {
+  results.push({ externalId, status: 'skipped', reason: 'lower_priority' })
+  continue
+}
 
       const now    = new Date()
       const images = delivery.images ?? []
