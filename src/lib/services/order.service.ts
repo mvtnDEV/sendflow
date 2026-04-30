@@ -103,10 +103,6 @@ export async function updateOrderStatus(
       console.error('[EnviosNow] Error enviando pedido:', err)
     }
   }
-
-  return order
-}
-
   return order
 }
 
