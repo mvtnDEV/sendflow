@@ -61,22 +61,52 @@ export async function createOrder(input: CreateOrderInput) {
 
   // Enviar automáticamente a Envios Now
 // Enviar automáticamente a Envios Now y guardar su ID
-try {
-  const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
-  const payload = toEnviosNowPayload(order)
-  const result  = await createEnviosNowDelivery(payload)
-  if (!result.ok) {
-    console.warn('[EnviosNow] No se pudo crear el envío:', result.error)
-  } else if (result.id && result.id !== 'duplicate') {
-    // Guardar el ID de Envios Now en externalId para que el webhook lo encuentre
-    await prisma.order.update({
-      where: { id: order.id },
-      data:  { externalId: String(result.id) },
-    })
-    console.log('[EnviosNow] Envío creado y ID guardado:', result.id)
+export async function updateOrderStatus(
+  orderId:    string,
+  status:     OrderStatus,
+  note?:      string,
+  createdBy?: string,
+) {
+  const timestampField = STATUS_TIMESTAMP[status]
+  const now = new Date()
+
+  const order = await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      status,
+      ...(timestampField ? { [timestampField]: now } : {}),
+      events: {
+        create: {
+          status,
+          note:      note ?? `Estado actualizado a ${status}`,
+          createdBy: createdBy ?? 'system',
+        },
+      },
+    },
+    include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
+  })
+
+  // Enviar a Envios Now al recepcionar
+  if (status === 'RECEIVED') {
+    try {
+      const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
+      const payload = toEnviosNowPayload(order)
+      const result  = await createEnviosNowDelivery(payload)
+      if (!result.ok) {
+        console.warn('[EnviosNow] No se pudo crear el envío:', result.error)
+      } else if (result.id && result.id !== 'duplicate') {
+        await prisma.order.update({
+          where: { id: order.id },
+          data:  { externalId: String(result.id) },
+        })
+        console.log('[EnviosNow] Envío creado al recepcionar, ID:', result.id)
+      }
+    } catch (err) {
+      console.error('[EnviosNow] Error enviando pedido:', err)
+    }
   }
-} catch (err) {
-  console.error('[EnviosNow] Error enviando pedido:', err)
+
+  return order
 }
 
   return order
