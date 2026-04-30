@@ -59,50 +59,6 @@ export async function createOrder(input: CreateOrderInput) {
     include: { store: true, events: true },
   })
 
-// Enviar automáticamente a Envios Now y guardar su ID
-export async function updateOrderStatus(
-  orderId:    string,
-  status:     OrderStatus,
-  note?:      string,
-  createdBy?: string,
-) {
-  const timestampField = STATUS_TIMESTAMP[status]
-  const now = new Date()
-
-  const order = await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      status,
-      ...(timestampField ? { [timestampField]: now } : {}),
-      events: {
-        create: {
-          status,
-          note:      note ?? `Estado actualizado a ${status}`,
-          createdBy: createdBy ?? 'system',
-        },
-      },
-    },
-    include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
-  })
-
-  if (status === 'RECEIVED') {
-    try {
-      const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
-      const payload = toEnviosNowPayload(order)
-      const result  = await createEnviosNowDelivery(payload)
-      if (!result.ok) {
-        console.warn('[EnviosNow] No se pudo crear el envío:', result.error)
-      } else if (result.id && result.id !== 'duplicate') {
-        await prisma.order.update({
-          where: { id: order.id },
-          data:  { externalId: String(result.id) },
-        })
-        console.log('[EnviosNow] Envío creado al recepcionar, ID:', result.id)
-      }
-    } catch (err) {
-      console.error('[EnviosNow] Error enviando pedido:', err)
-    }
-  }
   return order
 }
 
@@ -182,6 +138,26 @@ export async function updateOrderStatus(
     include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
   })
 
+  // Enviar a Envios Now al recepcionar
+  if (status === 'RECEIVED') {
+    try {
+      const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
+      const payload = toEnviosNowPayload(order)
+      const result  = await createEnviosNowDelivery(payload)
+      if (!result.ok) {
+        console.warn('[EnviosNow] No se pudo crear el envío:', result.error)
+      } else if (result.id && result.id !== 'duplicate') {
+        await prisma.order.update({
+          where: { id: order.id },
+          data:  { externalId: String(result.id) },
+        })
+        console.log('[EnviosNow] Envío creado al recepcionar, ID:', result.id)
+      }
+    } catch (err) {
+      console.error('[EnviosNow] Error enviando pedido:', err)
+    }
+  }
+
   return order
 }
 
@@ -221,8 +197,8 @@ export async function listOrders(filters: OrderFilters) {
   }
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
-  where.createdAt = todayRange()
-} else if (filters.dateFrom || filters.dateTo) {
+    where.createdAt = todayRange()
+  } else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
       ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
       ...(filters.dateTo   && { lte: new Date(filters.dateTo + 'T23:59:59') }),
@@ -250,21 +226,16 @@ export async function listOrders(filters: OrderFilters) {
 // ─── Stats para el dashboard ──────────────────────────────────────────────────
 
 function todayRange() {
-  // Chile es UTC-3 (invierno) / UTC-4 (verano)
-  // Calculamos el inicio y fin del día en Santiago
   const now = new Date()
-  
-  // Obtener fecha actual en Santiago
   const santiagoParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
     year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(now)
-  
+
   const year  = santiagoParts.find(p => p.type === 'year')!.value
   const month = santiagoParts.find(p => p.type === 'month')!.value
   const day   = santiagoParts.find(p => p.type === 'day')!.value
 
-  // Crear inicio y fin del día en Santiago como UTC
   const startSantiago = new Date(`${year}-${month}-${day}T00:00:00-03:00`)
   const endSantiago   = new Date(`${year}-${month}-${day}T23:59:59-03:00`)
 
