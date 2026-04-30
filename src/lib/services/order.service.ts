@@ -59,7 +59,6 @@ export async function createOrder(input: CreateOrderInput) {
     include: { store: true, events: true },
   })
 
-  // Enviar automáticamente a Envios Now
 // Enviar automáticamente a Envios Now y guardar su ID
 export async function updateOrderStatus(
   orderId:    string,
@@ -86,7 +85,6 @@ export async function updateOrderStatus(
     include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
   })
 
-  // Enviar a Envios Now al recepcionar
   if (status === 'RECEIVED') {
     try {
       const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
