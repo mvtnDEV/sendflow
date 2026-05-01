@@ -44,6 +44,7 @@ export function buildLabelHTML(data: LabelData, qrDataUrl: string): string {
     JUMPSELLER:    'Jumpseller',
     MANUAL:        'Manual',
   }
+  const trackingUrl = `${process.env.APP_URL}/public-tracking?q=${data.qrCode}`
 
   return `<!DOCTYPE html>
 <html lang="es">
