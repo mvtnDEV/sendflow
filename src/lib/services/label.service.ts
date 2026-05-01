@@ -32,7 +32,7 @@ export async function generateQRImage(qrCode: string): Promise<string> {
 
 // ─── Generador de HTML de etiqueta ───────────────────────────────────────────
 
-eexport function buildLabelHTML(data: LabelData, qrDataUrl: string): string {
+export function buildLabelHTML(data: LabelData, qrDataUrl: string): string {
   const fecha = new Date(data.createdAt).toLocaleDateString('es-CL', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
