@@ -32,18 +32,19 @@ export async function generateQRImage(qrCode: string): Promise<string> {
 
 // ─── Generador de HTML de etiqueta ───────────────────────────────────────────
 
-export function buildLabelHTML(data: LabelData, qrDataUrl: string): string {
+eexport function buildLabelHTML(data: LabelData, qrDataUrl: string): string {
   const fecha = new Date(data.createdAt).toLocaleDateString('es-CL', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
 
   const platformLabel: Record<string, string> = {
-    SHOPIFY:       'Shopify',
-    MERCADOLIBRE:  'ML Flex',
-    WOOCOMMERCE:   'WooCommerce',
-    JUMPSELLER:    'Jumpseller',
-    MANUAL:        'Manual',
+    SHOPIFY:      'Shopify',
+    MERCADOLIBRE: 'ML Flex',
+    WOOCOMMERCE:  'WooCommerce',
+    JUMPSELLER:   'Jumpseller',
+    MANUAL:       'Manual',
   }
+
   const trackingUrl = `${process.env.APP_URL}/public-tracking?q=${data.qrCode}`
 
   return `<!DOCTYPE html>
@@ -54,100 +55,139 @@ export function buildLabelHTML(data: LabelData, qrDataUrl: string): string {
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: Arial, sans-serif;
-    width: 10cm; min-height: 15cm;
-    padding: 0.8cm;
-    border: 2px solid #0B1628;
+    width: 10cm;
     background: white;
     color: #0B1628;
   }
+  .accent {
+    height: 5px;
+    background: #2563EB;
+  }
   .header {
-    display: flex; justify-content: space-between;
-    align-items: flex-start; margin-bottom: 0.6cm;
-    padding-bottom: 0.4cm; border-bottom: 1.5px solid #0B1628;
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #F1F5F9;
+    border-left: 1px solid #E2E8F0;
+    border-right: 1px solid #E2E8F0;
   }
-  .logo-text { font-size: 20px; font-weight: bold; color: #0B1628; }
-  .logo-text span { color: #2563EB; }
-  .platform-badge {
-    background: #EFF6FF; color: #1D4ED8;
-    padding: 3px 10px; border-radius: 12px;
-    font-size: 11px; font-weight: bold;
-  }
-  .order-number {
-    font-size: 24px; font-weight: bold;
-    letter-spacing: 1px; margin-bottom: 0.4cm;
+  .logo {
+    font-size: 14px;
+    font-weight: bold;
     color: #0B1628;
   }
-  .section-label {
-    font-size: 9px; text-transform: uppercase;
-    letter-spacing: 0.08em; color: #6B7280;
-    margin-bottom: 2px;
+  .logo span { color: #2563EB; }
+  .order-num {
+    font-size: 18px;
+    font-weight: bold;
+    color: #0B1628;
+    letter-spacing: 0.5px;
+    font-family: monospace;
   }
-  .section-value {
-    font-size: 14px; font-weight: bold;
-    color: #0B1628; margin-bottom: 0.3cm;
+  .body {
+    padding: 10px 12px;
+    display: flex;
+    gap: 10px;
+    border-left: 1px solid #E2E8F0;
+    border-right: 1px solid #E2E8F0;
+  }
+  .info { flex: 1; }
+  .lbl {
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9CA3AF;
+    margin-bottom: 1px;
+  }
+  .val {
+    font-size: 11px;
+    font-weight: bold;
+    color: #0B1628;
+    margin-bottom: 7px;
     line-height: 1.3;
   }
-  .section-value.address { font-size: 13px; }
-  .divider { border-top: 1px dashed #CBD5E1; margin: 0.3cm 0; }
-  .qr-section {
-    display: flex; align-items: center;
-    gap: 0.4cm; margin-top: 0.4cm;
+  .val.sm { font-size: 10px; font-weight: normal; }
+  .qr-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 70px;
   }
-  .qr-section img { width: 3cm; height: 3cm; border: 1px solid #E5E7EB; }
-  .qr-info { flex: 1; }
-  .qr-code-text {
-    font-family: monospace; font-size: 11px;
-    color: #6B7280; margin-top: 4px;
-    word-break: break-all;
-  }
-  .footer {
-    margin-top: 0.5cm; padding-top: 0.3cm;
-    border-top: 1px solid #E5E7EB;
-    display: flex; justify-content: space-between;
-    font-size: 10px; color: #9CA3AF;
+  .qr-col img {
+    width: 64px;
+    height: 64px;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
   }
   .bultos-badge {
-    background: #0B1628; color: white;
-    padding: 4px 12px; border-radius: 6px;
-    font-size: 13px; font-weight: bold;
-    display: inline-block; margin-bottom: 0.3cm;
+    background: #EFF6FF;
+    color: #1D4ED8;
+    font-size: 9px;
+    font-weight: bold;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .qr-hint {
+    font-size: 7px;
+    color: #9CA3AF;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .platform-badge {
+    font-size: 8px;
+    font-weight: bold;
+    color: #1D4ED8;
+    background: #EFF6FF;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-bottom: 7px;
+    display: inline-block;
+  }
+  .footer {
+    padding: 5px 12px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-top: 1px solid #F1F5F9;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8px;
+    color: #9CA3AF;
+  }
+  @media print {
+    body { margin: 0; }
+    @page { margin: 0.3cm; size: 10cm auto; }
   }
 </style>
 </head>
 <body>
+  <div class="accent"></div>
+
   <div class="header">
-    <div class="logo-text">Send<span>Flow</span></div>
-    <div class="platform-badge">${platformLabel[data.platform] ?? data.platform}</div>
+    <div class="logo">Send<span>Flow</span></div>
+    <div class="order-num">${data.orderNumber}</div>
   </div>
 
-  <div class="order-number">${data.orderNumber}</div>
-  <div class="bultos-badge">${data.bultos} ${data.bultos === 1 ? 'bulto' : 'bultos'}</div>
-
-  <div class="section-label">Destinatario</div>
-  <div class="section-value">${data.customerName}</div>
-
-  <div class="section-label">Dirección de entrega</div>
-  <div class="section-value address">
-    ${data.addressStreet}<br>
-    ${data.addressComuna}, ${data.addressRegion}
-  </div>
-
-  <div class="section-label">Tienda</div>
-  <div class="section-value" style="font-size:13px">${data.storeName}</div>
-
-  <div class="divider"></div>
-
-  <div class="qr-section">
-    <img src="${qrDataUrl}" alt="QR de tracking">
-    <div class="qr-info">
-      <div class="section-label">Escanea para rastrear</div>
-      <div class="section-value" style="font-size:12px">Tracking en tiempo real</div>
-      <div class="qr-code-text">${data.qrCode}</div>
+  <div class="body">
+    <div class="info">
+      <div class="platform-badge">${platformLabel[data.platform] ?? data.platform}</div>
+      <div class="lbl">Destinatario</div>
+      <div class="val">${data.customerName}</div>
+      <div class="lbl">Dirección de entrega</div>
+      <div class="val">${data.addressStreet}<br>${data.addressComuna}, ${data.addressRegion}</div>
+      <div class="lbl">Tienda</div>
+      <div class="val sm">${data.storeName}</div>
+    </div>
+    <div class="qr-col">
+      <img src="${qrDataUrl}" alt="QR tracking">
+      <div class="bultos-badge">${data.bultos} ${data.bultos === 1 ? 'bulto' : 'bultos'}</div>
+      <div class="qr-hint">Escanea para<br>rastrear tu pedido</div>
     </div>
   </div>
 
   <div class="footer">
-    <span>Creado: ${fecha}</span>
+    <span>${fecha}</span>
     <span>${process.env.APP_URL ?? 'sendflow.cl'}</span>
   </div>
 </body>
