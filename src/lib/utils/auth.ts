@@ -4,29 +4,74 @@ import { prisma } from '@/lib/db/prisma'
 import { verifyPassword } from '@/lib/utils/crypto'
 import type { SessionUser } from '@/types'
 
+const MAX_ATTEMPTS = 5
+const WINDOW_MINUTES = 15
+
+async function checkRateLimit(email: string, ip: string): Promise<boolean> {
+  const since = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000)
+  const attempts = await prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT COUNT(*) as count FROM login_attempts
+    WHERE email = ${email}
+    AND success = false
+    AND created_at > ${since}
+  `
+  return Number(attempts[0]?.count ?? 0) < MAX_ATTEMPTS
+}
+
+async function recordAttempt(email: string, ip: string, success: boolean) {
+  await prisma.$executeRaw`
+    INSERT INTO login_attempts (email, ip, success, created_at)
+    VALUES (${email}, ${ip}, ${success}, NOW())
+  `
+  // Limpiar intentos antiguos
+  await prisma.$executeRaw`
+    DELETE FROM login_attempts
+    WHERE created_at < NOW() - INTERVAL '24 hours'
+  `
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: 'jwt' },
   pages:   { signIn: '/login' },
-
   providers: [
     Credentials({
       credentials: {
         email:    { label: 'Email', type: 'email' },
         password: { label: 'Contraseña', type: 'password' },
+        ip:       { label: 'IP', type: 'text' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
 
+        const email = credentials.email as string
+        const ip    = (credentials.ip as string) || 'unknown'
+
+        // Verificar rate limit
+        const allowed = await checkRateLimit(email, ip)
+        if (!allowed) {
+          console.warn(`[Auth] Rate limit alcanzado para: ${email}`)
+          throw new Error('TOO_MANY_ATTEMPTS')
+        }
+
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
+          where: { email },
         })
 
-        if (!user || !user.isActive) return null
+        if (!user || !user.isActive) {
+          await recordAttempt(email, ip, false)
+          return null
+        }
 
         const valid = await verifyPassword(credentials.password as string, user.password)
-        if (!valid) return null
 
-        // Lo que devolvemos aquí queda en el JWT
+        if (!valid) {
+          await recordAttempt(email, ip, false)
+          return null
+        }
+
+        // Login exitoso — registrar y limpiar intentos
+        await recordAttempt(email, ip, true)
+
         return {
           id:      user.id,
           email:   user.email,
@@ -37,9 +82,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-
   callbacks: {
-    // Persiste rol y storeId en el JWT
     async jwt({ token, user }) {
       if (user) {
         token.role    = (user as any).role
@@ -47,7 +90,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       return token
     },
-    // Expone rol y storeId en la sesión del cliente
     async session({ session, token }) {
       if (session.user) {
         (session.user as any).id      = token.sub
@@ -59,31 +101,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
 })
 
-// ─── Helper para leer sesión en Server Components / Route Handlers ────────────
-
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await auth()
   if (!session?.user) return null
   return session.user as unknown as SessionUser
 }
 
-// ─── Helper de autorización ───────────────────────────────────────────────────
-
-/**
- * Verifica que el usuario tiene acceso a un storeId dado.
- * SUPER_ADMIN puede acceder a cualquier tienda.
- * STORE_ADMIN solo puede acceder a su propia tienda.
- */
 export function canAccessStore(user: SessionUser, storeId: string): boolean {
   if (user.role === 'SUPER_ADMIN') return true
   return user.storeId === storeId
 }
-// ─── Helper para verificar si el usuario es solo visualizador ─────────────────
+
 export function isViewer(user: SessionUser): boolean {
   return user.role === 'VIEWER'
 }
 
-// ─── Helper para verificar si puede escribir (no es VIEWER ni DRIVER) ─────────
 export function canWrite(user: SessionUser): boolean {
   return !['VIEWER', 'DRIVER'].includes(user.role)
 }
