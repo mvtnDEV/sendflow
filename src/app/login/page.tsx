@@ -23,7 +23,11 @@ export default function LoginPage() {
     })
 
     if (res?.error) {
-      setError('Email o contraseña incorrectos')
+      if (res.error.includes('TOO_MANY_ATTEMPTS')) {
+        setError('Demasiados intentos fallidos. Espera 15 minutos antes de intentar de nuevo.')
+      } else {
+        setError('Email o contraseña incorrectos')
+      }
       setLoading(false)
     } else {
       router.push('/dashboard')
@@ -104,7 +108,7 @@ export default function LoginPage() {
               borderRadius: 8, padding: '8px 12px',
               fontSize: 13, color: '#9F1239', marginBottom: 14,
             }}>
-              {error}
+              ⚠️ {error}
             </div>
           )}
 
@@ -122,6 +126,10 @@ export default function LoginPage() {
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
+
+        <div style={{ marginTop: 20, padding: '10px 12px', background: '#F8FAFC', borderRadius: 8, fontSize: 11, color: '#9CA3AF', textAlign: 'center' }}>
+          Máximo 5 intentos por cada 15 minutos
+        </div>
       </div>
     </div>
   )
