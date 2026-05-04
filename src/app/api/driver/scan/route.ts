@@ -3,8 +3,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
 export async function GET(req: NextRequest) {
-  const q = req.nextUrl.searchParams.get('q')?.trim()
-  if (!q) return NextResponse.json({ ok: false, error: 'Parámetro q requerido' }, { status: 400 })
+  const raw = req.nextUrl.searchParams.get('q')?.trim()
+  if (!raw) return NextResponse.json({ ok: false, error: 'Parámetro q requerido' }, { status: 400 })
+
+  // Intentar parsear como JSON (etiquetas ML Flex)
+  let q = raw
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed?.id) q = String(parsed.id)
+  } catch {}
 
   const order = await prisma.order.findFirst({
     where: {
