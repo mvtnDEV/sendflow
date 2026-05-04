@@ -1,5 +1,4 @@
 export const dynamic = 'force-dynamic'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
@@ -13,6 +12,8 @@ export async function GET(req: NextRequest) {
         { id:          q },
         { qrCode:      q },
         { orderNumber: q },
+        { orderNumber: `#${q}` },
+        { externalId:  q },
       ],
     },
     include: {
@@ -22,7 +23,6 @@ export async function GET(req: NextRequest) {
   })
 
   if (!order) return NextResponse.json({ ok: false, error: 'Pedido no encontrado', code: q }, { status: 404 })
-
   return NextResponse.json({ ok: true, data: order })
 }
 
