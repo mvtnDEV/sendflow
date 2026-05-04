@@ -1,0 +1,115 @@
+export const dynamic = 'force-dynamic'
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db/prisma'
+import { verifyApiKey } from '@/lib/utils/api-auth'
+import { createOrder } from '@/lib/services/order.service'
+
+// POST /api/v1/orders — crear pedido
+export async function POST(req: NextRequest) {
+  const apiKey = await verifyApiKey(req)
+  if (!apiKey) return NextResponse.json({ ok: false, error: 'API Key inválida o no enviada' }, { status: 401 })
+
+  const body = await req.json().catch(() => null)
+  if (!body) return NextResponse.json({ ok: false, error: 'Body inválido' }, { status: 400 })
+
+  const {
+    customerName, customerPhone, customerEmail,
+    addressStreet, addressComuna, addressRegion, addressNotes,
+    bultos, externalId, storeId,
+  } = body
+
+  if (!customerName)  return NextResponse.json({ ok: false, error: 'customerName es requerido' }, { status: 400 })
+  if (!addressStreet) return NextResponse.json({ ok: false, error: 'addressStreet es requerido' }, { status: 400 })
+  if (!addressComuna) return NextResponse.json({ ok: false, error: 'addressComuna es requerido' }, { status: 400 })
+  if (!addressRegion) return NextResponse.json({ ok: false, error: 'addressRegion es requerido' }, { status: 400 })
+
+  // Usar storeId del body, o el de la API Key, o la primera tienda activa
+  let resolvedStoreId = storeId || apiKey.storeId
+  if (!resolvedStoreId) {
+    const firstStore = await prisma.store.findFirst({ where: { isActive: true }, select: { id: true } })
+    if (!firstStore) return NextResponse.json({ ok: false, error: 'No hay tiendas disponibles' }, { status: 400 })
+    resolvedStoreId = firstStore.id
+  }
+
+  try {
+    const order = await createOrder({
+      storeId:       resolvedStoreId,
+      platform:      'MANUAL',
+      customerName,
+      customerPhone,
+      customerEmail,
+      addressStreet,
+      addressComuna,
+      addressRegion,
+      addressNotes,
+      bultos:        bultos ?? 1,
+      externalId,
+      createdBy:     'api',
+    })
+
+    return NextResponse.json({
+      ok: true,
+      data: {
+        id:          order.id,
+        orderNumber: order.orderNumber,
+        qrCode:      order.qrCode,
+        status:      order.status,
+        labelUrl:    `${process.env.APP_URL}/api/labels/${order.id}`,
+        createdAt:   order.createdAt,
+      }
+    }, { status: 201 })
+
+  } catch (err) {
+    console.error('[API v1] Error creando pedido:', err)
+    return NextResponse.json({ ok: false, error: 'Error interno del servidor' }, { status: 500 })
+  }
+}
+
+// GET /api/v1/orders — listar pedidos
+export async function GET(req: NextRequest) {
+  const apiKey = await verifyApiKey(req)
+  if (!apiKey) return NextResponse.json({ ok: false, error: 'API Key inválida o no enviada' }, { status: 401 })
+
+  const { searchParams } = req.nextUrl
+  const status   = searchParams.get('status') ?? undefined
+  const date     = searchParams.get('date') ?? undefined
+  const page     = Number(searchParams.get('page') ?? 1)
+  const pageSize = Math.min(Number(searchParams.get('pageSize') ?? 20), 100)
+  const skip     = (page - 1) * pageSize
+
+  const where: any = {}
+  if (apiKey.storeId) where.storeId = apiKey.storeId
+  if (status) where.status = status
+  if (date) {
+    const d = new Date(date)
+    where.createdAt = {
+      gte: new Date(d.setHours(0, 0, 0, 0)),
+      lte: new Date(d.setHours(23, 59, 59, 999)),
+    }
+  }
+
+  const [items, total] = await Promise.all([
+    prisma.order.findMany({
+      where, skip, take: pageSize,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, orderNumber: true, externalId: true,
+        status: true, customerName: true, customerPhone: true,
+        addressStreet: true, addressComuna: true, addressRegion: true,
+        bultos: true, createdAt: true, receivedAt: true,
+        inTransitAt: true, deliveredAt: true,
+        store: { select: { name: true } },
+      },
+    }),
+    prisma.order.count({ where }),
+  ])
+
+  return NextResponse.json({
+    ok: true,
+    data: {
+      items: items.map(o => ({ ...o, storeName: o.store.name })),
+      total, page, pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    }
+  })
+}
