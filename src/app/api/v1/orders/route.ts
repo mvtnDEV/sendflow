@@ -70,23 +70,31 @@ export async function GET(req: NextRequest) {
   const apiKey = await verifyApiKey(req)
   if (!apiKey) return NextResponse.json({ ok: false, error: 'API Key inválida o no enviada' }, { status: 401 })
 
-  const { searchParams } = req.nextUrl
-  const status   = searchParams.get('status') ?? undefined
-  const date     = searchParams.get('date') ?? undefined
-  const page     = Number(searchParams.get('page') ?? 1)
-  const pageSize = Math.min(Number(searchParams.get('pageSize') ?? 20), 100)
-  const skip     = (page - 1) * pageSize
+const status     = searchParams.get('status')     ?? undefined
+const date       = searchParams.get('date')       ?? undefined
+const externalId = searchParams.get('externalId') ?? undefined
+const dateFrom   = searchParams.get('dateFrom')   ?? undefined
+const dateTo     = searchParams.get('dateTo')     ?? undefined
+const page       = Number(searchParams.get('page') ?? 1)
+const pageSize   = Math.min(Number(searchParams.get('pageSize') ?? 20), 100)
+const skip       = (page - 1) * pageSize
 
-  const where: any = {}
-  if (apiKey.storeId) where.storeId = apiKey.storeId
-  if (status) where.status = status
-  if (date) {
-    const d = new Date(date)
-    where.createdAt = {
-      gte: new Date(d.setHours(0, 0, 0, 0)),
-      lte: new Date(d.setHours(23, 59, 59, 999)),
-    }
+const where: any = {}
+if (apiKey.storeId) where.storeId = apiKey.storeId
+if (status)     where.status     = status
+if (externalId) where.externalId = externalId
+if (date) {
+  const d = new Date(date)
+  where.createdAt = {
+    gte: new Date(d.setHours(0, 0, 0, 0)),
+    lte: new Date(d.setHours(23, 59, 59, 999)),
   }
+} else if (dateFrom || dateTo) {
+  where.createdAt = {
+    ...(dateFrom && { gte: new Date(dateFrom) }),
+    ...(dateTo   && { lte: new Date(dateTo + 'T23:59:59') }),
+  }
+}
 
   const [items, total] = await Promise.all([
     prisma.order.findMany({
