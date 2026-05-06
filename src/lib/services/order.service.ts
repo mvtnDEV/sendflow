@@ -122,6 +122,13 @@ export async function updateOrderStatus(
   const timestampField = STATUS_TIMESTAMP[status]
   const now = new Date()
 
+  // Guardar estado anterior antes de actualizar
+  const previous = await prisma.order.findUnique({
+    where:  { id: orderId },
+    select: { status: true },
+  })
+  const previousStatus = previous?.status ?? 'PENDING'
+
   const order = await prisma.order.update({
     where: { id: orderId },
     data: {
@@ -158,9 +165,16 @@ export async function updateOrderStatus(
     }
   }
 
+  // Notificar webhooks de salida
+  try {
+    const { notifyWebhooks } = await import('./webhook.service')
+    await notifyWebhooks(orderId, status, previousStatus)
+  } catch (err) {
+    console.error('[Webhook] Error:', err)
+  }
+
   return order
 }
-
 // ─── Buscar por QR ────────────────────────────────────────────────────────────
 
 export async function findOrderByQr(qrCode: string) {
