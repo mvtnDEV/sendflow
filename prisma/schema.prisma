@@ -220,16 +220,18 @@ model DataDeletionRequest {
 }
 
 model ApiKey {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   name        String
-  key         String   @unique
+  key         String    @unique
   storeId     String?
-  isActive    Boolean  @default(true)
+  webhookUrl  String?   // URL donde SendFlow notificará cambios de estado
+  webhookSecret String? // Secret para firmar los webhooks de salida
+  isActive    Boolean   @default(true)
   lastUsedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  store       Store?   @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  store       Store?    @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   @@index([key])
   @@map("api_keys")
