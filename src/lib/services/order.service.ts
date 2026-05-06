@@ -122,7 +122,6 @@ export async function updateOrderStatus(
   const timestampField = STATUS_TIMESTAMP[status]
   const now = new Date()
 
-  // Guardar estado anterior antes de actualizar
   const previous = await prisma.order.findUnique({
     where:  { id: orderId },
     select: { status: true },
@@ -175,6 +174,7 @@ export async function updateOrderStatus(
 
   return order
 }
+
 // ─── Buscar por QR ────────────────────────────────────────────────────────────
 
 export async function findOrderByQr(qrCode: string) {
@@ -211,7 +211,11 @@ export async function listOrders(filters: OrderFilters) {
   }
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
-    where.createdAt = todayRange()
+    // Mostrar pedidos de hoy + PENDING de días anteriores
+    where.OR = [
+      { createdAt: todayRange() },
+      { status: 'PENDING' },
+    ]
   } else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
       ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
@@ -257,31 +261,44 @@ function todayRange() {
 }
 
 export async function getDashboardStats(storeId?: string, todayOnly = true): Promise<DashboardStats> {
-  const where: any = {}
-  if (storeId)   where.storeId   = storeId
-  if (todayOnly) where.createdAt = todayRange()
+  const todayFilter: any = {}
+  if (storeId) todayFilter.storeId = storeId
+  if (todayOnly) todayFilter.createdAt = todayRange()
 
-  const [counts, byPlatform, byStore] = await Promise.all([
-    prisma.order.groupBy({ by:['status'], where, _count:{ _all:true } }),
-    prisma.order.groupBy({ by:['platform'], where, _count:{ _all:true } }),
+  // PENDING sin filtro de fecha — siempre mostrar todos los pendientes
+  const pendingFilter: any = { status: 'PENDING' }
+  if (storeId) pendingFilter.storeId = storeId
+
+  const [counts, pendingCount, byPlatform, byStore] = await Promise.all([
+    // Stats del día excepto PENDING
+    prisma.order.groupBy({
+      by:    ['status'],
+      where: { ...todayFilter, status: { not: 'PENDING' } },
+      _count: { _all: true },
+    }),
+    // PENDING de todos los días sin filtro de fecha
+    prisma.order.count({ where: pendingFilter }),
+    prisma.order.groupBy({ by: ['platform'], where: todayFilter, _count: { _all: true } }),
     storeId ? [] : prisma.order.groupBy({
-      by: ['storeId'], where, _count:{ _all:true },
+      by: ['storeId'], where: todayFilter, _count: { _all: true },
       orderBy: { _count: { storeId: 'desc' } }, take: 5,
     }),
   ])
 
   const countMap: Record<string, number> = {}
   counts.forEach(c => { countMap[c.status] = c._count._all })
-  const total = Object.values(countMap).reduce((a,b) => a+b, 0)
+  countMap['PENDING'] = pendingCount
+
+  const total = Object.values(countMap).reduce((a, b) => a + b, 0)
 
   let byStoreWithNames: DashboardStats['byStore'] = []
   if (!storeId && byStore.length > 0) {
     const stores = await prisma.store.findMany({
-      where:  { id: { in: (byStore as any[]).map((s:any) => s.storeId) } },
-      select: { id:true, name:true },
+      where:  { id: { in: (byStore as any[]).map((s: any) => s.storeId) } },
+      select: { id: true, name: true },
     })
     const storeMap = Object.fromEntries(stores.map(s => [s.id, s.name]))
-    byStoreWithNames = (byStore as any[]).map((s:any) => ({
+    byStoreWithNames = (byStore as any[]).map((s: any) => ({
       storeId:   s.storeId,
       storeName: storeMap[s.storeId] ?? 'Desconocida',
       count:     s._count._all,
@@ -295,7 +312,7 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
     inTransit:  countMap['IN_TRANSIT'] ?? 0,
     delivered:  countMap['DELIVERED']  ?? 0,
     incident:   countMap['INCIDENT']   ?? 0,
-    byPlatform: byPlatform.map(p => ({ platform:p.platform, count:p._count._all })),
+    byPlatform: byPlatform.map(p => ({ platform: p.platform, count: p._count._all })),
     byStore:    byStoreWithNames,
   }
 }
