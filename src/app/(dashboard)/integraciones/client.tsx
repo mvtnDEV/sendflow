@@ -53,12 +53,14 @@ interface ApiKey {
 
 // ─── Componente API Keys ──────────────────────────────────────────────────────
 function ApiKeysTab() {
-  const [apiKeys,   setApiKeys]   = useState<ApiKey[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [name,      setName]      = useState('')
-  const [creating,  setCreating]  = useState(false)
-  const [newKey,    setNewKey]    = useState<string | null>(null)
-  const [copied,    setCopied]    = useState(false)
+  const [apiKeys,       setApiKeys]       = useState<ApiKey[]>([])
+  const [loading,       setLoading]       = useState(true)
+  const [name,          setName]          = useState('')
+  const [webhookUrl,    setWebhookUrl]    = useState('')
+  const [webhookSecret, setWebhookSecret] = useState('')
+  const [creating,      setCreating]      = useState(false)
+  const [newKey,        setNewKey]        = useState<string | null>(null)
+  const [copied,        setCopied]        = useState(false)
 
   useEffect(() => { loadKeys() }, [])
 
@@ -73,15 +75,17 @@ function ApiKeysTab() {
   async function handleCreate() {
     if (!name.trim()) return
     setCreating(true)
-    const res  = await fetch('/api/api-keys', {
+    const res = await fetch('/api/api-keys', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name: name.trim() }),
+      body:    JSON.stringify({ name: name.trim(), webhookUrl, webhookSecret }),
     })
     const data = await res.json()
     if (data.ok) {
       setNewKey(data.data.key)
       setName('')
+      setWebhookUrl('')
+      setWebhookSecret('')
       loadKeys()
     }
     setCreating(false)
@@ -108,6 +112,8 @@ function ApiKeysTab() {
           <div style={{ fontSize:13, color:'#6B7280', marginBottom:16 }}>
             Genera una API Key para que sistemas externos se integren con SendFlow.
           </div>
+
+          {/* Nombre */}
           <div style={{ marginBottom:12 }}>
             <label style={{ fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }}>
               Nombre de la integración
@@ -120,6 +126,39 @@ function ApiKeysTab() {
               style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit' }}
             />
           </div>
+
+          {/* Webhook URL */}
+          <div style={{ marginBottom:12 }}>
+            <label style={{ fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }}>
+              Webhook URL <span style={{ color:'#9CA3AF', fontWeight:400 }}>(opcional)</span>
+            </label>
+            <input
+              value={webhookUrl}
+              onChange={e => setWebhookUrl(e.target.value)}
+              placeholder="https://tu-sistema.cl/webhook/sendflow"
+              style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit' }}
+            />
+            <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>
+              SendFlow notificará cambios de estado a esta URL automáticamente
+            </div>
+          </div>
+
+          {/* Webhook Secret */}
+          <div style={{ marginBottom:16 }}>
+            <label style={{ fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }}>
+              Webhook Secret <span style={{ color:'#9CA3AF', fontWeight:400 }}>(opcional)</span>
+            </label>
+            <input
+              value={webhookSecret}
+              onChange={e => setWebhookSecret(e.target.value)}
+              placeholder="Secret para verificar la firma del webhook"
+              style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'monospace' }}
+            />
+            <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>
+              Firma HMAC-SHA256 enviada en header X-SendFlow-Signature
+            </div>
+          </div>
+
           <button onClick={handleCreate} disabled={creating || !name.trim()}
             style={{ width:'100%', padding:'10px', background:creating||!name.trim()?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:creating||!name.trim()?'not-allowed':'pointer' }}>
             {creating ? 'Generando...' : '+ Generar API Key'}
@@ -191,7 +230,10 @@ function ApiKeysTab() {
           <strong style={{ color:'#374151' }}>Cómo usar la API Key:</strong><br/>
           Agrega el header en cada petición:<br/>
           <span style={{ fontFamily:'monospace', color:'#2563EB' }}>X-API-Key: sk_live_xxxx</span><br/>
-          URL base: <span style={{ fontFamily:'monospace', color:'#2563EB' }}>{typeof window !== 'undefined' ? window.location.origin : ''}/api/v1</span>
+          URL base: <span style={{ fontFamily:'monospace', color:'#2563EB' }}>{typeof window !== 'undefined' ? window.location.origin : ''}/api/v1</span><br/><br/>
+          <strong style={{ color:'#374151' }}>Webhook de salida:</strong><br/>
+          Si configuras una URL de webhook, SendFlow enviará un POST cada vez que un pedido cambie de estado con header:<br/>
+          <span style={{ fontFamily:'monospace', color:'#2563EB' }}>X-SendFlow-Signature: sha256=xxxxx</span>
         </div>
       </div>
     </div>
