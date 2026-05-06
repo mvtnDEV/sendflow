@@ -31,15 +31,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
   }
 
-  const { name } = await req.json().catch(() => ({}))
+  const { name, webhookUrl, webhookSecret } = await req.json().catch(() => ({}))
   if (!name?.trim()) {
     return NextResponse.json({ ok: false, error: 'Nombre requerido' }, { status: 400 })
   }
 
   const key    = generateApiKey()
   const apiKey = await prisma.apiKey.create({
-    data: { name: name.trim(), key },
+    data: {
+      name:          name.trim(),
+      key,
+      webhookUrl:    webhookUrl?.trim()    || null,
+      webhookSecret: webhookSecret?.trim() || null,
+    },
   })
 
-  return NextResponse.json({ ok: true, data: { id: apiKey.id, name: apiKey.name, key: apiKey.key } }, { status: 201 })
+  return NextResponse.json({
+    ok: true,
+    data: { id: apiKey.id, name: apiKey.name, key: apiKey.key }
+  }, { status: 201 })
 }
