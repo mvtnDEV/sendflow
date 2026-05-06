@@ -30,14 +30,29 @@ const PLATFORM_LABEL: Record<string, string> = {
   MANUAL:       'Manual',
 }
 
+function fmtDate(d: Date) {
+  const now     = new Date()
+  const today   = new Date(now.toLocaleDateString('en-CA', { timeZone: TZ }))
+  const orderDay= new Date(new Date(d).toLocaleDateString('en-CA', { timeZone: TZ }))
+  const diffMs  = today.getTime() - orderDay.getTime()
+  const diffDays= Math.round(diffMs / (1000 * 60 * 60 * 24))
+  if (diffDays === 0) return new Date(d).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit', timeZone: TZ })
+  if (diffDays === 1) return 'ayer'
+  return `hace ${diffDays} días`
+}
+
 export default async function DashboardPage() {
   const user    = await getSessionUser()
   const storeId = user?.role === 'STORE_ADMIN' ? (user?.storeId ?? undefined) : undefined
+  const canSeePending = user?.role === 'SUPER_ADMIN' || user?.role === 'STORE_ADMIN'
 
-  const [statsHoy, statsTotal, recientes] = await Promise.all([
+  const [statsHoy, statsTotal, recientes, pendientes] = await Promise.all([
     getDashboardStats(storeId, true),
     getDashboardStats(storeId, false),
-    listOrders({ storeId, todayOnly: true, pageSize: 8, page: 1 }),
+    listOrders({ storeId, todayOnly: true, pageSize: 8, page: 1, status: undefined }),
+    canSeePending
+      ? listOrders({ storeId, status: 'PENDING', pageSize: 5, page: 1 })
+      : Promise.resolve({ items: [], total: 0, page: 1, pageSize: 5, totalPages: 0 }),
   ])
 
   const pct = (n: number) => statsHoy.total > 0 ? Math.round((n / statsHoy.total) * 100) : 0
@@ -45,6 +60,9 @@ export default async function DashboardPage() {
   const today = new Date().toLocaleDateString('es-CL', {
     weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone: TZ,
   })
+
+  // Pedidos de hoy excluyendo PENDING (ya se muestran en panel separado)
+  const recientesActivos = recientes.items.filter(o => o.status !== 'PENDING')
 
   return (
     <div>
@@ -63,10 +81,10 @@ export default async function DashboardPage() {
       {/* Métricas del día */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:12, marginBottom:20 }}>
         {[
-          { label:'Pedidos hoy',     value:statsHoy.total,     accent:'#2563EB', sub:null },
-          { label:'En camino',       value:statsHoy.inTransit, accent:'#7C3AED', sub:`${pct(statsHoy.inTransit)}%` },
-          { label:'Entregados hoy',  value:statsHoy.delivered, accent:'#16A34A', sub:`${pct(statsHoy.delivered)}%` },
-          { label:'Por recepcionar', value:statsHoy.pending,   accent:'#D97706',
+          { label:'Pedidos hoy',    value:statsHoy.total,     accent:'#2563EB', sub:null },
+          { label:'En camino',      value:statsHoy.inTransit, accent:'#7C3AED', sub:`${pct(statsHoy.inTransit)}%` },
+          { label:'Entregados hoy', value:statsHoy.delivered, accent:'#16A34A', sub:`${pct(statsHoy.delivered)}%` },
+          { label:'Recepcionados',  value:statsHoy.received,  accent:'#D97706',
             sub: statsHoy.incident > 0 ? `${statsHoy.incident} no entregado${statsHoy.incident!==1?'s':''}` : null },
         ].map(m => (
           <div key={m.label} style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:'18px 20px', borderLeft:`3px solid ${m.accent}` }}>
@@ -77,7 +95,56 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {statsHoy.total === 0 ? (
+      {/* Panel Por recepcionar — solo Super Admin y Store Admin */}
+      {canSeePending && statsHoy.pending > 0 && (
+        <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:12, padding:16, marginBottom:16 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:16 }}>🕐</span>
+              <span style={{ fontSize:14, fontWeight:500, color:'#92400E' }}>Por recepcionar</span>
+              <span style={{ fontSize:11, fontWeight:500, background:'#FEF3C7', color:'#92400E', padding:'2px 8px', borderRadius:20, border:'1px solid #FDE68A' }}>
+                {statsHoy.pending} pedido{statsHoy.pending!==1?'s':''}
+              </span>
+            </div>
+            <Link href="/recepciones?status=PENDING" style={{ fontSize:12, color:'#2563EB', textDecoration:'none' }}>
+              Ver todos →
+            </Link>
+          </div>
+
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {pendientes.items.map(o => {
+              const now     = new Date()
+              const today   = new Date(now.toLocaleDateString('en-CA', { timeZone: TZ }))
+              const orderDay= new Date(new Date(o.createdAt).toLocaleDateString('en-CA', { timeZone: TZ }))
+              const isYesterday = today.getTime() - orderDay.getTime() > 0
+              return (
+                <Link key={o.id} href={`/recepciones/${o.id}`}
+                  style={{ background:'white', border:'1px solid #FDE68A', borderRadius:8, padding:'10px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', textDecoration:'none' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ fontSize:13, fontWeight:500, color:'#1D4ED8', fontFamily:'monospace' }}>{o.orderNumber}</span>
+                    <span style={{ fontSize:13, color:'#374151' }}>{o.customerName}</span>
+                    <span style={{ fontSize:11, color:'#6B7280' }}>{o.addressComuna}</span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:11, color:'#6B7280' }}>{PLATFORM_LABEL[o.platform] ?? o.platform}</span>
+                    <span style={{ fontSize:11, background:'#FFFBEB', color:'#92400E', padding:'2px 8px', borderRadius:20, border:'1px solid #FDE68A', fontWeight:500 }}>
+                      Pendiente{isYesterday ? ' · ' + fmtDate(o.createdAt) : ''}
+                    </span>
+                  </div>
+                </Link>
+              )
+            })}
+            {pendientes.total > 5 && (
+              <Link href="/recepciones?status=PENDING"
+                style={{ textAlign:'center', fontSize:12, color:'#92400E', padding:'6px', textDecoration:'none' }}>
+                + {pendientes.total - 5} pedidos más →
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
+      {recientesActivos.length === 0 && statsHoy.pending === 0 ? (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
           <div style={{ background:'white', border:'2px dashed #E2E8F0', borderRadius:12, padding:36, textAlign:'center' }}>
             <div style={{ fontSize:36, marginBottom:10 }}>📦</div>
@@ -105,12 +172,12 @@ export default async function DashboardPage() {
             </Link>
           </div>
         </div>
-      ) : (
+      ) : recientesActivos.length > 0 ? (
         <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:14 }}>
-          {/* Pedidos de hoy */}
+          {/* Pedidos de hoy en curso */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
             <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #F1F5F9' }}>
-              <span style={{ fontSize:13, fontWeight:500 }}>Últimos pedidos de hoy</span>
+              <span style={{ fontSize:13, fontWeight:500 }}>Pedidos de hoy en curso</span>
               <Link href="/recepciones" style={{ fontSize:12, color:'#2563EB', textDecoration:'none' }}>
                 Ver todos →
               </Link>
@@ -124,7 +191,7 @@ export default async function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {recientes.items.map(o => {
+                {recientesActivos.map(o => {
                   const sc = STATUS_COLOR[o.status] ?? STATUS_COLOR.PENDING
                   return (
                     <tr key={o.id}>
@@ -179,8 +246,8 @@ export default async function DashboardPage() {
               <div style={{ fontSize:13, fontWeight:500, marginBottom:12 }}>Acciones rápidas</div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {[
-                  { href:'/pedidos/nuevo',          label:'+ Nuevo pedido',           bg:'#2563EB', color:'white',    border:'none' },
-                  { href:'/pedidos/carga-masiva',    label:'⬆ Carga masiva Excel',    bg:'#0B1628', color:'white',    border:'none' },
+                  { href:'/pedidos/nuevo',          label:'+ Nuevo pedido',            bg:'#2563EB', color:'white',    border:'none' },
+                  { href:'/pedidos/carga-masiva',    label:'⬆ Carga masiva Excel',     bg:'#0B1628', color:'white',    border:'none' },
                   { href:'/recepciones?historial=1', label:'📋 Ver historial completo', bg:'white',   color:'#374151', border:'1px solid #E2E8F0' },
                 ].map(a => (
                   <Link key={a.href} href={a.href}
@@ -192,7 +259,7 @@ export default async function DashboardPage() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
