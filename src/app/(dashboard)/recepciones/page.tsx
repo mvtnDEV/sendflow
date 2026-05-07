@@ -20,11 +20,11 @@ const STATUS_LABEL: Record<string, string> = {
   INCIDENT:   'No entregado',
 }
 const PLATFORM_LABEL: Record<string, string> = {
-  SHOPIFY:       'Shopify',
-  MERCADOLIBRE:  'ML Flex',
-  WOOCOMMERCE:   'WooCommerce',
-  JUMPSELLER:    'Jumpseller',
-  MANUAL:        'Manual',
+  SHOPIFY:      'Shopify',
+  MERCADOLIBRE: 'ML Flex',
+  WOOCOMMERCE:  'WooCommerce',
+  JUMPSELLER:   'Jumpseller',
+  MANUAL:       'Manual',
 }
 
 const TZ = 'America/Santiago'
@@ -40,7 +40,7 @@ interface Props {
   searchParams: {
     status?: string; search?: string; platform?: string
     dateFrom?: string; dateTo?: string; historial?: string
-    page?: string; storeId?: string
+    page?: string; storeId?: string; pageSize?: string
   }
 }
 
@@ -49,6 +49,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
   const userStoreId = user?.role === 'STORE_ADMIN' ? (user?.storeId ?? undefined) : undefined
   const filterStore = userStoreId || searchParams.storeId || undefined
   const page        = Number(searchParams.page ?? 1)
+  const pageSize    = Number(searchParams.pageSize ?? 50)
   const verTodo     = searchParams.historial === '1'
   const todayOnly   = !verTodo && !searchParams.dateFrom && !searchParams.dateTo
   const today       = new Date()
@@ -63,7 +64,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
       platform: searchParams.platform,
       dateFrom: searchParams.dateFrom,
       dateTo:   searchParams.dateTo,
-      todayOnly, page, pageSize: 15,
+      todayOnly, page, pageSize,
     }),
     user?.role === 'SUPER_ADMIN'
       ? prisma.store.findMany({ select: { id:true, name:true }, orderBy: { name:'asc' } })
@@ -71,6 +72,21 @@ export default async function RecepcionesPage({ searchParams }: Props) {
   ])
 
   const pct = (n: number) => stats.total > 0 ? Math.round((n / stats.total) * 100) : 0
+
+  // Construir query string para paginación manteniendo filtros
+  function buildPageUrl(p: number) {
+    const params = new URLSearchParams()
+    if (verTodo) params.set('historial', '1')
+    if (searchParams.storeId)  params.set('storeId',  searchParams.storeId)
+    if (searchParams.status)   params.set('status',   searchParams.status)
+    if (searchParams.search)   params.set('search',   searchParams.search)
+    if (searchParams.platform) params.set('platform', searchParams.platform)
+    if (searchParams.dateFrom) params.set('dateFrom', searchParams.dateFrom)
+    if (searchParams.dateTo)   params.set('dateTo',   searchParams.dateTo)
+    if (pageSize !== 50)       params.set('pageSize', String(pageSize))
+    params.set('page', String(p))
+    return `/recepciones?${params.toString()}`
+  }
 
   return (
     <div>
@@ -127,7 +143,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
       </div>
 
       {/* Filtros */}
-      <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', alignItems:'center' }}>
+      <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', alignItems:'flex-start' }}>
         <form method="GET" style={{ display:'flex', gap:8, flex:1, flexWrap:'wrap' }}>
           {verTodo && <input type="hidden" name="historial" value="1"/>}
           <div style={{ display:'flex', alignItems:'center', gap:8, background:'white', border:'1px solid #E2E8F0', borderRadius:8, padding:'7px 12px', flex:1, minWidth:200 }}>
@@ -151,6 +167,13 @@ export default async function RecepcionesPage({ searchParams }: Props) {
             style={{ padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', fontFamily:'inherit' }}>
             <option value="">Todas las plataformas</option>
             {Object.entries(PLATFORM_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <select name="pageSize" defaultValue={String(pageSize)}
+            style={{ padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', fontFamily:'inherit' }}>
+            <option value="25">25 por página</option>
+            <option value="50">50 por página</option>
+            <option value="100">100 por página</option>
+            <option value="200">200 por página</option>
           </select>
           {verTodo && (<>
             <input type="date" name="dateFrom" defaultValue={searchParams.dateFrom}
@@ -213,7 +236,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'#F8FAFC' }}>
-                  {['N° pedido','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
+                  {['N° pedido','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
                     <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -228,9 +251,14 @@ export default async function RecepcionesPage({ searchParams }: Props) {
                           {order.orderNumber}
                         </Link>
                       </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
+                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>
+                          {(order as any).store?.name ?? '—'}
+                        </span>
+                      </td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{order.customerName}</td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{order.customerPhone || '—'}</td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280', maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                         {order.addressStreet}, {order.addressComuna}
                       </td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>
@@ -246,11 +274,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
                       </td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
                         {fmtTime(order.createdAt)}
-                        {!todayOnly && (
-                          <div style={{ fontSize:11 }}>
-                            {fmtDate(order.createdAt)}
-                          </div>
-                        )}
+                        {!todayOnly && <div style={{ fontSize:11 }}>{fmtDate(order.createdAt)}</div>}
                       </td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
                         <Link href={`/recepciones/${order.id}`} style={{ color:'#9CA3AF', fontSize:16, textDecoration:'none' }}>→</Link>
@@ -269,11 +293,11 @@ export default async function RecepcionesPage({ searchParams }: Props) {
                 <div style={{ display:'flex', gap:6, alignItems:'center' }}>
                   <span>Página {page} de {result.totalPages}</span>
                   {page > 1 && (
-                    <Link href={`?page=${page-1}${verTodo?'&historial=1':''}${searchParams.storeId?`&storeId=${searchParams.storeId}`:''}${searchParams.status?`&status=${searchParams.status}`:''}${searchParams.search?`&search=${searchParams.search}`:''}`}
+                    <Link href={buildPageUrl(page - 1)}
                       style={{ padding:'4px 10px', border:'1px solid #E2E8F0', borderRadius:6, textDecoration:'none', color:'#374151' }}>←</Link>
                   )}
                   {page < result.totalPages && (
-                    <Link href={`?page=${page+1}${verTodo?'&historial=1':''}${searchParams.storeId?`&storeId=${searchParams.storeId}`:''}${searchParams.status?`&status=${searchParams.status}`:''}${searchParams.search?`&search=${searchParams.search}`:''}`}
+                    <Link href={buildPageUrl(page + 1)}
                       style={{ padding:'4px 10px', border:'1px solid #E2E8F0', borderRadius:6, textDecoration:'none', color:'#374151' }}>→</Link>
                   )}
                 </div>
