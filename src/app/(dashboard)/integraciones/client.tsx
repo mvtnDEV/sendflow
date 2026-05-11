@@ -256,42 +256,42 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
   const store       = stores.find(s => s.id === storeId)
   const integration = store?.integrations.find(i => i.platform === tab)
 
-  async function handleSave() {
-    if (!storeId) return
-    setSaving(true)
-    try {
-      const credentials: Record<string,string> = {}
-      if (tab === 'SHOPIFY') {
-        credentials.domain        = form.key1
-        credentials.accessToken   = form.key2
-        credentials.webhookSecret = form.secret
-      } else if (tab === 'WOOCOMMERCE') {
-        credentials.url            = form.key1
-        credentials.consumerKey    = form.key2
-        credentials.consumerSecret = form.key3
-        credentials.webhookSecret  = form.secret
-      } else if (tab === 'JUMPSELLER') {
-        credentials.login        = form.key1
-        credentials.authToken    = form.key2
-        credentials.webhookToken = form.secret
-      } else {
-        credentials.clientId     = form.key1
-        credentials.clientSecret = form.key2
-      }
-      const res = await fetch(`/api/stores/${storeId}/integrations`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ platform: tab, credentials }),
-      })
-      if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500) }
-    } finally { setSaving(false) }
-  }
+async function handleSave() {
+  if (!storeId) return
+  setSaving(true)
+  try {
+    const credentials: Record<string,string> = {}
+    let externalStoreId: string | undefined = undefined
 
-  async function handleTest() {
-    setTestOk(null)
-    await new Promise(r => setTimeout(r, 1200))
-    setTestOk(form.key1.length > 0 && form.key2.length > 0)
-  }
+    if (tab === 'SHOPIFY') {
+      credentials.domain        = form.key1
+      credentials.accessToken   = form.key2
+      credentials.webhookSecret = form.secret
+      externalStoreId           = form.key1 // dominio de Shopify
+    } else if (tab === 'WOOCOMMERCE') {
+      credentials.url            = form.key1
+      credentials.consumerKey    = form.key2
+      credentials.consumerSecret = form.key3
+      credentials.webhookSecret  = form.secret
+      externalStoreId            = form.key1 // URL de la tienda WooCommerce
+    } else if (tab === 'JUMPSELLER') {
+      credentials.login        = form.key1
+      credentials.authToken    = form.key2
+      credentials.webhookToken = form.secret
+      externalStoreId          = form.key1 // login de Jumpseller
+    } else {
+      credentials.clientId     = form.key1
+      credentials.clientSecret = form.key2
+    }
+
+    const res = await fetch(`/api/stores/${storeId}/integrations`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ platform: tab, credentials, externalStoreId }),
+    })
+    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500) }
+  } finally { setSaving(false) }
+}
 
   function copyWebhookUrl() {
     const base  = window.location.origin
