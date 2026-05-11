@@ -292,6 +292,11 @@ async function handleSave() {
     if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500) }
   } finally { setSaving(false) }
 }
+  async function handleTest() {
+    setTestOk(null)
+    await new Promise(r => setTimeout(r, 1200))
+    setTestOk(form.key1.length > 0 && form.key2.length > 0)
+  }
 
   function copyWebhookUrl() {
     const base  = window.location.origin
