@@ -17,18 +17,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true })
   }
 
-  // Buscar integración por dominio (source = URL de la tienda)
-  const integration = await prisma.storeIntegration.findFirst({
-    where: {
-      platform:        'WOOCOMMERCE',
-      externalStoreId: source,
-      isActive:        true,
-    },
-  })
 
-  if (!integration) {
-    return NextResponse.json({ error: 'Integración no encontrada' }, { status: 404 })
-  }
+// Buscar integración por dominio — flexible para manejar trailing slash y variantes
+const normalizeUrl = (url: string) => url.replace(/\/$/, '').toLowerCase()
+const sourceNorm   = normalizeUrl(source)
+
+const allIntegrations = await prisma.storeIntegration.findMany({
+  where: { platform: 'WOOCOMMERCE', isActive: true },
+})
+
+const integration = allIntegrations.find(i =>
+  i.externalStoreId && normalizeUrl(i.externalStoreId) === sourceNorm
+)
+
+if (!integration) {
+  console.warn('[WC webhook] Integración no encontrada para source:', source)
+  return NextResponse.json({ error: 'Integración no encontrada' }, { status: 404 })
+}
 
   // Credenciales: "consumerKey|consumerSecret|webhookSecret"
   const creds  = decrypt(integration.apiKeyEnc)
