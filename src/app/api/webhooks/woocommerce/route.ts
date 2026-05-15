@@ -37,7 +37,7 @@ if (!integration) {
 
   // Credenciales: "consumerKey|consumerSecret|webhookSecret"
   const creds  = decrypt(integration.apiKeyEnc)
-  const [,,webhookSecret] = creds.split('|')
+  const [,,,webhookSecret] = creds.split('|')
 
   const valid = verifyWCWebhook(rawBody, signature, webhookSecret)
   if (!valid) {
