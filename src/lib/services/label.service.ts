@@ -19,14 +19,14 @@ export async function generateQRImage(qrCode: string): Promise<string> {
   return QRCode.toDataURL(trackingUrl, {
     errorCorrectionLevel: 'M',
     margin: 2,
-    width:  200,
+    width:  220,
     color: { dark: '#0B1628', light: '#FFFFFF' },
   })
 }
 
-// ─── Etiqueta individual (con numeración de bulto opcional) ───────────────────
+// ─── Etiqueta individual ──────────────────────────────────────────────────────
 
-export function buildSingleLabel(data: LabelData, qrDataUrl: string, bultoNum?: number, totalBultos?: number): string {
+export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
   const fecha = new Date(data.createdAt).toLocaleDateString('es-CL', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
@@ -37,9 +37,6 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string, bultoNum?: 
     JUMPSELLER:   'Jumpseller',
     MANUAL:       'Manual',
   }
-  const bultoBadge = bultoNum && totalBultos
-    ? `Bulto ${bultoNum}/${totalBultos}`
-    : `${data.bultos} ${data.bultos === 1 ? 'bulto' : 'bultos'}`
 
   return `
   <div class="label">
@@ -57,13 +54,15 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string, bultoNum?: 
         <div class="val">${data.addressStreet}<br>${data.addressComuna}, ${data.addressRegion}</div>
         <div class="lbl">Tienda</div>
         <div class="val sm">${data.storeName}</div>
+        <div class="lbl">Bultos</div>
+        <div class="val">${data.bultos} ${data.bultos === 1 ? 'bulto' : 'bultos'}</div>
       </div>
       <div class="qr-col">
         <img src="${qrDataUrl}" alt="QR tracking">
-        <div class="bultos-badge">${bultoBadge}</div>
         <div class="qr-hint">Escanea para<br>rastrear tu pedido</div>
       </div>
     </div>
+    <div class="spacer"></div>
     <div class="footer">
       <span>${fecha}</span>
       <span>${process.env.APP_URL ?? 'sendflow.cl'}</span>
@@ -71,9 +70,9 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string, bultoNum?: 
   </div>`
 }
 
-// ─── HTML base con estilos compartidos ───────────────────────────────────────
+// ─── HTML wrapper con estilos 10x15cm ────────────────────────────────────────
 
-function buildHTMLWrapper(labelsHTML: string, autoprint = true): string {
+function buildHTMLWrapper(labelsHTML: string): string {
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -81,61 +80,90 @@ function buildHTMLWrapper(labelsHTML: string, autoprint = true): string {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: white; color: #0B1628; }
+
   .label {
     width: 10cm;
+    height: 15cm;
     background: white;
     page-break-after: always;
     break-after: page;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
   .label:last-child { page-break-after: avoid; break-after: avoid; }
-  .accent { height: 5px; background: #2563EB; }
+
+  .accent { height: 6px; background: #2563EB; flex-shrink: 0; }
+
   .header {
-    padding: 8px 12px;
+    padding: 10px 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid #F1F5F9;
     border-left: 1px solid #E2E8F0;
     border-right: 1px solid #E2E8F0;
+    flex-shrink: 0;
   }
-  .logo { font-size: 14px; font-weight: bold; color: #0B1628; }
+  .logo { font-size: 16px; font-weight: bold; color: #0B1628; }
   .logo span { color: #2563EB; }
-  .order-num { font-size: 18px; font-weight: bold; color: #0B1628; letter-spacing: 0.5px; font-family: monospace; }
+  .order-num { font-size: 20px; font-weight: bold; color: #0B1628; letter-spacing: 0.5px; font-family: monospace; }
+
   .body {
-    padding: 10px 12px;
+    padding: 14px 14px;
     display: flex;
-    gap: 10px;
+    gap: 12px;
     border-left: 1px solid #E2E8F0;
     border-right: 1px solid #E2E8F0;
+    flex-shrink: 0;
   }
   .info { flex: 1; }
-  .lbl { font-size: 8px; text-transform: uppercase; letter-spacing: 0.08em; color: #9CA3AF; margin-bottom: 1px; }
-  .val { font-size: 11px; font-weight: bold; color: #0B1628; margin-bottom: 7px; line-height: 1.3; }
-  .val.sm { font-size: 10px; font-weight: normal; }
-  .qr-col { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 70px; }
-  .qr-col img { width: 64px; height: 64px; border: 1px solid #E2E8F0; border-radius: 4px; }
-  .bultos-badge { background: #EFF6FF; color: #1D4ED8; font-size: 9px; font-weight: bold; padding: 2px 7px; border-radius: 4px; }
-  .qr-hint { font-size: 7px; color: #9CA3AF; text-align: center; line-height: 1.4; }
-  .platform-badge { font-size: 8px; font-weight: bold; color: #1D4ED8; background: #EFF6FF; padding: 1px 6px; border-radius: 10px; margin-bottom: 7px; display: inline-block; }
-  .footer { padding: 5px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-top: 1px solid #F1F5F9; display: flex; justify-content: space-between; font-size: 8px; color: #9CA3AF; }
+  .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #9CA3AF; margin-bottom: 2px; }
+  .val { font-size: 13px; font-weight: bold; color: #0B1628; margin-bottom: 10px; line-height: 1.4; }
+  .val.sm { font-size: 12px; font-weight: normal; }
+
+  .qr-col { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 90px; }
+  .qr-col img { width: 85px; height: 85px; border: 1px solid #E2E8F0; border-radius: 4px; }
+  .qr-hint { font-size: 8px; color: #9CA3AF; text-align: center; line-height: 1.4; }
+
+  .platform-badge {
+    font-size: 9px; font-weight: bold; color: #1D4ED8;
+    background: #EFF6FF; padding: 2px 8px; border-radius: 10px;
+    margin-bottom: 10px; display: inline-block;
+  }
+
+  .spacer { flex: 1; border-left: 1px solid #E2E8F0; border-right: 1px solid #E2E8F0; }
+
+  .footer {
+    padding: 8px 14px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-top: 1px solid #F1F5F9;
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: #9CA3AF;
+    flex-shrink: 0;
+  }
+
   @media print {
     body { margin: 0; }
-    @page { margin: 0.3cm; size: 10cm auto; }
+    @page { margin: 0; size: 10cm 15cm; }
   }
 </style>
 </head>
 <body>
   ${labelsHTML}
-  ${autoprint ? '<script>window.onload = () => { window.print(); }</script>' : ''}
+  <script>window.onload = () => { window.print(); }</script>
 </body>
 </html>`
 }
 
-// ─── Generar etiquetas de un pedido (1 por bulto) ────────────────────────────
+// ─── Generar etiqueta de un pedido ───────────────────────────────────────────
 
-export async function generateLabelForOrder(orderId: string, allBultos = false): Promise<{
-  html:   string
-  order:  LabelData
+export async function generateLabelForOrder(orderId: string): Promise<{
+  html:  string
+  order: LabelData
 }> {
   const order = await prisma.order.findUnique({
     where:   { id: orderId },
@@ -156,17 +184,8 @@ export async function generateLabelForOrder(orderId: string, allBultos = false):
     createdAt:     order.createdAt,
   }
 
-  const qrDataUrl = await generateQRImage(order.qrCode)
-
-  let labelsHTML = ''
-  if (allBultos && order.bultos > 1) {
-    // Una etiqueta por cada bulto con numeración
-    for (let i = 1; i <= order.bultos; i++) {
-      labelsHTML += buildSingleLabel(labelData, qrDataUrl, i, order.bultos)
-    }
-  } else {
-    labelsHTML = buildSingleLabel(labelData, qrDataUrl)
-  }
+  const qrDataUrl  = await generateQRImage(order.qrCode)
+  const labelsHTML = buildSingleLabel(labelData, qrDataUrl)
 
   return { html: buildHTMLWrapper(labelsHTML), order: labelData }
 }
@@ -195,14 +214,7 @@ export async function generateBulkLabels(orderIds: string[]): Promise<string> {
       createdAt:     order.createdAt,
     }
     const qrDataUrl = await generateQRImage(order.qrCode)
-    // Una etiqueta por cada bulto
-    if (order.bultos > 1) {
-      for (let i = 1; i <= order.bultos; i++) {
-        labelsHTML += buildSingleLabel(labelData, qrDataUrl, i, order.bultos)
-      }
-    } else {
-      labelsHTML += buildSingleLabel(labelData, qrDataUrl)
-    }
+    labelsHTML += buildSingleLabel(labelData, qrDataUrl)
   }
 
   return buildHTMLWrapper(labelsHTML)
