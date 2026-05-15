@@ -212,7 +212,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 <div style={{ fontSize:14, fontWeight:500, color:'#475569' }}>Pedido anulado</div>
               </div>
             )}
-            <OrderActions orderId={order.id} currentStatus={order.status} />
+            <OrderActions orderId={order.id} currentStatus={order.status} userRole={user?.role ?? ''} />
           </div>
         </div>
       </div>
