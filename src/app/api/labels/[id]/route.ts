@@ -23,8 +23,7 @@ export async function GET(
   const format    = req.nextUrl.searchParams.get('format') ?? 'html'
   const allBultos = req.nextUrl.searchParams.get('allBultos') === '1'
 
-  try {
-    const { html, order: labelData } = await generateLabelForOrder(params.id, allBultos)
+  const { html, order: labelData } = await generateLabelForOrder(params.id)
 
     if (format === 'json') {
       return NextResponse.json({ ok: true, data: labelData })
