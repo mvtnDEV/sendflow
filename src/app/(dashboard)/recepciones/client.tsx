@@ -12,10 +12,28 @@ export default function RecepcionesClient({
 }) {
   const [loadingExport,      setLoadingExport]      = useState(false)
   const [loadingRecepcionar, setLoadingRecepcionar] = useState(false)
+  const [loadingEtiquetas,   setLoadingEtiquetas]   = useState(false)
   const [resultado,          setResultado]          = useState<{ ok: boolean; msg: string } | null>(null)
+  const [selected,           setSelected]           = useState<Set<string>>(new Set())
 
-  // Pedidos PENDING visibles en la lista actual
   const pendientes = orders.filter(o => o.status === 'PENDING')
+
+  function toggleSelected(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    if (selected.size === orders.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(orders.map((o: any) => o.id)))
+    }
+  }
 
   async function exportExcel() {
     setLoadingExport(true)
@@ -69,12 +87,10 @@ export default function RecepcionesClient({
     if (pendientes.length === 0) return
     const confirmar = confirm(`¿Recepcionar ${pendientes.length} pedido${pendientes.length !== 1 ? 's' : ''} pendiente${pendientes.length !== 1 ? 's' : ''}?\n\nEsto los enviará automáticamente a Envios Now.`)
     if (!confirmar) return
-
     setLoadingRecepcionar(true)
     setResultado(null)
-
     try {
-      const ids = pendientes.map(o => o.id)
+      const ids  = pendientes.map(o => o.id)
       const res  = await fetch('/api/orders/batch-receive', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -87,21 +103,67 @@ export default function RecepcionesClient({
       } else {
         setResultado({ ok: false, msg: `❌ Error: ${data.error}` })
       }
-    } catch (err) {
+    } catch {
       setResultado({ ok: false, msg: '❌ Error al recepcionar' })
     } finally {
       setLoadingRecepcionar(false)
     }
   }
 
+  async function imprimirEtiquetas() {
+    const ids = selected.size > 0 ? Array.from(selected) : orders.map((o: any) => o.id)
+    if (ids.length === 0) { alert('No hay pedidos seleccionados'); return }
+    setLoadingEtiquetas(true)
+    try {
+      const res = await fetch('/api/labels/bulk', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ orderIds: ids }),
+      })
+      if (!res.ok) { alert('Error generando etiquetas'); return }
+      const html = await res.text()
+      const win  = window.open('', '_blank')
+      if (win) {
+        win.document.write(html)
+        win.document.close()
+      }
+    } catch {
+      alert('Error generando etiquetas')
+    } finally {
+      setLoadingEtiquetas(false)
+    }
+  }
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-      <div style={{ display:'flex', gap:8 }}>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+
         {/* Recepcionar todos */}
         {pendientes.length > 0 && (
           <button onClick={recepcionarTodos} disabled={loadingRecepcionar}
             style={{ padding:'7px 14px', background:loadingRecepcionar?'#93C5FD':'#D97706', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingRecepcionar?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:5 }}>
             {loadingRecepcionar ? '⏳ Recepcionando...' : `📥 Recepcionar todos (${pendientes.length})`}
+          </button>
+        )}
+
+        {/* Imprimir etiquetas */}
+        {orders.length > 0 && (
+          <button onClick={imprimirEtiquetas} disabled={loadingEtiquetas}
+            style={{ padding:'7px 14px', background:loadingEtiquetas?'#93C5FD':'#7C3AED', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingEtiquetas?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:5 }}>
+            {loadingEtiquetas
+              ? '⏳ Generando...'
+              : selected.size > 0
+                ? `🖨 Imprimir etiquetas (${selected.size})`
+                : `🖨 Imprimir todas (${orders.length})`
+            }
+          </button>
+        )}
+
+        {/* Seleccionar todos / ninguno */}
+        {orders.length > 0 && (
+          <button onClick={toggleAll}
+            style={{ padding:'7px 14px', background:'white', color:'#374151', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, cursor:'pointer' }}>
+            {selected.size === orders.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
           </button>
         )}
 
@@ -111,6 +173,13 @@ export default function RecepcionesClient({
           {loadingExport ? '⏳ Exportando...' : '⬇ Excel'}
         </button>
       </div>
+
+      {/* Info selección */}
+      {selected.size > 0 && (
+        <div style={{ fontSize:12, color:'#6B7280' }}>
+          {selected.size} pedido{selected.size !== 1 ? 's' : ''} seleccionado{selected.size !== 1 ? 's' : ''} para imprimir etiquetas
+        </div>
+      )}
 
       {/* Mensaje resultado */}
       {resultado && (
