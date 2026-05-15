@@ -24,8 +24,6 @@ export async function generateQRImage(qrCode: string): Promise<string> {
   })
 }
 
-// ─── Etiqueta individual ──────────────────────────────────────────────────────
-
 export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
   const fecha = new Date(data.createdAt).toLocaleDateString('es-CL', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -68,15 +66,12 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
         <div class="qr-hint">Escanea para<br>rastrear tu pedido</div>
       </div>
     </div>
-    <div class="spacer"></div>
     <div class="footer">
       <span>${fecha}</span>
       <span>${process.env.APP_URL ?? 'sendflow.cl'}</span>
     </div>
   </div>`
 }
-
-// ─── HTML wrapper con estilos 10x15cm ────────────────────────────────────────
 
 function buildHTMLWrapper(labelsHTML: string): string {
   return `<!DOCTYPE html>
@@ -89,17 +84,13 @@ function buildHTMLWrapper(labelsHTML: string): string {
 
   .label {
     width: 10cm;
-    height: 15cm;
     background: white;
     page-break-after: always;
     break-after: page;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
   }
   .label:last-child { page-break-after: avoid; break-after: avoid; }
 
-  .accent { height: 6px; background: #2563EB; flex-shrink: 0; }
+  .accent { height: 6px; background: #2563EB; }
 
   .header {
     padding: 12px 16px;
@@ -109,7 +100,6 @@ function buildHTMLWrapper(labelsHTML: string): string {
     border-bottom: 1px solid #F1F5F9;
     border-left: 1px solid #E2E8F0;
     border-right: 1px solid #E2E8F0;
-    flex-shrink: 0;
   }
   .logo { font-size: 18px; font-weight: bold; color: #0B1628; }
   .logo span { color: #2563EB; }
@@ -121,7 +111,6 @@ function buildHTMLWrapper(labelsHTML: string): string {
     gap: 14px;
     border-left: 1px solid #E2E8F0;
     border-right: 1px solid #E2E8F0;
-    flex-shrink: 0;
   }
   .info { flex: 1; }
 
@@ -175,12 +164,6 @@ function buildHTMLWrapper(labelsHTML: string): string {
     display: inline-block;
   }
 
-  .spacer {
-    flex: 1;
-    border-left: 1px solid #E2E8F0;
-    border-right: 1px solid #E2E8F0;
-  }
-
   .footer {
     padding: 8px 16px;
     background: #F8FAFC;
@@ -190,7 +173,6 @@ function buildHTMLWrapper(labelsHTML: string): string {
     justify-content: space-between;
     font-size: 10px;
     color: #9CA3AF;
-    flex-shrink: 0;
   }
 
   @media print {
@@ -205,8 +187,6 @@ function buildHTMLWrapper(labelsHTML: string): string {
 </body>
 </html>`
 }
-
-// ─── Generar etiqueta de un pedido ───────────────────────────────────────────
 
 export async function generateLabelForOrder(orderId: string): Promise<{
   html:  string
@@ -236,8 +216,6 @@ export async function generateLabelForOrder(orderId: string): Promise<{
 
   return { html: buildHTMLWrapper(labelsHTML), order: labelData }
 }
-
-// ─── Generar etiquetas masivas para múltiples pedidos ────────────────────────
 
 export async function generateBulkLabels(orderIds: string[]): Promise<string> {
   const orders = await prisma.order.findMany({
