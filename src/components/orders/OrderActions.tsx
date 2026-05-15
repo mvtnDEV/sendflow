@@ -26,10 +26,11 @@ const lbl: React.CSSProperties = {
 }
 
 export default function OrderActions({
-  orderId, currentStatus,
+  orderId, currentStatus, userRole,
 }: {
-  orderId: string
+  orderId:       string
   currentStatus: string
+  userRole:      string
 }) {
   const router   = useRouter()
   const photoRef = useRef<HTMLInputElement>(null)
@@ -150,20 +151,22 @@ export default function OrderActions({
             ))
           )}
 
-          {/* Separador */}
-          <div style={{ borderTop:'1px solid #F1F5F9', margin:'4px 0' }}/>
-
-          {/* Botón Envios Now */}
-          <button onClick={sendToEnviosNow} disabled={!!loading}
-            style={{
-              padding:'10px', borderRadius:8, fontSize:13, fontWeight:500,
-              cursor:loading?'not-allowed':'pointer', fontFamily:'inherit',
-              border:'1px solid #E2E8F0', background:'white', color:'#374151',
-              display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-              opacity: loading && loading !== 'ENVIOSNOW' ? 0.5 : 1,
-            }}>
-            {loading === 'ENVIOSNOW' ? 'Enviando...' : '🚚 Reenviar a Envios Now'}
-          </button>
+          {/* Botón Envios Now — solo SUPER_ADMIN */}
+          {userRole === 'SUPER_ADMIN' && (
+            <>
+              <div style={{ borderTop:'1px solid #F1F5F9', margin:'4px 0' }}/>
+              <button onClick={sendToEnviosNow} disabled={!!loading}
+                style={{
+                  padding:'10px', borderRadius:8, fontSize:13, fontWeight:500,
+                  cursor:loading?'not-allowed':'pointer', fontFamily:'inherit',
+                  border:'1px solid #E2E8F0', background:'white', color:'#374151',
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                  opacity: loading && loading !== 'ENVIOSNOW' ? 0.5 : 1,
+                }}>
+                {loading === 'ENVIOSNOW' ? 'Enviando...' : '🚚 Reenviar a Envios Now'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
