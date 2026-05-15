@@ -1,14 +1,47 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
+
+const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
+  PENDING:    { bg: '#FFFBEB', color: '#92400E' },
+  RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
+  IN_TRANSIT: { bg: '#F5F3FF', color: '#5B21B6' },
+  DELIVERED:  { bg: '#F0FDF4', color: '#166534' },
+  INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
+}
+const STATUS_LABEL: Record<string, string> = {
+  PENDING:    'Pendiente',
+  RECEIVED:   'Recepcionado',
+  IN_TRANSIT: 'En camino',
+  DELIVERED:  'Entregado',
+  INCIDENT:   'No entregado',
+}
+const PLATFORM_LABEL: Record<string, string> = {
+  SHOPIFY:      'Shopify',
+  MERCADOLIBRE: 'ML Flex',
+  WOOCOMMERCE:  'WooCommerce',
+  JUMPSELLER:   'Jumpseller',
+  MANUAL:       'Manual',
+}
+
+const TZ = 'America/Santiago'
+function fmtTime(date: Date | string) {
+  return new Date(date).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit', timeZone: TZ })
+}
+function fmtDate(date: Date | string) {
+  return new Date(date).toLocaleDateString('es-CL', { day:'2-digit', month:'short', timeZone: TZ })
+}
 
 export default function RecepcionesClient({
-  storeName,
-  todayOnly,
-  orders = [],
+  storeName, todayOnly, orders = [], total, page, totalPages, buildPageUrl,
 }: {
-  storeName:  string
-  todayOnly:  boolean
-  orders?:    any[]
+  storeName:    string
+  todayOnly:    boolean
+  orders?:      any[]
+  total:        number
+  page:         number
+  totalPages:   number
+  buildPageUrl: (p: number) => string
 }) {
   const [loadingExport,      setLoadingExport]      = useState(false)
   const [loadingRecepcionar, setLoadingRecepcionar] = useState(false)
@@ -17,6 +50,7 @@ export default function RecepcionesClient({
   const [selected,           setSelected]           = useState<Set<string>>(new Set())
 
   const pendientes = orders.filter(o => o.status === 'PENDING')
+  const allSelected = selected.size === orders.length && orders.length > 0
 
   function toggleSelected(id: string) {
     setSelected(prev => {
@@ -28,11 +62,8 @@ export default function RecepcionesClient({
   }
 
   function toggleAll() {
-    if (selected.size === orders.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(orders.map((o: any) => o.id)))
-    }
+    if (allSelected) setSelected(new Set())
+    else setSelected(new Set(orders.map((o: any) => o.id)))
   }
 
   async function exportExcel() {
@@ -44,15 +75,6 @@ export default function RecepcionesClient({
       const data = await res.json()
       if (!data.ok || !data.data?.length) { alert('No hay pedidos para exportar'); return }
       const XLSX = await import('xlsx')
-      const STATUS_LABEL: Record<string, string> = {
-        PENDING:'Pendiente', RECEIVED:'Recepcionado',
-        IN_TRANSIT:'En camino', DELIVERED:'Entregado',
-        INCIDENT:'No entregado', CANCELLED:'Cancelado',
-      }
-      const PLATFORM_LABEL: Record<string, string> = {
-        SHOPIFY:'Shopify', MERCADOLIBRE:'ML Flex',
-        WOOCOMMERCE:'WooCommerce', JUMPSELLER:'Jumpseller', MANUAL:'Manual',
-      }
       const rows = data.data.map((o: any) => ({
         'N° Pedido':  o.orderNumber,
         'Tienda':     o.store?.name || '',
@@ -75,118 +97,183 @@ export default function RecepcionesClient({
       const fecha   = new Date().toLocaleDateString('es-CL').replace(/\//g, '-')
       const periodo = todayOnly ? 'hoy' : 'historial'
       XLSX.writeFile(wb, `sendflow_${storeName}_${periodo}_${fecha}.xlsx`)
-    } catch (err) {
-      console.error('Export error:', err)
-      alert('Error exportando.')
-    } finally {
-      setLoadingExport(false)
-    }
+    } catch { alert('Error exportando.') }
+    finally { setLoadingExport(false) }
   }
 
   async function recepcionarTodos() {
     if (pendientes.length === 0) return
-    const confirmar = confirm(`¿Recepcionar ${pendientes.length} pedido${pendientes.length !== 1 ? 's' : ''} pendiente${pendientes.length !== 1 ? 's' : ''}?\n\nEsto los enviará automáticamente a Envios Now.`)
-    if (!confirmar) return
+    if (!confirm(`¿Recepcionar ${pendientes.length} pedido${pendientes.length !== 1 ? 's' : ''} pendiente${pendientes.length !== 1 ? 's' : ''}?\n\nEsto los enviará automáticamente a Envios Now.`)) return
     setLoadingRecepcionar(true)
     setResultado(null)
     try {
-      const ids  = pendientes.map(o => o.id)
       const res  = await fetch('/api/orders/batch-receive', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ orderIds: ids }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds: pendientes.map(o => o.id) }),
       })
       const data = await res.json()
       if (data.ok) {
         setResultado({ ok: true, msg: `✅ ${data.updated} pedido${data.updated !== 1 ? 's' : ''} recepcionado${data.updated !== 1 ? 's' : ''} correctamente` })
-        setTimeout(() => { window.location.reload() }, 1500)
+        setTimeout(() => window.location.reload(), 1500)
       } else {
         setResultado({ ok: false, msg: `❌ Error: ${data.error}` })
       }
-    } catch {
-      setResultado({ ok: false, msg: '❌ Error al recepcionar' })
-    } finally {
-      setLoadingRecepcionar(false)
-    }
+    } catch { setResultado({ ok: false, msg: '❌ Error al recepcionar' }) }
+    finally { setLoadingRecepcionar(false) }
   }
 
   async function imprimirEtiquetas() {
     const ids = selected.size > 0 ? Array.from(selected) : orders.map((o: any) => o.id)
-    if (ids.length === 0) { alert('No hay pedidos seleccionados'); return }
+    if (ids.length === 0) { alert('No hay pedidos'); return }
     setLoadingEtiquetas(true)
     try {
       const res = await fetch('/api/labels/bulk', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ orderIds: ids }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds: ids }),
       })
       if (!res.ok) { alert('Error generando etiquetas'); return }
       const html = await res.text()
       const win  = window.open('', '_blank')
-      if (win) {
-        win.document.write(html)
-        win.document.close()
-      }
-    } catch {
-      alert('Error generando etiquetas')
-    } finally {
-      setLoadingEtiquetas(false)
-    }
+      if (win) { win.document.write(html); win.document.close() }
+    } catch { alert('Error generando etiquetas') }
+    finally { setLoadingEtiquetas(false) }
   }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-
-        {/* Recepcionar todos */}
+    <div>
+      {/* Barra de acciones */}
+      <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
         {pendientes.length > 0 && (
           <button onClick={recepcionarTodos} disabled={loadingRecepcionar}
-            style={{ padding:'7px 14px', background:loadingRecepcionar?'#93C5FD':'#D97706', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingRecepcionar?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:5 }}>
+            style={{ padding:'7px 14px', background:loadingRecepcionar?'#93C5FD':'#D97706', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingRecepcionar?'not-allowed':'pointer' }}>
             {loadingRecepcionar ? '⏳ Recepcionando...' : `📥 Recepcionar todos (${pendientes.length})`}
           </button>
         )}
-
-        {/* Imprimir etiquetas */}
         {orders.length > 0 && (
           <button onClick={imprimirEtiquetas} disabled={loadingEtiquetas}
-            style={{ padding:'7px 14px', background:loadingEtiquetas?'#93C5FD':'#7C3AED', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingEtiquetas?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:5 }}>
-            {loadingEtiquetas
-              ? '⏳ Generando...'
-              : selected.size > 0
-                ? `🖨 Imprimir etiquetas (${selected.size})`
-                : `🖨 Imprimir todas (${orders.length})`
-            }
+            style={{ padding:'7px 14px', background:loadingEtiquetas?'#93C5FD':'#7C3AED', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingEtiquetas?'not-allowed':'pointer' }}>
+            {loadingEtiquetas ? '⏳ Generando...' : selected.size > 0 ? `🖨 Imprimir (${selected.size})` : `🖨 Imprimir todas (${orders.length})`}
           </button>
         )}
-
-        {/* Seleccionar todos / ninguno */}
-        {orders.length > 0 && (
-          <button onClick={toggleAll}
-            style={{ padding:'7px 14px', background:'white', color:'#374151', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, cursor:'pointer' }}>
-            {selected.size === orders.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
-          </button>
-        )}
-
-        {/* Exportar Excel */}
         <button onClick={exportExcel} disabled={loadingExport}
-          style={{ padding:'7px 14px', background:loadingExport?'#86EFAC':'#16A34A', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingExport?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:5 }}>
+          style={{ padding:'7px 14px', background:loadingExport?'#86EFAC':'#16A34A', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingExport?'not-allowed':'pointer' }}>
           {loadingExport ? '⏳ Exportando...' : '⬇ Excel'}
         </button>
+        {selected.size > 0 && (
+          <button onClick={() => setSelected(new Set())}
+            style={{ padding:'7px 12px', background:'white', color:'#6B7280', border:'1px solid #E2E8F0', borderRadius:8, fontSize:12, cursor:'pointer' }}>
+            × Limpiar selección ({selected.size})
+          </button>
+        )}
       </div>
 
-      {/* Info selección */}
-      {selected.size > 0 && (
-        <div style={{ fontSize:12, color:'#6B7280' }}>
-          {selected.size} pedido{selected.size !== 1 ? 's' : ''} seleccionado{selected.size !== 1 ? 's' : ''} para imprimir etiquetas
-        </div>
-      )}
-
-      {/* Mensaje resultado */}
       {resultado && (
-        <div style={{ fontSize:12, padding:'6px 12px', borderRadius:8, background:resultado.ok?'#F0FDF4':'#FFF1F2', color:resultado.ok?'#166534':'#9F1239', border:`1px solid ${resultado.ok?'#BBF7D0':'#FECDD3'}`, fontWeight:500 }}>
+        <div style={{ fontSize:12, padding:'6px 12px', borderRadius:8, marginBottom:8, background:resultado.ok?'#F0FDF4':'#FFF1F2', color:resultado.ok?'#166534':'#9F1239', border:`1px solid ${resultado.ok?'#BBF7D0':'#FECDD3'}`, fontWeight:500 }}>
           {resultado.msg}
         </div>
       )}
+
+      {/* Tabla */}
+      <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
+        {orders.length === 0 ? (
+          <div style={{ padding:48, textAlign:'center', color:'#9CA3AF' }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>{todayOnly ? '📅' : '📦'}</div>
+            <div style={{ fontSize:15, fontWeight:500, color:'#374151', marginBottom:6 }}>
+              {todayOnly ? 'Sin pedidos hoy todavía' : 'No hay resultados'}
+            </div>
+            <div style={{ fontSize:13, marginBottom:20 }}>
+              {todayOnly ? 'Los pedidos que lleguen hoy aparecerán aquí automáticamente' : 'Prueba cambiando los filtros'}
+            </div>
+            {todayOnly && (
+              <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
+                <Link href="/pedidos/nuevo" style={{ padding:'8px 18px', background:'#2563EB', color:'white', borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none' }}>
+                  + Crear pedido manual
+                </Link>
+                <Link href="/recepciones?historial=1" style={{ padding:'8px 18px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, color:'#374151', textDecoration:'none', background:'white' }}>
+                  Ver historial
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'#F8FAFC' }}>
+                  <th style={{ padding:'10px 12px', borderBottom:'1px solid #E2E8F0', width:36 }}>
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll}
+                      style={{ cursor:'pointer', width:15, height:15 }}/>
+                  </th>
+                  {['N° pedido','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
+                    <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map(order => {
+                  const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+                  const isSelected  = selected.has(order.id)
+                  return (
+                    <tr key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white' }}>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleSelected(order.id)}
+                          style={{ cursor:'pointer', width:15, height:15 }}/>
+                      </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
+                        <Link href={`/recepciones/${order.id}`} style={{ color:'#1D4ED8', textDecoration:'none' }}>
+                          {order.orderNumber}
+                        </Link>
+                      </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
+                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>
+                          {order.store?.name ?? '—'}
+                        </span>
+                      </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{order.customerName}</td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{order.customerPhone || '—'}</td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {order.addressStreet}, {order.addressComuna}
+                      </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>
+                        {PLATFORM_LABEL[order.platform] ?? order.platform}
+                      </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, textAlign:'center' }}>{order.bultos}</td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
+                        <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
+                          <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
+                          {STATUS_LABEL[order.status]}
+                        </span>
+                        {order.evidencePhoto1 && <span style={{ marginLeft:4, fontSize:11 }}>📷</span>}
+                      </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
+                        {fmtTime(order.createdAt)}
+                        {!todayOnly && <div style={{ fontSize:11 }}>{fmtDate(order.createdAt)}</div>}
+                      </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
+                        <Link href={`/recepciones/${order.id}`} style={{ color:'#9CA3AF', fontSize:16, textDecoration:'none' }}>→</Link>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div style={{ padding:'12px 16px', borderTop:'1px solid #E2E8F0', display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12, color:'#6B7280' }}>
+              <span>
+                Mostrando <strong>{orders.length}</strong> de <strong>{total}</strong> pedido{total!==1?'s':''}
+                {todayOnly && <span style={{ marginLeft:8, color:'#9CA3AF' }}>· Solo hoy</span>}
+                {selected.size > 0 && <span style={{ marginLeft:8, color:'#7C3AED', fontWeight:500 }}>· {selected.size} seleccionados</span>}
+              </span>
+              {totalPages > 1 && (
+                <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                  <span>Página {page} de {totalPages}</span>
+                  {page > 1 && <Link href={buildPageUrl(page - 1)} style={{ padding:'4px 10px', border:'1px solid #E2E8F0', borderRadius:6, textDecoration:'none', color:'#374151' }}>←</Link>}
+                  {page < totalPages && <Link href={buildPageUrl(page + 1)} style={{ padding:'4px 10px', border:'1px solid #E2E8F0', borderRadius:6, textDecoration:'none', color:'#374151' }}>→</Link>}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
