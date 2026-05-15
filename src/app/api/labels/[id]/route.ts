@@ -20,10 +20,10 @@ export async function GET(
     return new NextResponse('Sin acceso', { status: 403 })
   }
 
-  const format    = req.nextUrl.searchParams.get('format') ?? 'html'
-  const allBultos = req.nextUrl.searchParams.get('allBultos') === '1'
+  const format = req.nextUrl.searchParams.get('format') ?? 'html'
 
-  const { html, order: labelData } = await generateLabelForOrder(params.id)
+  try {
+    const { html, order: labelData } = await generateLabelForOrder(params.id)
 
     if (format === 'json') {
       return NextResponse.json({ ok: true, data: labelData })
