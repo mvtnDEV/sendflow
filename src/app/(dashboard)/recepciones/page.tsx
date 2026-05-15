@@ -59,20 +59,6 @@ export default async function RecepcionesPage({ searchParams }: Props) {
 
   const pct = (n: number) => stats.total > 0 ? Math.round((n / stats.total) * 100) : 0
 
-  function buildPageUrl(p: number) {
-    const params = new URLSearchParams()
-    if (verTodo) params.set('historial', '1')
-    if (searchParams.storeId)  params.set('storeId',  searchParams.storeId)
-    if (searchParams.status)   params.set('status',   searchParams.status)
-    if (searchParams.search)   params.set('search',   searchParams.search)
-    if (searchParams.platform) params.set('platform', searchParams.platform)
-    if (searchParams.dateFrom) params.set('dateFrom', searchParams.dateFrom)
-    if (searchParams.dateTo)   params.set('dateTo',   searchParams.dateTo)
-    if (pageSize !== 50)       params.set('pageSize', String(pageSize))
-    params.set('page', String(p))
-    return `/recepciones?${params.toString()}`
-  }
-
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:10 }}>
@@ -189,25 +175,25 @@ export default async function RecepcionesPage({ searchParams }: Props) {
         </div>
       </div>
 
-      {/* Tabla + acciones — todo en el client */}
-<RecepcionesClient
-  orders={result.items as any}
-  storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
-  todayOnly={todayOnly}
-  total={result.total}
-  page={page}
-  totalPages={result.totalPages}
-  searchParams={{
-    historial: searchParams.historial,
-    storeId:   searchParams.storeId,
-    status:    searchParams.status,
-    search:    searchParams.search,
-    platform:  searchParams.platform,
-    dateFrom:  searchParams.dateFrom,
-    dateTo:    searchParams.dateTo,
-    pageSize:  String(pageSize),
-  }}
-/>
+      {/* Tabla + acciones */}
+      <RecepcionesClient
+        orders={result.items as any}
+        storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
+        todayOnly={todayOnly}
+        total={result.total}
+        page={page}
+        totalPages={result.totalPages}
+        searchParams={{
+          historial: searchParams.historial,
+          storeId:   searchParams.storeId,
+          status:    searchParams.status,
+          search:    searchParams.search,
+          platform:  searchParams.platform,
+          dateFrom:  searchParams.dateFrom,
+          dateTo:    searchParams.dateTo,
+          pageSize:  String(pageSize),
+        }}
+      />
     </div>
   )
 }
