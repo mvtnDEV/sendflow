@@ -33,7 +33,7 @@ function fmtDate(date: Date | string) {
 }
 
 export default function RecepcionesClient({
-  storeName, todayOnly, orders = [], total, page, totalPages, buildPageUrl,
+  storeName, todayOnly, orders = [], total, page, totalPages, searchParams,
 }: {
   storeName:    string
   todayOnly:    boolean
@@ -41,7 +41,7 @@ export default function RecepcionesClient({
   total:        number
   page:         number
   totalPages:   number
-  buildPageUrl: (p: number) => string
+  searchParams: Record<string, string | undefined>
 }) {
   const [loadingExport,      setLoadingExport]      = useState(false)
   const [loadingRecepcionar, setLoadingRecepcionar] = useState(false)
@@ -49,8 +49,15 @@ export default function RecepcionesClient({
   const [resultado,          setResultado]          = useState<{ ok: boolean; msg: string } | null>(null)
   const [selected,           setSelected]           = useState<Set<string>>(new Set())
 
-  const pendientes = orders.filter(o => o.status === 'PENDING')
+  const pendientes  = orders.filter(o => o.status === 'PENDING')
   const allSelected = selected.size === orders.length && orders.length > 0
+
+  function buildPageUrl(p: number) {
+    const params = new URLSearchParams()
+    Object.entries(searchParams).forEach(([k, v]) => { if (v) params.set(k, v) })
+    params.set('page', String(p))
+    return `/recepciones?${params.toString()}`
+  }
 
   function toggleSelected(id: string) {
     setSelected(prev => {
@@ -211,8 +218,8 @@ export default function RecepcionesClient({
               </thead>
               <tbody>
                 {orders.map(order => {
-                  const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-                  const isSelected  = selected.has(order.id)
+                  const sc         = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+                  const isSelected = selected.has(order.id)
                   return (
                     <tr key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white' }}>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
