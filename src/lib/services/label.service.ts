@@ -2,16 +2,16 @@ import QRCode from 'qrcode'
 import { prisma } from '@/lib/db/prisma'
 
 interface LabelData {
-  orderNumber:   string
-  qrCode:        string
-  customerName:  string
-  addressStreet: string
-  addressComuna: string
-  addressRegion: string
-  storeName:     string
-  platform:      string
-  bultos:        number
-  createdAt:     Date
+  orderNumber:    string
+  qrCode:         string
+  customerName:   string
+  customerPhone?: string
+  addressStreet:  string
+  addressComuna:  string
+  addressRegion:  string
+  storeName:      string
+  platform:       string
+  createdAt:      Date
 }
 
 export async function generateQRImage(qrCode: string): Promise<string> {
@@ -19,7 +19,7 @@ export async function generateQRImage(qrCode: string): Promise<string> {
   return QRCode.toDataURL(trackingUrl, {
     errorCorrectionLevel: 'M',
     margin: 2,
-    width:  220,
+    width:  240,
     color: { dark: '#0B1628', light: '#FFFFFF' },
   })
 }
@@ -48,14 +48,20 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
     <div class="body">
       <div class="info">
         <div class="platform-badge">${platformLabel[data.platform] ?? data.platform}</div>
+
         <div class="lbl">Destinatario</div>
         <div class="val">${data.customerName}</div>
+
+        ${data.customerPhone ? `
+        <div class="lbl">Teléfono</div>
+        <div class="val">${data.customerPhone}</div>
+        ` : ''}
+
         <div class="lbl">Dirección de entrega</div>
         <div class="val">${data.addressStreet}<br>${data.addressComuna}, ${data.addressRegion}</div>
+
         <div class="lbl">Tienda</div>
         <div class="val sm">${data.storeName}</div>
-        <div class="lbl">Bultos</div>
-        <div class="val">${data.bultos} ${data.bultos === 1 ? 'bulto' : 'bultos'}</div>
       </div>
       <div class="qr-col">
         <img src="${qrDataUrl}" alt="QR tracking">
@@ -96,7 +102,7 @@ function buildHTMLWrapper(labelsHTML: string): string {
   .accent { height: 6px; background: #2563EB; flex-shrink: 0; }
 
   .header {
-    padding: 10px 14px;
+    padding: 12px 16px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -105,43 +111,84 @@ function buildHTMLWrapper(labelsHTML: string): string {
     border-right: 1px solid #E2E8F0;
     flex-shrink: 0;
   }
-  .logo { font-size: 16px; font-weight: bold; color: #0B1628; }
+  .logo { font-size: 18px; font-weight: bold; color: #0B1628; }
   .logo span { color: #2563EB; }
-  .order-num { font-size: 20px; font-weight: bold; color: #0B1628; letter-spacing: 0.5px; font-family: monospace; }
+  .order-num { font-size: 22px; font-weight: bold; color: #0B1628; letter-spacing: 0.5px; font-family: monospace; }
 
   .body {
-    padding: 14px 14px;
+    padding: 16px;
     display: flex;
-    gap: 12px;
+    gap: 14px;
     border-left: 1px solid #E2E8F0;
     border-right: 1px solid #E2E8F0;
     flex-shrink: 0;
   }
   .info { flex: 1; }
-  .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #9CA3AF; margin-bottom: 2px; }
-  .val { font-size: 13px; font-weight: bold; color: #0B1628; margin-bottom: 10px; line-height: 1.4; }
-  .val.sm { font-size: 12px; font-weight: normal; }
 
-  .qr-col { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 90px; }
-  .qr-col img { width: 85px; height: 85px; border: 1px solid #E2E8F0; border-radius: 4px; }
-  .qr-hint { font-size: 8px; color: #9CA3AF; text-align: center; line-height: 1.4; }
-
-  .platform-badge {
-    font-size: 9px; font-weight: bold; color: #1D4ED8;
-    background: #EFF6FF; padding: 2px 8px; border-radius: 10px;
-    margin-bottom: 10px; display: inline-block;
+  .lbl {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9CA3AF;
+    margin-bottom: 3px;
+  }
+  .val {
+    font-size: 15px;
+    font-weight: bold;
+    color: #0B1628;
+    margin-bottom: 12px;
+    line-height: 1.4;
+  }
+  .val.sm {
+    font-size: 13px;
+    font-weight: normal;
   }
 
-  .spacer { flex: 1; border-left: 1px solid #E2E8F0; border-right: 1px solid #E2E8F0; }
+  .qr-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 100px;
+  }
+  .qr-col img {
+    width: 95px;
+    height: 95px;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+  }
+  .qr-hint {
+    font-size: 9px;
+    color: #9CA3AF;
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  .platform-badge {
+    font-size: 10px;
+    font-weight: bold;
+    color: #1D4ED8;
+    background: #EFF6FF;
+    padding: 3px 10px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    display: inline-block;
+  }
+
+  .spacer {
+    flex: 1;
+    border-left: 1px solid #E2E8F0;
+    border-right: 1px solid #E2E8F0;
+  }
 
   .footer {
-    padding: 8px 14px;
+    padding: 8px 16px;
     background: #F8FAFC;
     border: 1px solid #E2E8F0;
     border-top: 1px solid #F1F5F9;
     display: flex;
     justify-content: space-between;
-    font-size: 9px;
+    font-size: 10px;
     color: #9CA3AF;
     flex-shrink: 0;
   }
@@ -175,12 +222,12 @@ export async function generateLabelForOrder(orderId: string): Promise<{
     orderNumber:   order.orderNumber,
     qrCode:        order.qrCode,
     customerName:  order.customerName,
+    customerPhone: order.customerPhone ?? undefined,
     addressStreet: order.addressStreet,
     addressComuna: order.addressComuna,
     addressRegion: order.addressRegion,
     storeName:     order.store.name,
     platform:      order.platform,
-    bultos:        order.bultos,
     createdAt:     order.createdAt,
   }
 
@@ -205,12 +252,12 @@ export async function generateBulkLabels(orderIds: string[]): Promise<string> {
       orderNumber:   order.orderNumber,
       qrCode:        order.qrCode,
       customerName:  order.customerName,
+      customerPhone: order.customerPhone ?? undefined,
       addressStreet: order.addressStreet,
       addressComuna: order.addressComuna,
       addressRegion: order.addressRegion,
       storeName:     order.store.name,
       platform:      order.platform,
-      bultos:        order.bultos,
       createdAt:     order.createdAt,
     }
     const qrDataUrl = await generateQRImage(order.qrCode)
