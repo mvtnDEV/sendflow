@@ -5,13 +5,6 @@ import { prisma } from '@/lib/db/prisma'
 import Link from 'next/link'
 import RecepcionesClient from './client'
 
-const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
-  PENDING:    { bg: '#FFFBEB', color: '#92400E' },
-  RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
-  IN_TRANSIT: { bg: '#F5F3FF', color: '#5B21B6' },
-  DELIVERED:  { bg: '#F0FDF4', color: '#166534' },
-  INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
-}
 const STATUS_LABEL: Record<string, string> = {
   PENDING:    'Pendiente',
   RECEIVED:   'Recepcionado',
@@ -28,13 +21,6 @@ const PLATFORM_LABEL: Record<string, string> = {
 }
 
 const TZ = 'America/Santiago'
-
-function fmtTime(date: Date | string) {
-  return new Date(date).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit', timeZone: TZ })
-}
-function fmtDate(date: Date | string) {
-  return new Date(date).toLocaleDateString('es-CL', { day:'2-digit', month:'short', timeZone: TZ })
-}
 
 interface Props {
   searchParams: {
@@ -73,7 +59,6 @@ export default async function RecepcionesPage({ searchParams }: Props) {
 
   const pct = (n: number) => stats.total > 0 ? Math.round((n / stats.total) * 100) : 0
 
-  // Construir query string para paginación manteniendo filtros
   function buildPageUrl(p: number) {
     const params = new URLSearchParams()
     if (verTodo) params.set('historial', '1')
@@ -193,11 +178,6 @@ export default async function RecepcionesPage({ searchParams }: Props) {
           )}
         </form>
         <div style={{ display:'flex', gap:8 }}>
-          <RecepcionesClient
-            orders={result.items as any}
-            storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
-            todayOnly={todayOnly}
-          />
           <Link href="/pedidos/nuevo"
             style={{ padding:'7px 14px', background:'#2563EB', color:'white', borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none' }}>
             + Nuevo
@@ -209,103 +189,16 @@ export default async function RecepcionesPage({ searchParams }: Props) {
         </div>
       </div>
 
-      {/* Tabla */}
-      <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
-        {result.items.length === 0 ? (
-          <div style={{ padding:48, textAlign:'center', color:'#9CA3AF' }}>
-            <div style={{ fontSize:40, marginBottom:12 }}>{todayOnly ? '📅' : '📦'}</div>
-            <div style={{ fontSize:15, fontWeight:500, color:'#374151', marginBottom:6 }}>
-              {todayOnly ? 'Sin pedidos hoy todavía' : 'No hay resultados'}
-            </div>
-            <div style={{ fontSize:13, marginBottom:20 }}>
-              {todayOnly ? 'Los pedidos que lleguen hoy aparecerán aquí automáticamente' : 'Prueba cambiando los filtros'}
-            </div>
-            {todayOnly && (
-              <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
-                <Link href="/pedidos/nuevo" style={{ padding:'8px 18px', background:'#2563EB', color:'white', borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none' }}>
-                  + Crear pedido manual
-                </Link>
-                <Link href="/recepciones?historial=1" style={{ padding:'8px 18px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, color:'#374151', textDecoration:'none', background:'white' }}>
-                  Ver historial
-                </Link>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            <table style={{ width:'100%', borderCollapse:'collapse' }}>
-              <thead>
-                <tr style={{ background:'#F8FAFC' }}>
-                  {['N° pedido','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
-                    <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {result.items.map(order => {
-                  const sc = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-                  return (
-                    <tr key={order.id}>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
-                        <Link href={`/recepciones/${order.id}`} style={{ color:'#1D4ED8', textDecoration:'none' }}>
-                          {order.orderNumber}
-                        </Link>
-                      </td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
-                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>
-                          {(order as any).store?.name ?? '—'}
-                        </span>
-                      </td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{order.customerName}</td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{order.customerPhone || '—'}</td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {order.addressStreet}, {order.addressComuna}
-                      </td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>
-                        {PLATFORM_LABEL[order.platform] ?? order.platform}
-                      </td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, textAlign:'center' }}>{order.bultos}</td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
-                        <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
-                          <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
-                          {STATUS_LABEL[order.status]}
-                        </span>
-                        {(order as any).evidencePhoto1 && <span style={{ marginLeft:4, fontSize:11 }}>📷</span>}
-                      </td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
-                        {fmtTime(order.createdAt)}
-                        {!todayOnly && <div style={{ fontSize:11 }}>{fmtDate(order.createdAt)}</div>}
-                      </td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
-                        <Link href={`/recepciones/${order.id}`} style={{ color:'#9CA3AF', fontSize:16, textDecoration:'none' }}>→</Link>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            <div style={{ padding:'12px 16px', borderTop:'1px solid #E2E8F0', display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12, color:'#6B7280' }}>
-              <span>
-                Mostrando <strong>{result.items.length}</strong> de <strong>{result.total}</strong> pedido{result.total!==1?'s':''}
-                {todayOnly && <span style={{ marginLeft:8, color:'#9CA3AF' }}>· Solo hoy</span>}
-              </span>
-              {result.totalPages > 1 && (
-                <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-                  <span>Página {page} de {result.totalPages}</span>
-                  {page > 1 && (
-                    <Link href={buildPageUrl(page - 1)}
-                      style={{ padding:'4px 10px', border:'1px solid #E2E8F0', borderRadius:6, textDecoration:'none', color:'#374151' }}>←</Link>
-                  )}
-                  {page < result.totalPages && (
-                    <Link href={buildPageUrl(page + 1)}
-                      style={{ padding:'4px 10px', border:'1px solid #E2E8F0', borderRadius:6, textDecoration:'none', color:'#374151' }}>→</Link>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+      {/* Tabla + acciones — todo en el client */}
+      <RecepcionesClient
+        orders={result.items as any}
+        storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
+        todayOnly={todayOnly}
+        total={result.total}
+        page={page}
+        totalPages={result.totalPages}
+        buildPageUrl={buildPageUrl}
+      />
     </div>
   )
 }
