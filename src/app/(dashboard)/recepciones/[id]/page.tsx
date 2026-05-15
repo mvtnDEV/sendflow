@@ -58,10 +58,18 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <span style={{ padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:500, background:sc.bg, color:sc.color }}>
           {STATUS_LABEL[order.status]}
         </span>
-        <a href={`/api/labels/${order.id}`} target="_blank"
-          style={{ marginLeft:'auto', padding:'7px 14px', background:'#0B1628', color:'white', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none' }}>
-          🖨 Imprimir etiqueta
-        </a>
+        <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
+          <a href={`/api/labels/${order.id}`} target="_blank"
+            style={{ padding:'7px 14px', background:'white', color:'#0B1628', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none', border:'1px solid #E2E8F0' }}>
+            🖨 1 etiqueta
+          </a>
+          {order.bultos > 1 && (
+            <a href={`/api/labels/${order.id}?allBultos=1`} target="_blank"
+              style={{ padding:'7px 14px', background:'#0B1628', color:'white', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none' }}>
+              🖨 {order.bultos} etiquetas ({order.bultos} bultos)
+            </a>
+          )}
+        </div>
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:16 }}>
@@ -175,10 +183,18 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             </div>
             <div style={{ fontSize:14, fontWeight:500, marginBottom:2 }}>{order.orderNumber}</div>
             <div style={{ fontSize:11, color:'#9CA3AF', marginBottom:14, fontFamily:'monospace' }}>{order.qrCode}</div>
-            <a href={`/api/labels/${order.id}`} target="_blank"
-              style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'9px', background:'#2563EB', color:'white', borderRadius:8, textDecoration:'none', fontSize:13, fontWeight:500 }}>
-              🖨 Imprimir etiqueta
-            </a>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <a href={`/api/labels/${order.id}`} target="_blank"
+                style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'9px', background:'#2563EB', color:'white', borderRadius:8, textDecoration:'none', fontSize:13, fontWeight:500 }}>
+                🖨 Imprimir 1 etiqueta
+              </a>
+              {order.bultos > 1 && (
+                <a href={`/api/labels/${order.id}?allBultos=1`} target="_blank"
+                  style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'9px', background:'#0B1628', color:'white', borderRadius:8, textDecoration:'none', fontSize:13, fontWeight:500 }}>
+                  🖨 Imprimir {order.bultos} etiquetas ({order.bultos} bultos)
+                </a>
+              )}
+            </div>
           </div>
 
           {/* Estado + Acciones */}
