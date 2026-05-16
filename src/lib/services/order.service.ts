@@ -3,6 +3,21 @@ import { generateOrderNumber, ensureUniqueQrCode } from '@/lib/utils/order-numbe
 import type { OrderFilters, NormalizedOrder, DashboardStats } from '@/types'
 import type { OrderStatus, Platform } from '@prisma/client'
 
+// ─── Regiones permitidas ──────────────────────────────────────────────────────
+
+const REGIONES_PERMITIDAS = [
+  'metropolitana',
+  'región metropolitana',
+  'region metropolitana',
+  'rm',
+  'metropolitana de santiago',
+]
+
+function isRegionPermitida(region: string): boolean {
+  const r = region.toLowerCase().trim()
+  return REGIONES_PERMITIDAS.some(allowed => r.includes(allowed) || allowed.includes(r))
+}
+
 // ─── Crear pedido (manual o desde integración) ────────────────────────────────
 
 interface CreateOrderInput {
@@ -24,6 +39,11 @@ interface CreateOrderInput {
 }
 
 export async function createOrder(input: CreateOrderInput) {
+  // Validar región antes de crear
+  if (!isRegionPermitida(input.addressRegion)) {
+    throw new Error(`Pedido fuera de zona de despacho: ${input.addressRegion}. Solo despachamos en la Región Metropolitana.`)
+  }
+
   const [orderNumber, qrCode] = await Promise.all([
     generateOrderNumber(input.platform),
     ensureUniqueQrCode(input.platform),
@@ -211,7 +231,6 @@ export async function listOrders(filters: OrderFilters) {
   }
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
-    // Mostrar pedidos de hoy + PENDING de días anteriores
     where.OR = [
       { createdAt: todayRange() },
       { status: 'PENDING' },
@@ -265,18 +284,15 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
   if (storeId) todayFilter.storeId = storeId
   if (todayOnly) todayFilter.createdAt = todayRange()
 
-  // PENDING sin filtro de fecha — siempre mostrar todos los pendientes
   const pendingFilter: any = { status: 'PENDING' }
   if (storeId) pendingFilter.storeId = storeId
 
   const [counts, pendingCount, byPlatform, byStore] = await Promise.all([
-    // Stats del día excepto PENDING
     prisma.order.groupBy({
       by:    ['status'],
       where: { ...todayFilter, status: { not: 'PENDING' } },
       _count: { _all: true },
     }),
-    // PENDING de todos los días sin filtro de fecha
     prisma.order.count({ where: pendingFilter }),
     prisma.order.groupBy({ by: ['platform'], where: todayFilter, _count: { _all: true } }),
     storeId ? [] : prisma.order.groupBy({
