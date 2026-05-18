@@ -23,6 +23,20 @@ const PLATFORM_LABEL: Record<string, string> = {
   JUMPSELLER:   'Jumpseller',
   MANUAL:       'Manual',
 }
+const PLATFORM_PREFIX: Record<string, string> = {
+  SHOPIFY:      'SHF',
+  MERCADOLIBRE: 'ML',
+  WOOCOMMERCE:  'WOO',
+  JUMPSELLER:   'JMP',
+  MANUAL:       'MAN',
+}
+
+function formatSourceId(sourceId: string | null, platform: string): string | null {
+  if (!sourceId) return null
+  const prefix = PLATFORM_PREFIX[platform]
+  if (!prefix || platform === 'MANUAL') return null
+  return `${prefix}-${sourceId}`
+}
 
 const TZ = 'America/Santiago'
 function fmtTime(date: Date | string) {
@@ -84,6 +98,7 @@ export default function RecepcionesClient({
       const XLSX = await import('xlsx')
       const rows = data.data.map((o: any) => ({
         'N° Pedido':  o.orderNumber,
+        'ID Origen':  formatSourceId(o.sourceId, o.platform) ?? '—',
         'Tienda':     o.store?.name || '',
         'Cliente':    o.customerName,
         'Teléfono':   o.customerPhone || '',
@@ -98,7 +113,7 @@ export default function RecepcionesClient({
         'Entregado':  o.deliveredAt ? new Date(o.deliveredAt).toLocaleString('es-CL') : '',
       }))
       const ws = XLSX.utils.json_to_sheet(rows)
-      ws['!cols'] = [{wch:12},{wch:20},{wch:22},{wch:14},{wch:24},{wch:28},{wch:16},{wch:16},{wch:14},{wch:8},{wch:14},{wch:18},{wch:18}]
+      ws['!cols'] = [{wch:12},{wch:14},{wch:20},{wch:22},{wch:14},{wch:24},{wch:28},{wch:16},{wch:16},{wch:14},{wch:8},{wch:14},{wch:18},{wch:18}]
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Pedidos')
       const fecha   = new Date().toLocaleDateString('es-CL').replace(/\//g, '-')
@@ -211,7 +226,7 @@ export default function RecepcionesClient({
                     <input type="checkbox" checked={allSelected} onChange={toggleAll}
                       style={{ cursor:'pointer', width:15, height:15 }}/>
                   </th>
-                  {['N° pedido','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
+                  {['N° pedido','ID Origen','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
                     <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -220,6 +235,7 @@ export default function RecepcionesClient({
                 {orders.map(order => {
                   const sc         = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
                   const isSelected = selected.has(order.id)
+                  const sourceLabel = formatSourceId(order.sourceId, order.platform)
                   return (
                     <tr key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white' }}>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
@@ -230,6 +246,15 @@ export default function RecepcionesClient({
                         <Link href={`/recepciones/${order.id}`} style={{ color:'#1D4ED8', textDecoration:'none' }}>
                           {order.orderNumber}
                         </Link>
+                      </td>
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
+                        {sourceLabel ? (
+                          <span style={{ fontSize:11, padding:'2px 8px', borderRadius:4, background:'#F0FDF4', color:'#166534', fontWeight:500, fontFamily:'monospace', whiteSpace:'nowrap' }}>
+                            {sourceLabel}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
+                        )}
                       </td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
                         <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>
