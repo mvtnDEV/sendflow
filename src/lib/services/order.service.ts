@@ -34,6 +34,7 @@ interface CreateOrderInput {
   bultos:         number
   weightKg?:      number
   sourceId?:      string
+  subStoreName?:  string
   rawPayload?:    Record<string, unknown>
   createdBy?:     string
 }
@@ -56,6 +57,7 @@ export async function createOrder(input: CreateOrderInput) {
       integrationId: input.integrationId,
       platform:      input.platform,
       sourceId:      input.sourceId,
+      subStoreName:  input.subStoreName,
       customerName:  input.customerName,
       customerPhone: input.customerPhone,
       customerEmail: input.customerEmail,
@@ -163,7 +165,7 @@ export async function updateOrderStatus(
     include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
   })
 
-  // Enviar a Envios Now al recepcionar — ID de Now va a externalId
+  // Enviar a Envios Now al recepcionar
   if (status === 'RECEIVED') {
     try {
       const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
@@ -227,6 +229,7 @@ export async function listOrders(filters: OrderFilters) {
       { orderNumber:   { contains: filters.search, mode: 'insensitive' } },
       { customerPhone: { contains: filters.search } },
       { sourceId:      { contains: filters.search } },
+      { subStoreName:  { contains: filters.search, mode: 'insensitive' } },
     ]
   }
 
