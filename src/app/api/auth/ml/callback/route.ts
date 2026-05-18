@@ -32,13 +32,8 @@ export async function GET(req: NextRequest) {
     })
     const mlUser = await userRes.json()
 
-    const credentials = JSON.stringify({
-      accessToken:  tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn:    tokens.expires_in,
-      userId:       mlUser.id,
-      expiresAt:    Date.now() + tokens.expires_in * 1000,
-    })
+    // Guardar como pipe: "accessToken|refreshToken" — mismo formato que lee el webhook
+    const credentials = `${tokens.access_token}|${tokens.refresh_token}`
 
     if (storeId) {
       await prisma.storeIntegration.upsert({
