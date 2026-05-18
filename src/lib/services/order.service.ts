@@ -248,7 +248,7 @@ export async function listOrders(filters: OrderFilters) {
   }
 
   const [items, total] = await Promise.all([
-    prisma.order.findMany({
+   prisma.order.findMany({
       where,
       skip,
       take:    pageSize,
@@ -257,7 +257,9 @@ export async function listOrders(filters: OrderFilters) {
         store:       { select: { id: true, name: true, slug: true } },
         integration: { select: { platform: true } },
         events:      { orderBy: { createdAt: 'desc' }, take: 1 },
+        _count:      false,
       },
+      // rawPayload se incluye automáticamente al no usar select
     }),
     prisma.order.count({ where }),
   ])
