@@ -23,18 +23,11 @@ const PLATFORM_PREFIX: Record<string, string> = {
   MANUAL:       'MAN',
 }
 
-// Formato completo: WOO-56142 (para badge superior)
 function formatSourceId(sourceId: string | undefined, platform: string): string | null {
   if (!sourceId || platform === 'MANUAL') return null
   const prefix = PLATFORM_PREFIX[platform]
   if (!prefix) return null
   return `${prefix}-${sourceId}`
-}
-
-// Solo prefijo: WOO (para mostrar al lado del nombre de tienda)
-function formatSourcePrefix(platform: string): string | null {
-  if (platform === 'MANUAL') return null
-  return PLATFORM_PREFIX[platform] ?? null
 }
 
 export async function generateQRImage(qrCode: string): Promise<string> {
@@ -51,15 +44,7 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
   const fecha = new Date(data.createdAt).toLocaleDateString('es-CL', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
-  const platformLabel: Record<string, string> = {
-    SHOPIFY:      'Shopify',
-    MERCADOLIBRE: 'ML Flex',
-    WOOCOMMERCE:  'WooCommerce',
-    JUMPSELLER:   'Jumpseller',
-    MANUAL:       'Manual',
-  }
-  const sourceLabel  = formatSourceId(data.sourceId, data.platform)
-  const sourcePrefix = formatSourcePrefix(data.platform)
+  const sourceLabel = formatSourceId(data.sourceId, data.platform)
 
   return `
   <div class="label">
@@ -70,10 +55,6 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
     </div>
     <div class="body">
       <div class="info">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">
-          <div class="platform-badge">${platformLabel[data.platform] ?? data.platform}</div>
-          ${sourceLabel ? `<div class="source-badge">${sourceLabel}</div>` : ''}
-        </div>
 
         <div class="lbl">Destinatario</div>
         <div class="val">${data.customerName}</div>
@@ -87,10 +68,11 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
         <div class="val">${data.addressStreet}<br>${data.addressComuna}, ${data.addressRegion}</div>
 
         <div class="lbl">Tienda</div>
-        <div class="val sm" style="display:flex;align-items:center;gap:6px;">
-          <span>${data.storeName}</span>
-          ${sourcePrefix ? `<span class="store-prefix-badge">${sourcePrefix}</span>` : ''}
+        <div class="tienda-row">
+          <span class="tienda-nombre">${data.storeName}</span>
+          ${sourceLabel ? `<span class="tienda-source">${sourceLabel}</span>` : ''}
         </div>
+
       </div>
       <div class="qr-col">
         <img src="${qrDataUrl}" alt="QR tracking">
@@ -177,9 +159,27 @@ function buildHTMLWrapper(labelsHTML: string): string {
     margin-bottom: 12px;
     line-height: 1.4;
   }
-  .val.sm {
+
+  .tienda-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .tienda-nombre {
     font-size: 13px;
-    font-weight: normal;
+    color: #0B1628;
+  }
+  .tienda-source {
+    font-size: 15px;
+    font-weight: bold;
+    color: #166534;
+    background: #F0FDF4;
+    padding: 2px 10px;
+    border-radius: 6px;
+    border: 1px solid #BBF7D0;
+    font-family: monospace;
   }
 
   .qr-col {
@@ -200,40 +200,6 @@ function buildHTMLWrapper(labelsHTML: string): string {
     color: #9CA3AF;
     text-align: center;
     line-height: 1.4;
-  }
-
-  .platform-badge {
-    font-size: 10px;
-    font-weight: bold;
-    color: #1D4ED8;
-    background: #EFF6FF;
-    padding: 3px 10px;
-    border-radius: 10px;
-    display: inline-block;
-  }
-
-  .source-badge {
-    font-size: 10px;
-    font-weight: bold;
-    color: #166534;
-    background: #F0FDF4;
-    padding: 3px 10px;
-    border-radius: 10px;
-    border: 1px solid #BBF7D0;
-    display: inline-block;
-    font-family: monospace;
-  }
-
-  .store-prefix-badge {
-    font-size: 14px;
-    font-weight: bold;
-    color: #166534;
-    background: #F0FDF4;
-    padding: 2px 10px;
-    border-radius: 6px;
-    border: 1px solid #BBF7D0;
-    font-family: monospace;
-    display: inline-block;
   }
 
   .footer {
