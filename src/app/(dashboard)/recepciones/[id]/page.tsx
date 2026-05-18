@@ -25,6 +25,52 @@ const PLATFORM_LABEL: Record<string, string> = {
   MANUAL:       'Manual',
 }
 
+// Estados traducidos de cada plataforma
+const WC_STATUS: Record<string, string> = {
+  pending:        'Pago pendiente',
+  processing:     'En proceso',
+  on_hold:        'En espera',
+  completed:      'Completado',
+  cancelled:      'Cancelado',
+  refunded:       'Reembolsado',
+  failed:         'Fallido',
+  checkout_draft: 'Borrador',
+}
+
+const SHOPIFY_STATUS: Record<string, string> = {
+  pending:    'Pago pendiente',
+  authorized: 'Autorizado',
+  partially_paid: 'Pago parcial',
+  paid:       'Pagado',
+  partially_refunded: 'Reembolso parcial',
+  refunded:   'Reembolsado',
+  voided:     'Anulado',
+}
+
+const ML_STATUS: Record<string, string> = {
+  confirmed:       'Confirmado',
+  payment_required:'Pago requerido',
+  payment_in_process: 'Pago en proceso',
+  partially_paid:  'Pago parcial',
+  paid:            'Pagado',
+  cancelled:       'Cancelado',
+  invalid:         'Inválido',
+}
+
+function getPlatformStatus(platform: string, rawPayload: any): string | null {
+  if (!rawPayload) return null
+  const status = rawPayload.status ?? rawPayload.financial_status ?? null
+  if (!status) return null
+
+  let label: string | null = null
+  if (platform === 'WOOCOMMERCE')  label = WC_STATUS[status]      ?? status
+  if (platform === 'SHOPIFY')      label = SHOPIFY_STATUS[status]  ?? status
+  if (platform === 'MERCADOLIBRE') label = ML_STATUS[status]       ?? status
+  if (platform === 'JUMPSELLER')   label = status
+
+  return label
+}
+
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
   const user  = await getSessionUser()
   const order = await prisma.order.findUnique({
@@ -46,8 +92,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
     CANCELLED:  { bg: '#F1F5F9', color: '#475569' },
   }
-  const sc = statusBadge[order.status] ?? statusBadge.PENDING
+  const sc           = statusBadge[order.status] ?? statusBadge.PENDING
   const subStoreName = (order as any).subStoreName as string | null
+  const platformStatus = user?.role === 'STORE_ADMIN'
+    ? getPlatformStatus(order.platform, order.rawPayload)
+    : null
 
   return (
     <div>
@@ -96,6 +145,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 <span style={{ fontWeight:500 }}>{value}</span>
               </div>
             ))}
+
+            {/* Estado de la plataforma — solo STORE_ADMIN */}
+            {platformStatus && (
+              <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>
+                <span style={{ color:'#6B7280' }}>Estado en {PLATFORM_LABEL[order.platform]}</span>
+                <span style={{ padding:'2px 10px', borderRadius:20, fontSize:11, fontWeight:500, background:'#EFF6FF', color:'#1D4ED8' }}>
+                  {platformStatus}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Evidencia de entrega */}
