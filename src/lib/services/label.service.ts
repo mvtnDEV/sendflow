@@ -9,6 +9,7 @@ interface LabelData {
   addressStreet:  string
   addressComuna:  string
   addressRegion:  string
+  addressNotes?:  string
   storeName:      string
   platform:       string
   sourceId?:      string
@@ -24,7 +25,7 @@ const PLATFORM_PREFIX: Record<string, string> = {
 }
 
 function formatSourceId(sourceId: string | undefined, platform: string): string | null {
-  if (!sourceId || platform === 'MANUAL') return null
+  if (!sourceId) return null
   const prefix = PLATFORM_PREFIX[platform]
   if (!prefix) return null
   return `${prefix}-${sourceId}`
@@ -66,6 +67,11 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
 
         <div class="lbl">Dirección de entrega</div>
         <div class="val">${data.addressStreet}<br>${data.addressComuna}, ${data.addressRegion}</div>
+
+        ${data.addressNotes ? `
+        <div class="lbl">Referencias</div>
+        <div class="val notes">${data.addressNotes}</div>
+        ` : ''}
 
         <div class="lbl">Tienda</div>
         <div class="tienda-row">
@@ -159,6 +165,15 @@ function buildHTMLWrapper(labelsHTML: string): string {
     margin-bottom: 12px;
     line-height: 1.4;
   }
+  .val.notes {
+    font-size: 12px;
+    font-weight: normal;
+    color: #374151;
+    background: #FFFBEB;
+    border-left: 3px solid #F59E0B;
+    padding: 4px 8px;
+    border-radius: 0 4px 4px 0;
+  }
 
   .tienda-row {
     display: flex;
@@ -239,6 +254,7 @@ export async function generateLabelForOrder(orderId: string): Promise<{
     addressStreet: order.addressStreet,
     addressComuna: order.addressComuna,
     addressRegion: order.addressRegion,
+    addressNotes:  order.addressNotes ?? undefined,
     storeName:     order.store.name,
     platform:      order.platform,
     sourceId:      (order as any).sourceId ?? undefined,
@@ -268,6 +284,7 @@ export async function generateBulkLabels(orderIds: string[]): Promise<string> {
       addressStreet: order.addressStreet,
       addressComuna: order.addressComuna,
       addressRegion: order.addressRegion,
+      addressNotes:  order.addressNotes ?? undefined,
       storeName:     order.store.name,
       platform:      order.platform,
       sourceId:      (order as any).sourceId ?? undefined,
