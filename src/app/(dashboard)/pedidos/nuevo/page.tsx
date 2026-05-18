@@ -17,7 +17,7 @@ export default function NuevoPedidoPage() {
   const [form,    setForm]    = useState({
     storeId: '', customerName: '', customerPhone: '', customerEmail: '',
     addressStreet: '', addressComuna: '', addressRegion: 'Metropolitana',
-    addressNotes: '', bultos: 1, weightKg: '',
+    addressNotes: '', bultos: 1, weightKg: '', customCode: '',
   })
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
@@ -43,7 +43,11 @@ export default function NuevoPedidoPage() {
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, weightKg: form.weightKg ? Number(form.weightKg) : undefined }),
+        body: JSON.stringify({
+          ...form,
+          weightKg:   form.weightKg ? Number(form.weightKg) : undefined,
+          sourceId:   form.customCode || undefined, // código personalizado va a sourceId
+        }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error)
@@ -127,6 +131,7 @@ export default function NuevoPedidoPage() {
             <div style={{ gridColumn:'1/-1' }}>
               <label style={lbl}>Notas de entrega</label>
               <input style={inp} placeholder="Referencias, instrucciones especiales..." value={form.addressNotes} onChange={e => set('addressNotes', e.target.value)}/>
+              <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>Estas notas aparecerán en la etiqueta de despacho</div>
             </div>
           </div>
         </div>
@@ -142,6 +147,11 @@ export default function NuevoPedidoPage() {
             <div>
               <label style={lbl}>Peso total (kg)</label>
               <input type="number" step="0.1" min={0} style={inp} placeholder="0.0" value={form.weightKg} onChange={e => set('weightKg', e.target.value)}/>
+            </div>
+            <div style={{ gridColumn:'1/-1' }}>
+              <label style={lbl}>Código personalizado <span style={{ color:'#9CA3AF', fontWeight:400 }}>(opcional)</span></label>
+              <input style={inp} placeholder="Ej: MU12345, ORD-001, #567..." value={form.customCode} onChange={e => set('customCode', e.target.value)}/>
+              <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>Código interno de tu tienda. Aparecerá en la etiqueta y podrás buscar por él.</div>
             </div>
           </div>
         </div>
