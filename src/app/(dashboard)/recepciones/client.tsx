@@ -98,23 +98,24 @@ export default function RecepcionesClient({
       if (!data.ok || !data.data?.length) { alert('No hay pedidos para exportar'); return }
       const XLSX = await import('xlsx')
       const rows = data.data.map((o: any) => ({
-        'N° Pedido':  o.orderNumber,
-        'ID Origen':  formatSourceId(o.sourceId, o.platform) ?? '—',
-        'Tienda':     o.store?.name || '',
-        'Cliente':    o.customerName,
-        'Teléfono':   o.customerPhone || '',
-        'Email':      o.customerEmail || '',
-        'Dirección':  o.addressStreet,
-        'Comuna':     o.addressComuna,
-        'Región':     o.addressRegion,
-        'Plataforma': PLATFORM_LABEL[o.platform] ?? o.platform,
-        'Bultos':     o.bultos,
-        'Estado':     STATUS_LABEL[o.status] ?? o.status,
-        'Creado':     new Date(o.createdAt).toLocaleString('es-CL'),
-        'Entregado':  o.deliveredAt ? new Date(o.deliveredAt).toLocaleString('es-CL') : '',
+        'N° Pedido':   o.orderNumber,
+        'ID Origen':   formatSourceId(o.sourceId, o.platform) ?? '—',
+        'Sub-tienda':  o.subStoreName || '—',
+        'Tienda':      o.store?.name || '',
+        'Cliente':     o.customerName,
+        'Teléfono':    o.customerPhone || '',
+        'Email':       o.customerEmail || '',
+        'Dirección':   o.addressStreet,
+        'Comuna':      o.addressComuna,
+        'Región':      o.addressRegion,
+        'Plataforma':  PLATFORM_LABEL[o.platform] ?? o.platform,
+        'Bultos':      o.bultos,
+        'Estado':      STATUS_LABEL[o.status] ?? o.status,
+        'Creado':      new Date(o.createdAt).toLocaleString('es-CL'),
+        'Entregado':   o.deliveredAt ? new Date(o.deliveredAt).toLocaleString('es-CL') : '',
       }))
       const ws = XLSX.utils.json_to_sheet(rows)
-      ws['!cols'] = [{wch:12},{wch:14},{wch:20},{wch:22},{wch:14},{wch:24},{wch:28},{wch:16},{wch:16},{wch:14},{wch:8},{wch:14},{wch:18},{wch:18}]
+      ws['!cols'] = [{wch:12},{wch:14},{wch:16},{wch:20},{wch:22},{wch:14},{wch:24},{wch:28},{wch:16},{wch:16},{wch:14},{wch:8},{wch:14},{wch:18},{wch:18}]
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Pedidos')
       const fecha   = new Date().toLocaleDateString('es-CL').replace(/\//g, '-')
@@ -164,7 +165,6 @@ export default function RecepcionesClient({
 
   return (
     <div>
-      {/* Barra de acciones */}
       <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
         {pendientes.length > 0 && (
           <button onClick={recepcionarTodos} disabled={loadingRecepcionar}
@@ -196,7 +196,6 @@ export default function RecepcionesClient({
         </div>
       )}
 
-      {/* Tabla */}
       <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
         {orders.length === 0 ? (
           <div style={{ padding:48, textAlign:'center', color:'#9CA3AF' }}>
@@ -227,7 +226,7 @@ export default function RecepcionesClient({
                     <input type="checkbox" checked={allSelected} onChange={toggleAll}
                       style={{ cursor:'pointer', width:15, height:15 }}/>
                   </th>
-                  {['N° pedido','ID Origen','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
+                  {['N° pedido','ID Origen','Sub-tienda','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
                     <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -244,7 +243,7 @@ export default function RecepcionesClient({
                           style={{ cursor:'pointer', width:15, height:15 }}/>
                       </td>
 
-                      {/* N° pedido — STORE_ADMIN ve sourceId primero */}
+                      {/* N° pedido */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
                         {userRole === 'STORE_ADMIN' && sourceLabel ? (
                           <div>
@@ -260,8 +259,8 @@ export default function RecepcionesClient({
                         )}
                       </td>
 
-                      {/* ID Origen — solo visible para SUPER_ADMIN */}
-                      {userRole !== 'STORE_ADMIN' && (
+                      {/* ID Origen */}
+                      {userRole !== 'STORE_ADMIN' ? (
                         <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
                           {sourceLabel ? (
                             <span style={{ fontSize:11, padding:'2px 8px', borderRadius:4, background:'#F0FDF4', color:'#166534', fontWeight:500, fontFamily:'monospace', whiteSpace:'nowrap' }}>
@@ -271,18 +270,30 @@ export default function RecepcionesClient({
                             <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
                           )}
                         </td>
-                      )}
-                      {userRole === 'STORE_ADMIN' && (
+                      ) : (
                         <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
                           <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
                         </td>
                       )}
 
+                      {/* Sub-tienda */}
+                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
+                        {order.subStoreName ? (
+                          <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFF7ED', color:'#C2410C', fontWeight:500, whiteSpace:'nowrap', border:'1px solid #FED7AA' }}>
+                            {order.subStoreName}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Tienda */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
                         <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>
                           {order.store?.name ?? '—'}
                         </span>
                       </td>
+
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{order.customerName}</td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{order.customerPhone || '—'}</td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
