@@ -23,11 +23,18 @@ const PLATFORM_PREFIX: Record<string, string> = {
   MANUAL:       'MAN',
 }
 
+// Formato completo: WOO-56142 (para badge superior)
 function formatSourceId(sourceId: string | undefined, platform: string): string | null {
   if (!sourceId || platform === 'MANUAL') return null
   const prefix = PLATFORM_PREFIX[platform]
   if (!prefix) return null
   return `${prefix}-${sourceId}`
+}
+
+// Solo prefijo: WOO (para mostrar al lado del nombre de tienda)
+function formatSourcePrefix(platform: string): string | null {
+  if (platform === 'MANUAL') return null
+  return PLATFORM_PREFIX[platform] ?? null
 }
 
 export async function generateQRImage(qrCode: string): Promise<string> {
@@ -51,7 +58,8 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
     JUMPSELLER:   'Jumpseller',
     MANUAL:       'Manual',
   }
-  const sourceLabel = formatSourceId(data.sourceId, data.platform)
+  const sourceLabel  = formatSourceId(data.sourceId, data.platform)
+  const sourcePrefix = formatSourcePrefix(data.platform)
 
   return `
   <div class="label">
@@ -79,7 +87,10 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
         <div class="val">${data.addressStreet}<br>${data.addressComuna}, ${data.addressRegion}</div>
 
         <div class="lbl">Tienda</div>
-        <div class="val sm">${data.storeName}</div>
+        <div class="val sm" style="display:flex;align-items:center;gap:6px;">
+          <span>${data.storeName}</span>
+          ${sourcePrefix ? `<span class="store-prefix-badge">${sourcePrefix}</span>` : ''}
+        </div>
       </div>
       <div class="qr-col">
         <img src="${qrDataUrl}" alt="QR tracking">
@@ -211,6 +222,18 @@ function buildHTMLWrapper(labelsHTML: string): string {
     border: 1px solid #BBF7D0;
     display: inline-block;
     font-family: monospace;
+  }
+
+  .store-prefix-badge {
+    font-size: 14px;
+    font-weight: bold;
+    color: #166534;
+    background: #F0FDF4;
+    padding: 2px 10px;
+    border-radius: 6px;
+    border: 1px solid #BBF7D0;
+    font-family: monospace;
+    display: inline-block;
   }
 
   .footer {
