@@ -57,18 +57,19 @@ const ML_STATUS: Record<string, string> = {
   invalid:         'Inválido',
 }
 
+function formatRawStatus(status: string): string {
+  // Convierte "enviado_gonzalo" → "Enviado Gonzalo"
+  return status
+    .replace(/_/g, ' ')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase())
+}
+
 function getPlatformStatus(platform: string, rawPayload: any): string | null {
   if (!rawPayload) return null
   const status = rawPayload.status ?? rawPayload.financial_status ?? null
   if (!status) return null
-
-  let label: string | null = null
-  if (platform === 'WOOCOMMERCE')  label = WC_STATUS[status]      ?? status
-  if (platform === 'SHOPIFY')      label = SHOPIFY_STATUS[status]  ?? status
-  if (platform === 'MERCADOLIBRE') label = ML_STATUS[status]       ?? status
-  if (platform === 'JUMPSELLER')   label = status
-
-  return label
+  return formatRawStatus(status)
 }
 
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
