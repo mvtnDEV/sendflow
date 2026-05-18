@@ -18,7 +18,7 @@ function isRegionPermitida(region: string): boolean {
   return REGIONES_PERMITIDAS.some(allowed => r.includes(allowed) || allowed.includes(r))
 }
 
-// ─── Crear pedido (manual o desde integración) ────────────────────────────────
+// ─── Crear pedido ─────────────────────────────────────────────────────────────
 
 interface CreateOrderInput {
   storeId:        string
@@ -33,13 +33,12 @@ interface CreateOrderInput {
   addressNotes?:  string
   bultos:         number
   weightKg?:      number
-  externalId?:    string
+  sourceId?:      string
   rawPayload?:    Record<string, unknown>
   createdBy?:     string
 }
 
 export async function createOrder(input: CreateOrderInput) {
-  // Validar región antes de crear
   if (!isRegionPermitida(input.addressRegion)) {
     throw new Error(`Pedido fuera de zona de despacho: ${input.addressRegion}. Solo despachamos en la Región Metropolitana.`)
   }
@@ -56,7 +55,7 @@ export async function createOrder(input: CreateOrderInput) {
       storeId:       input.storeId,
       integrationId: input.integrationId,
       platform:      input.platform,
-      externalId:    input.externalId,
+      sourceId:      input.sourceId,
       customerName:  input.customerName,
       customerPhone: input.customerPhone,
       customerEmail: input.customerEmail,
@@ -82,7 +81,7 @@ export async function createOrder(input: CreateOrderInput) {
   return order
 }
 
-// ─── Upsert desde webhook (idempotente) ───────────────────────────────────────
+// ─── Upsert desde webhook ─────────────────────────────────────────────────────
 
 export async function upsertOrderFromWebhook(
   storeId:       string,
@@ -90,7 +89,7 @@ export async function upsertOrderFromWebhook(
   data:          NormalizedOrder,
 ) {
   const existing = await prisma.order.findFirst({
-    where: { integrationId, externalId: data.externalId },
+    where: { integrationId, sourceId: data.externalId },
   })
 
   if (existing) {
@@ -112,7 +111,7 @@ export async function upsertOrderFromWebhook(
     storeId,
     integrationId,
     platform:      data.platform,
-    externalId:    data.externalId,
+    sourceId:      data.externalId,
     customerName:  data.customerName,
     customerPhone: data.customerPhone,
     customerEmail: data.customerEmail,
@@ -125,7 +124,7 @@ export async function upsertOrderFromWebhook(
   })
 }
 
-// ─── Cambiar estado de un pedido ──────────────────────────────────────────────
+// ─── Cambiar estado ───────────────────────────────────────────────────────────
 
 const STATUS_TIMESTAMP: Partial<Record<OrderStatus, string>> = {
   RECEIVED:   'receivedAt',
@@ -164,7 +163,7 @@ export async function updateOrderStatus(
     include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
   })
 
-  // Enviar a Envios Now al recepcionar
+  // Enviar a Envios Now al recepcionar — ID de Now va a externalId
   if (status === 'RECEIVED') {
     try {
       const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
@@ -177,7 +176,7 @@ export async function updateOrderStatus(
           where: { id: order.id },
           data:  { externalId: String(result.id) },
         })
-        console.log('[EnviosNow] Envío creado al recepcionar, ID:', result.id)
+        console.log('[EnviosNow] Envío creado, ID Now:', result.id)
       }
     } catch (err) {
       console.error('[EnviosNow] Error enviando pedido:', err)
@@ -207,7 +206,7 @@ export async function findOrderByQr(qrCode: string) {
   })
 }
 
-// ─── Listar pedidos con filtros ───────────────────────────────────────────────
+// ─── Listar pedidos ───────────────────────────────────────────────────────────
 
 export async function listOrders(filters: OrderFilters) {
   const page     = filters.page     ?? 1
@@ -227,6 +226,7 @@ export async function listOrders(filters: OrderFilters) {
       { addressStreet: { contains: filters.search, mode: 'insensitive' } },
       { orderNumber:   { contains: filters.search, mode: 'insensitive' } },
       { customerPhone: { contains: filters.search } },
+      { sourceId:      { contains: filters.search } },
     ]
   }
 
