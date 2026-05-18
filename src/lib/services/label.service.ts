@@ -100,15 +100,33 @@ function buildHTMLWrapper(labelsHTML: string): string {
 <meta charset="UTF-8">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: white; color: #0B1628; }
+
+  @page {
+    margin: 0;
+    size: 10cm 15cm;
+  }
+
+  html, body {
+    width: 10cm;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background: white;
+    color: #0B1628;
+  }
 
   .label {
     width: 10cm;
+    max-width: 10cm;
     background: white;
     page-break-after: always;
     break-after: page;
+    page-break-inside: avoid;
   }
-  .label:last-child { page-break-after: avoid; break-after: avoid; }
+  .label:last-child {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
 
   .accent { height: 6px; background: #2563EB; }
 
@@ -204,11 +222,6 @@ function buildHTMLWrapper(labelsHTML: string): string {
     justify-content: space-between;
     font-size: 10px;
     color: #9CA3AF;
-  }
-
-  @media print {
-    body { margin: 0; }
-    @page { margin: 0; size: 10cm 15cm; }
   }
 </style>
 </head>
