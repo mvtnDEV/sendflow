@@ -47,7 +47,7 @@ function fmtDate(date: Date | string) {
 }
 
 export default function RecepcionesClient({
-  storeName, todayOnly, orders = [], total, page, totalPages, searchParams,
+  storeName, todayOnly, orders = [], total, page, totalPages, userRole, searchParams,
 }: {
   storeName:    string
   todayOnly:    boolean
@@ -55,6 +55,7 @@ export default function RecepcionesClient({
   total:        number
   page:         number
   totalPages:   number
+  userRole:     string
   searchParams: Record<string, string | undefined>
 }) {
   const [loadingExport,      setLoadingExport]      = useState(false)
@@ -233,8 +234,8 @@ export default function RecepcionesClient({
               </thead>
               <tbody>
                 {orders.map(order => {
-                  const sc         = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-                  const isSelected = selected.has(order.id)
+                  const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+                  const isSelected  = selected.has(order.id)
                   const sourceLabel = formatSourceId(order.sourceId, order.platform)
                   return (
                     <tr key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white' }}>
@@ -242,20 +243,41 @@ export default function RecepcionesClient({
                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelected(order.id)}
                           style={{ cursor:'pointer', width:15, height:15 }}/>
                       </td>
+
+                      {/* N° pedido — STORE_ADMIN ve sourceId primero */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
-                        <Link href={`/recepciones/${order.id}`} style={{ color:'#1D4ED8', textDecoration:'none' }}>
-                          {order.orderNumber}
-                        </Link>
-                      </td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
-                        {sourceLabel ? (
-                          <span style={{ fontSize:11, padding:'2px 8px', borderRadius:4, background:'#F0FDF4', color:'#166534', fontWeight:500, fontFamily:'monospace', whiteSpace:'nowrap' }}>
-                            {sourceLabel}
-                          </span>
+                        {userRole === 'STORE_ADMIN' && sourceLabel ? (
+                          <div>
+                            <div style={{ fontSize:13, fontWeight:700, color:'#166534' }}>{sourceLabel}</div>
+                            <Link href={`/recepciones/${order.id}`} style={{ color:'#9CA3AF', textDecoration:'none', fontSize:11 }}>
+                              {order.orderNumber}
+                            </Link>
+                          </div>
                         ) : (
-                          <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
+                          <Link href={`/recepciones/${order.id}`} style={{ color:'#1D4ED8', textDecoration:'none' }}>
+                            {order.orderNumber}
+                          </Link>
                         )}
                       </td>
+
+                      {/* ID Origen — solo visible para SUPER_ADMIN */}
+                      {userRole !== 'STORE_ADMIN' && (
+                        <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
+                          {sourceLabel ? (
+                            <span style={{ fontSize:11, padding:'2px 8px', borderRadius:4, background:'#F0FDF4', color:'#166534', fontWeight:500, fontFamily:'monospace', whiteSpace:'nowrap' }}>
+                              {sourceLabel}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
+                          )}
+                        </td>
+                      )}
+                      {userRole === 'STORE_ADMIN' && (
+                        <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
+                          <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
+                        </td>
+                      )}
+
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
                         <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>
                           {order.store?.name ?? '—'}
