@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
     })
 
     const tokens = await res.json()
+    console.log('[ML callback] tokens response:', JSON.stringify(tokens))
     if (!tokens.access_token) throw new Error('No access token')
 
     const userRes = await fetch('https://api.mercadolibre.com/users/me', {
