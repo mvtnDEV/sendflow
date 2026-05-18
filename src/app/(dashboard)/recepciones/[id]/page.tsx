@@ -47,6 +47,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     CANCELLED:  { bg: '#F1F5F9', color: '#475569' },
   }
   const sc = statusBadge[order.status] ?? statusBadge.PENDING
+  const subStoreName = (order as any).subStoreName as string | null
 
   return (
     <div>
@@ -58,6 +59,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <span style={{ padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:500, background:sc.bg, color:sc.color }}>
           {STATUS_LABEL[order.status]}
         </span>
+        {subStoreName && (
+          <span style={{ padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:500, background:'#FFF7ED', color:'#C2410C', border:'1px solid #FED7AA' }}>
+            {subStoreName}
+          </span>
+        )}
         <a href={`/api/labels/${order.id}`} target="_blank"
           style={{ marginLeft:'auto', padding:'7px 14px', background:'#0B1628', color:'white', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none' }}>
           🖨 Imprimir etiqueta
@@ -72,6 +78,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             {[
               ['N° pedido',  order.orderNumber],
               ['Tienda',     `${order.store.name} · ${PLATFORM_LABEL[order.platform] ?? order.platform}`],
+              ...(subStoreName ? [['Sub-tienda', subStoreName]] : []),
               ['Cliente',    order.customerName],
               ['Teléfono',   order.customerPhone ?? '—'],
               ['Email',      order.customerEmail ?? '—'],
