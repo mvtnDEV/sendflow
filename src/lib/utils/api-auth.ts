@@ -7,8 +7,8 @@ export interface ApiKeyPayload {
   storeId: string | null
 }
 
-const RATE_LIMIT_MAX      = 100  // requests
-const RATE_LIMIT_WINDOW   = 60   // segundos
+const RATE_LIMIT_MAX    = 500  // requests
+const RATE_LIMIT_WINDOW = 60   // segundos
 
 export async function verifyApiKey(req: NextRequest): Promise<ApiKeyPayload | null> {
   const key = req.headers.get('x-api-key') ?? req.headers.get('authorization')?.replace('Bearer ', '')
@@ -17,7 +17,6 @@ export async function verifyApiKey(req: NextRequest): Promise<ApiKeyPayload | nu
   const apiKey = await prisma.apiKey.findUnique({
     where: { key, isActive: true },
   })
-
   if (!apiKey) return null
 
   // Rate limiting
