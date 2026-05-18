@@ -38,6 +38,20 @@ function formatSourceId(sourceId: string | null, platform: string): string | nul
   return `${prefix}-${sourceId}`
 }
 
+function formatRawStatus(status: string): string {
+  return status
+    .replace(/_/g, ' ')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase())
+}
+
+function getPlatformStatus(rawPayload: any): string | null {
+  if (!rawPayload) return null
+  const status = rawPayload.status ?? rawPayload.financial_status ?? null
+  if (!status) return null
+  return formatRawStatus(String(status))
+}
+
 const TZ = 'America/Santiago'
 function fmtTime(date: Date | string) {
   return new Date(date).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit', timeZone: TZ })
@@ -64,8 +78,9 @@ export default function RecepcionesClient({
   const [resultado,          setResultado]          = useState<{ ok: boolean; msg: string } | null>(null)
   const [selected,           setSelected]           = useState<Set<string>>(new Set())
 
-  const pendientes  = orders.filter(o => o.status === 'PENDING')
-  const allSelected = selected.size === orders.length && orders.length > 0
+  const isStoreAdmin = userRole === 'STORE_ADMIN'
+  const pendientes   = orders.filter(o => o.status === 'PENDING')
+  const allSelected  = selected.size === orders.length && orders.length > 0
 
   function buildPageUrl(p: number) {
     const params = new URLSearchParams()
@@ -163,6 +178,10 @@ export default function RecepcionesClient({
     finally { setLoadingEtiquetas(false) }
   }
 
+  // Headers según rol
+  const superAdminHeaders = ['N° pedido','Sub-tienda','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora','']
+  const storeAdminHeaders = ['N° pedido','ID Origen','Sub-tienda','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado WOO','Estado','Hora','']
+
   return (
     <div>
       <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
@@ -226,16 +245,17 @@ export default function RecepcionesClient({
                     <input type="checkbox" checked={allSelected} onChange={toggleAll}
                       style={{ cursor:'pointer', width:15, height:15 }}/>
                   </th>
-                  {['N° pedido','ID Origen','Sub-tienda','Tienda','Cliente','Teléfono','Dirección','Plataforma','Bultos','Estado','Hora',''].map(h => (
+                  {(isStoreAdmin ? storeAdminHeaders : superAdminHeaders).map(h => (
                     <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {orders.map(order => {
-                  const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-                  const isSelected  = selected.has(order.id)
-                  const sourceLabel = formatSourceId(order.sourceId, order.platform)
+                  const sc           = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+                  const isSelected   = selected.has(order.id)
+                  const sourceLabel  = formatSourceId(order.sourceId, order.platform)
+                  const platformStatus = getPlatformStatus(order.rawPayload)
                   return (
                     <tr key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white' }}>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
@@ -245,7 +265,7 @@ export default function RecepcionesClient({
 
                       {/* N° pedido */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
-                        {userRole === 'STORE_ADMIN' && sourceLabel ? (
+                        {isStoreAdmin && sourceLabel ? (
                           <div>
                             <div style={{ fontSize:13, fontWeight:700, color:'#166534' }}>{sourceLabel}</div>
                             <Link href={`/recepciones/${order.id}`} style={{ color:'#9CA3AF', textDecoration:'none', fontSize:11 }}>
@@ -259,8 +279,8 @@ export default function RecepcionesClient({
                         )}
                       </td>
 
-                      {/* ID Origen */}
-                      {userRole !== 'STORE_ADMIN' ? (
+                      {/* ID Origen — solo STORE_ADMIN */}
+                      {isStoreAdmin && (
                         <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
                           {sourceLabel ? (
                             <span style={{ fontSize:11, padding:'2px 8px', borderRadius:4, background:'#F0FDF4', color:'#166534', fontWeight:500, fontFamily:'monospace', whiteSpace:'nowrap' }}>
@@ -269,10 +289,6 @@ export default function RecepcionesClient({
                           ) : (
                             <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
                           )}
-                        </td>
-                      ) : (
-                        <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
-                          <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
                         </td>
                       )}
 
@@ -303,6 +319,21 @@ export default function RecepcionesClient({
                         {PLATFORM_LABEL[order.platform] ?? order.platform}
                       </td>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, textAlign:'center' }}>{order.bultos}</td>
+
+                      {/* Estado WOO — solo STORE_ADMIN */}
+                      {isStoreAdmin && (
+                        <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
+                          {platformStatus ? (
+                            <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500, whiteSpace:'nowrap' }}>
+                              {platformStatus}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
+                          )}
+                        </td>
+                      )}
+
+                      {/* Estado SendFlow */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                         <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
                           <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
@@ -310,6 +341,7 @@ export default function RecepcionesClient({
                         </span>
                         {order.evidencePhoto1 && <span style={{ marginLeft:4, fontSize:11 }}>📷</span>}
                       </td>
+
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
                         {fmtTime(order.createdAt)}
                         {!todayOnly && <div style={{ fontSize:11 }}>{fmtDate(order.createdAt)}</div>}
