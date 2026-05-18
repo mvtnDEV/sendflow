@@ -11,7 +11,23 @@ interface LabelData {
   addressRegion:  string
   storeName:      string
   platform:       string
+  sourceId?:      string
   createdAt:      Date
+}
+
+const PLATFORM_PREFIX: Record<string, string> = {
+  SHOPIFY:      'SHF',
+  MERCADOLIBRE: 'ML',
+  WOOCOMMERCE:  'WOO',
+  JUMPSELLER:   'JMP',
+  MANUAL:       'MAN',
+}
+
+function formatSourceId(sourceId: string | undefined, platform: string): string | null {
+  if (!sourceId || platform === 'MANUAL') return null
+  const prefix = PLATFORM_PREFIX[platform]
+  if (!prefix) return null
+  return `${prefix}-${sourceId}`
 }
 
 export async function generateQRImage(qrCode: string): Promise<string> {
@@ -35,6 +51,7 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
     JUMPSELLER:   'Jumpseller',
     MANUAL:       'Manual',
   }
+  const sourceLabel = formatSourceId(data.sourceId, data.platform)
 
   return `
   <div class="label">
@@ -45,7 +62,10 @@ export function buildSingleLabel(data: LabelData, qrDataUrl: string): string {
     </div>
     <div class="body">
       <div class="info">
-        <div class="platform-badge">${platformLabel[data.platform] ?? data.platform}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">
+          <div class="platform-badge">${platformLabel[data.platform] ?? data.platform}</div>
+          ${sourceLabel ? `<div class="source-badge">${sourceLabel}</div>` : ''}
+        </div>
 
         <div class="lbl">Destinatario</div>
         <div class="val">${data.customerName}</div>
@@ -160,8 +180,19 @@ function buildHTMLWrapper(labelsHTML: string): string {
     background: #EFF6FF;
     padding: 3px 10px;
     border-radius: 10px;
-    margin-bottom: 12px;
     display: inline-block;
+  }
+
+  .source-badge {
+    font-size: 10px;
+    font-weight: bold;
+    color: #166534;
+    background: #F0FDF4;
+    padding: 3px 10px;
+    border-radius: 10px;
+    border: 1px solid #BBF7D0;
+    display: inline-block;
+    font-family: monospace;
   }
 
   .footer {
@@ -208,6 +239,7 @@ export async function generateLabelForOrder(orderId: string): Promise<{
     addressRegion: order.addressRegion,
     storeName:     order.store.name,
     platform:      order.platform,
+    sourceId:      (order as any).sourceId ?? undefined,
     createdAt:     order.createdAt,
   }
 
@@ -236,6 +268,7 @@ export async function generateBulkLabels(orderIds: string[]): Promise<string> {
       addressRegion: order.addressRegion,
       storeName:     order.store.name,
       platform:      order.platform,
+      sourceId:      (order as any).sourceId ?? undefined,
       createdAt:     order.createdAt,
     }
     const qrDataUrl = await generateQRImage(order.qrCode)
