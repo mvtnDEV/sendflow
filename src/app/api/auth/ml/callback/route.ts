@@ -1,11 +1,8 @@
 export const dynamic = 'force-dynamic'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { encrypt } from '@/lib/utils/crypto'
 
-// GET /api/auth/ml/callback
-// ML redirige aquí después de que el usuario autoriza
 export async function GET(req: NextRequest) {
   const code    = req.nextUrl.searchParams.get('code')
   const storeId = req.nextUrl.searchParams.get('state')
@@ -15,7 +12,6 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Intercambiar código por access token
     const res = await fetch('https://api.mercadolibre.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -31,13 +27,11 @@ export async function GET(req: NextRequest) {
     const tokens = await res.json()
     if (!tokens.access_token) throw new Error('No access token')
 
-    // Obtener info del usuario de ML
-    const userRes  = await fetch('https://api.mercadolibre.com/users/me', {
+    const userRes = await fetch('https://api.mercadolibre.com/users/me', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     })
     const mlUser = await userRes.json()
 
-    // Guardar en DB — cifrado
     const credentials = JSON.stringify({
       accessToken:  tokens.access_token,
       refreshToken: tokens.refresh_token,
@@ -47,9 +41,14 @@ export async function GET(req: NextRequest) {
     })
 
     if (storeId) {
-await prisma.storeIntegration.upsert({
+      await prisma.storeIntegration.upsert({
         where:  { storeId_platform: { storeId, platform: 'MERCADOLIBRE' } },
-        update: { apiKeyEnc: encrypt(credentials), externalStoreId: String(mlUser.id), isActive: true, lastSyncAt: new Date() },
+        update: {
+          apiKeyEnc:       encrypt(credentials),
+          externalStoreId: String(mlUser.id),
+          isActive:        true,
+          lastSyncAt:      new Date(),
+        },
         create: {
           storeId,
           platform:        'MERCADOLIBRE',
@@ -58,11 +57,10 @@ await prisma.storeIntegration.upsert({
           isActive:        true,
           lastSyncAt:      new Date(),
         },
-      }))
+      })
     }
 
     return NextResponse.redirect(`${process.env.APP_URL}/integraciones?success=ml`)
-
   } catch (err) {
     console.error('[ML OAuth callback]', err)
     return NextResponse.redirect(`${process.env.APP_URL}/integraciones?error=ml_auth_failed`)
