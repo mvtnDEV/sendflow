@@ -34,11 +34,10 @@ const STEPS: Record<Exclude<Tab,'APIKEYS'>, string[]> = {
     'Define un token secreto tuyo (ej: sf_abc123) y úsalo en la URL',
   ],
   MERCADOLIBRE: [
-    'Entra a developers.mercadolibre.com → crea una aplicación',
-    'En tu app → Notificaciones → activa "Órdenes"',
-    'URL de notificaciones: https://TU-DOMINIO/api/webhooks/mercadolibre',
-    'Copia Client ID y Client Secret de tu aplicación',
-    'El usuario de ML Flex debe autorizar tu app (OAuth flow)',
+    'Haz clic en "Conectar con Mercado Libre"',
+    'Inicia sesión con tu cuenta de ML Flex',
+    'Acepta los permisos solicitados',
+    'Listo — tus pedidos llegarán automáticamente a SendFlow',
   ],
 }
 
@@ -105,75 +104,43 @@ function ApiKeysTab() {
 
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-      {/* Crear nueva key */}
       <div>
         <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:24, marginBottom:14 }}>
           <div style={{ fontSize:14, fontWeight:500, marginBottom:6 }}>Nueva API Key</div>
           <div style={{ fontSize:13, color:'#6B7280', marginBottom:16 }}>
             Genera una API Key para que sistemas externos se integren con SendFlow.
           </div>
-
-          {/* Nombre */}
           <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }}>
-              Nombre de la integración
-            </label>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Ej: Senby, ML Flex, Mi Sistema..."
+            <label style={{ fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }}>Nombre de la integración</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Senby, ML Flex, Mi Sistema..."
               onKeyDown={e => e.key === 'Enter' && handleCreate()}
-              style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit' }}
-            />
+              style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit' }}/>
           </div>
-
-          {/* Webhook URL */}
           <div style={{ marginBottom:12 }}>
             <label style={{ fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }}>
               Webhook URL <span style={{ color:'#9CA3AF', fontWeight:400 }}>(opcional)</span>
             </label>
-            <input
-              value={webhookUrl}
-              onChange={e => setWebhookUrl(e.target.value)}
-              placeholder="https://tu-sistema.cl/webhook/sendflow"
-              style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit' }}
-            />
-            <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>
-              SendFlow notificará cambios de estado a esta URL automáticamente
-            </div>
+            <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://tu-sistema.cl/webhook/sendflow"
+              style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit' }}/>
+            <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>SendFlow notificará cambios de estado a esta URL automáticamente</div>
           </div>
-
-          {/* Webhook Secret */}
           <div style={{ marginBottom:16 }}>
             <label style={{ fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }}>
               Webhook Secret <span style={{ color:'#9CA3AF', fontWeight:400 }}>(opcional)</span>
             </label>
-            <input
-              value={webhookSecret}
-              onChange={e => setWebhookSecret(e.target.value)}
-              placeholder="Secret para verificar la firma del webhook"
-              style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'monospace' }}
-            />
-            <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>
-              Firma HMAC-SHA256 enviada en header X-SendFlow-Signature
-            </div>
+            <input value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} placeholder="Secret para verificar la firma del webhook"
+              style={{ width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'monospace' }}/>
+            <div style={{ fontSize:11, color:'#9CA3AF', marginTop:4 }}>Firma HMAC-SHA256 enviada en header X-SendFlow-Signature</div>
           </div>
-
           <button onClick={handleCreate} disabled={creating || !name.trim()}
             style={{ width:'100%', padding:'10px', background:creating||!name.trim()?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:creating||!name.trim()?'not-allowed':'pointer' }}>
             {creating ? 'Generando...' : '+ Generar API Key'}
           </button>
         </div>
-
-        {/* Key recién creada */}
         {newKey && (
           <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:12, padding:20 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:'#166534', marginBottom:8 }}>
-              ✅ API Key generada — cópiala ahora
-            </div>
-            <div style={{ fontSize:12, color:'#166534', marginBottom:12 }}>
-              Esta key solo se mostrará una vez. Guárdala en un lugar seguro.
-            </div>
+            <div style={{ fontSize:13, fontWeight:600, color:'#166534', marginBottom:8 }}>✅ API Key generada — cópiala ahora</div>
+            <div style={{ fontSize:12, color:'#166534', marginBottom:12 }}>Esta key solo se mostrará una vez. Guárdala en un lugar seguro.</div>
             <div style={{ background:'white', border:'1px solid #BBF7D0', borderRadius:8, padding:'10px 14px', fontFamily:'monospace', fontSize:12, color:'#0B1628', wordBreak:'break-all', marginBottom:10 }}>
               {newKey}
             </div>
@@ -188,8 +155,6 @@ function ApiKeysTab() {
           </div>
         )}
       </div>
-
-      {/* Lista de keys */}
       <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:24 }}>
         <div style={{ fontSize:14, fontWeight:500, marginBottom:16 }}>API Keys activas</div>
         {loading ? (
@@ -205,9 +170,7 @@ function ApiKeysTab() {
               <div key={k.id} style={{ border:'1px solid #E2E8F0', borderRadius:10, padding:'12px 14px' }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
                   <div style={{ fontSize:13, fontWeight:500 }}>{k.name}</div>
-                  <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500 }}>
-                    ● Activa
-                  </span>
+                  <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500 }}>● Activa</span>
                 </div>
                 <div style={{ fontFamily:'monospace', fontSize:11, color:'#6B7280', background:'#F8FAFC', padding:'5px 8px', borderRadius:6, marginBottom:8 }}>
                   {k.key.slice(0, 20)}••••••••••••••••
@@ -224,8 +187,6 @@ function ApiKeysTab() {
             ))}
           </div>
         )}
-
-        {/* Info de uso */}
         <div style={{ marginTop:16, padding:'12px 14px', background:'#F8FAFC', borderRadius:8, fontSize:12, color:'#6B7280', lineHeight:1.6 }}>
           <strong style={{ color:'#374151' }}>Cómo usar la API Key:</strong><br/>
           Agrega el header en cada petición:<br/>
@@ -256,42 +217,40 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
   const store       = stores.find(s => s.id === storeId)
   const integration = store?.integrations.find(i => i.platform === tab)
 
-async function handleSave() {
-  if (!storeId) return
-  setSaving(true)
-  try {
-    const credentials: Record<string,string> = {}
-    let externalStoreId: string | undefined = undefined
+  async function handleSave() {
+    if (!storeId) return
+    setSaving(true)
+    try {
+      const credentials: Record<string,string> = {}
+      let externalStoreId: string | undefined = undefined
 
-    if (tab === 'SHOPIFY') {
-      credentials.domain        = form.key1
-      credentials.accessToken   = form.key2
-      credentials.webhookSecret = form.secret
-      externalStoreId           = form.key1 // dominio de Shopify
-    } else if (tab === 'WOOCOMMERCE') {
-      credentials.url            = form.key1
-      credentials.consumerKey    = form.key2
-      credentials.consumerSecret = form.key3
-      credentials.webhookSecret  = form.secret
-      externalStoreId            = form.key1 // URL de la tienda WooCommerce
-    } else if (tab === 'JUMPSELLER') {
-      credentials.login        = form.key1
-      credentials.authToken    = form.key2
-      credentials.webhookToken = form.secret
-      externalStoreId          = form.key1 // login de Jumpseller
-    } else {
-      credentials.clientId     = form.key1
-      credentials.clientSecret = form.key2
-    }
+      if (tab === 'SHOPIFY') {
+        credentials.domain        = form.key1
+        credentials.accessToken   = form.key2
+        credentials.webhookSecret = form.secret
+        externalStoreId           = form.key1
+      } else if (tab === 'WOOCOMMERCE') {
+        credentials.url            = form.key1
+        credentials.consumerKey    = form.key2
+        credentials.consumerSecret = form.key3
+        credentials.webhookSecret  = form.secret
+        externalStoreId            = form.key1
+      } else if (tab === 'JUMPSELLER') {
+        credentials.login        = form.key1
+        credentials.authToken    = form.key2
+        credentials.webhookToken = form.secret
+        externalStoreId          = form.key1
+      }
 
-    const res = await fetch(`/api/stores/${storeId}/integrations`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ platform: tab, credentials, externalStoreId }),
-    })
-    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500) }
-  } finally { setSaving(false) }
-}
+      const res = await fetch(`/api/stores/${storeId}/integrations`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ platform: tab, credentials, externalStoreId }),
+      })
+      if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500) }
+    } finally { setSaving(false) }
+  }
+
   async function handleTest() {
     setTestOk(null)
     await new Promise(r => setTimeout(r, 1200))
@@ -310,8 +269,8 @@ async function handleSave() {
     setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
-  const inp: React.CSSProperties = { width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'monospace' }
-  const lbl: React.CSSProperties = { fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }
+  const inp: React.CSSProperties  = { width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'monospace' }
+  const lbl: React.CSSProperties  = { fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }
   const hint: React.CSSProperties = { fontSize:11, color:'#9CA3AF', marginTop:4 }
 
   if (stores.length === 0) return (
@@ -326,9 +285,7 @@ async function handleSave() {
     <div>
       <div style={{ marginBottom:20 }}>
         <h1 style={{ fontSize:20, fontWeight:500 }}>Integraciones</h1>
-        <p style={{ fontSize:13, color:'#6B7280', marginTop:3 }}>
-          Conecta tus plataformas de venta y gestiona el acceso a la API
-        </p>
+        <p style={{ fontSize:13, color:'#6B7280', marginTop:3 }}>Conecta tus plataformas de venta y gestiona el acceso a la API</p>
       </div>
 
       {/* Tabs */}
@@ -342,8 +299,7 @@ async function handleSave() {
                 border:`1.5px solid ${active ? p.border : '#E2E8F0'}`,
                 background: active ? p.bg : 'white',
                 color: active ? p.color : '#6B7280',
-                display:'flex', alignItems:'center', gap:6,
-              }}>
+                display:'flex', alignItems:'center', gap:6 }}>
               {p.label}
               {connected && <span style={{ width:7, height:7, borderRadius:'50%', background:'#16A34A', flexShrink:0 }}/>}
             </button>
@@ -351,12 +307,9 @@ async function handleSave() {
         })}
       </div>
 
-      {/* Contenido API Keys */}
       {tab === 'APIKEYS' && <ApiKeysTab />}
 
-      {/* Contenido plataformas */}
       {tab !== 'APIKEYS' && (<>
-        {/* Selector de tienda */}
         <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:'14px 18px', marginBottom:16, display:'flex', alignItems:'center', gap:12 }}>
           <span style={{ fontSize:13, fontWeight:500, flexShrink:0 }}>Tienda:</span>
           <select value={storeId} onChange={e => setStoreId(e.target.value)}
@@ -391,6 +344,17 @@ async function handleSave() {
                 <label style={lbl}>Webhook Signing Secret</label>
                 <input style={inp} type="password" placeholder="Secret generado por Shopify" value={form.secret} onChange={e=>set('secret',e.target.value)}/>
               </div>
+              <div style={{ display:'flex', gap:8, marginTop:18 }}>
+                <button onClick={handleTest}
+                  style={{ padding:'9px 16px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer',
+                    color: testOk === true ? '#166534' : testOk === false ? '#9F1239' : '#374151' }}>
+                  {testOk === true ? '✓ Conexión OK' : testOk === false ? '✗ Error' : 'Probar conexión'}
+                </button>
+                <button onClick={handleSave} disabled={saving}
+                  style={{ flex:1, padding:'9px', background:saving?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
+                  {saving ? 'Guardando...' : 'Guardar credenciales'}
+                </button>
+              </div>
             </>)}
 
             {tab === 'WOOCOMMERCE' && (<>
@@ -410,6 +374,17 @@ async function handleSave() {
                 <label style={lbl}>Webhook Secret</label>
                 <input style={inp} type="password" placeholder="Secret del webhook en WooCommerce" value={form.secret} onChange={e=>set('secret',e.target.value)}/>
               </div>
+              <div style={{ display:'flex', gap:8, marginTop:18 }}>
+                <button onClick={handleTest}
+                  style={{ padding:'9px 16px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer',
+                    color: testOk === true ? '#166534' : testOk === false ? '#9F1239' : '#374151' }}>
+                  {testOk === true ? '✓ Conexión OK' : testOk === false ? '✗ Error' : 'Probar conexión'}
+                </button>
+                <button onClick={handleSave} disabled={saving}
+                  style={{ flex:1, padding:'9px', background:saving?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
+                  {saving ? 'Guardando...' : 'Guardar credenciales'}
+                </button>
+              </div>
             </>)}
 
             {tab === 'JUMPSELLER' && (<>
@@ -427,64 +402,76 @@ async function handleSave() {
                 <input style={inp} placeholder="Define un token (ej: sf_abc123)" value={form.secret} onChange={e=>set('secret',e.target.value)}/>
                 <div style={hint}>Tú lo defines — se agrega a la URL como ?token=VALOR</div>
               </div>
-            </>)}
-
-            {tab === 'MERCADOLIBRE' && (<>
-              <div style={{ marginBottom:13 }}>
-                <label style={lbl}>Client ID</label>
-                <input style={inp} placeholder="4369995248896598" value={form.key1} onChange={e=>set('key1',e.target.value)}/>
-                <div style={hint}>Solo el número — developers.mercadolibre.com → tu aplicación → Client ID</div>
-              </div>
-              <div style={{ marginBottom:13 }}>
-                <label style={lbl}>Client Secret</label>
-                <input style={inp} type="password" placeholder="Secret Key" value={form.key2} onChange={e=>set('key2',e.target.value)}/>
-              </div>
-              <div style={{ marginBottom:13 }}>
-                <a href={`/api/auth/ml?state=${storeId}`}
-                  style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', padding:'11px', background:'#FFE600', color:'#333', borderRadius:8, fontSize:13, fontWeight:600, textDecoration:'none' }}>
-                  🔗 Conectar con Mercado Libre
-                </a>
-                <div style={{ fontSize:11, color:'#9CA3AF', marginTop:5, textAlign:'center' }}>
-                  El vendedor debe autorizar tu app con su cuenta de ML
-                </div>
-              </div>
-              <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, padding:'10px 14px' }}>
-                <div style={{ fontSize:12, color:'#92400E', lineHeight:1.6 }}>
-                  <strong>Pasos:</strong> 1) Guarda las credenciales → 2) Haz clic en "Conectar con ML" → 3) El vendedor autoriza → 4) Listo.
-                </div>
+              <div style={{ display:'flex', gap:8, marginTop:18 }}>
+                <button onClick={handleTest}
+                  style={{ padding:'9px 16px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer',
+                    color: testOk === true ? '#166534' : testOk === false ? '#9F1239' : '#374151' }}>
+                  {testOk === true ? '✓ Conexión OK' : testOk === false ? '✗ Error' : 'Probar conexión'}
+                </button>
+                <button onClick={handleSave} disabled={saving}
+                  style={{ flex:1, padding:'9px', background:saving?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
+                  {saving ? 'Guardando...' : 'Guardar credenciales'}
+                </button>
               </div>
             </>)}
 
-            <div style={{ display:'flex', gap:8, marginTop:18 }}>
-              <button onClick={handleTest}
-                style={{ padding:'9px 16px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer',
-                  color: testOk === true ? '#166534' : testOk === false ? '#9F1239' : '#374151' }}>
-                {testOk === true ? '✓ Conexión OK' : testOk === false ? '✗ Error' : 'Probar conexión'}
-              </button>
-              <button onClick={handleSave} disabled={saving}
-                style={{ flex:1, padding:'9px', background:saving?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
-                {saving ? 'Guardando...' : 'Guardar credenciales'}
-              </button>
-            </div>
+            {/* ML FLEX — solo botón OAuth, sin credenciales */}
+            {tab === 'MERCADOLIBRE' && (
+              <div>
+                {integration?.isActive ? (
+                  <div style={{ marginBottom:20 }}>
+                    <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
+                      <div style={{ fontSize:13, fontWeight:500, color:'#166534', marginBottom:4 }}>✅ Cuenta de ML conectada</div>
+                      <div style={{ fontSize:12, color:'#16A34A' }}>
+                        Los pedidos de ML Flex llegarán automáticamente a SendFlow.
+                      </div>
+                    </div>
+                    <a href={`/api/auth/ml?state=${storeId}`}
+                      style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', padding:'11px', background:'#FFE600', color:'#333', borderRadius:8, fontSize:13, fontWeight:600, textDecoration:'none' }}>
+                      🔄 Reconectar cuenta de ML
+                    </a>
+                    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:5, textAlign:'center' }}>
+                      Reconecta si los pedidos dejaron de llegar
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom:20 }}>
+                    <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:10, padding:'14px 16px', marginBottom:16 }}>
+                      <div style={{ fontSize:13, color:'#92400E', lineHeight:1.6 }}>
+                        Conecta tu cuenta de Mercado Libre para que tus pedidos de ML Flex lleguen automáticamente a SendFlow.
+                      </div>
+                    </div>
+                    <a href={`/api/auth/ml?state=${storeId}`}
+                      style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', padding:'13px', background:'#FFE600', color:'#333', borderRadius:8, fontSize:14, fontWeight:700, textDecoration:'none' }}>
+                      🔗 Conectar con Mercado Libre
+                    </a>
+                    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:6, textAlign:'center' }}>
+                      Serás redirigido a Mercado Libre para autorizar el acceso
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Instrucciones */}
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            <div style={{ background:'white', border:`1px solid ${plat.border}`, borderRadius:12, padding:20 }}>
-              <div style={{ fontSize:13, fontWeight:500, marginBottom:6 }}>URL del Webhook</div>
-              <div style={{ fontSize:12, color:'#6B7280', marginBottom:10 }}>Copia esta URL y configúrala en {plat.label}</div>
-              <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:8, padding:'10px 14px', fontFamily:'monospace', fontSize:11, color:'#374151', wordBreak:'break-all', marginBottom:10 }}>
-                {typeof window !== 'undefined' ? window.location.origin : 'https://tu-dominio.vercel.app'}
-                {tab === 'SHOPIFY'      && '/api/webhooks/shopify'}
-                {tab === 'WOOCOMMERCE' && '/api/webhooks/woocommerce'}
-                {tab === 'JUMPSELLER'  && `/api/webhooks/jumpseller?token=${form.secret || 'TU_TOKEN'}`}
-                {tab === 'MERCADOLIBRE'&& '/api/webhooks/mercadolibre'}
+            {tab !== 'MERCADOLIBRE' && (
+              <div style={{ background:'white', border:`1px solid ${plat.border}`, borderRadius:12, padding:20 }}>
+                <div style={{ fontSize:13, fontWeight:500, marginBottom:6 }}>URL del Webhook</div>
+                <div style={{ fontSize:12, color:'#6B7280', marginBottom:10 }}>Copia esta URL y configúrala en {plat.label}</div>
+                <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:8, padding:'10px 14px', fontFamily:'monospace', fontSize:11, color:'#374151', wordBreak:'break-all', marginBottom:10 }}>
+                  {typeof window !== 'undefined' ? window.location.origin : 'https://tu-dominio.vercel.app'}
+                  {tab === 'SHOPIFY'      && '/api/webhooks/shopify'}
+                  {tab === 'WOOCOMMERCE' && '/api/webhooks/woocommerce'}
+                  {tab === 'JUMPSELLER'  && `/api/webhooks/jumpseller?token=${form.secret || 'TU_TOKEN'}`}
+                </div>
+                <button onClick={copyWebhookUrl}
+                  style={{ width:'100%', padding:'8px', border:`1px solid ${plat.border}`, borderRadius:8, fontSize:12, background:plat.bg, color:plat.color, cursor:'pointer', fontWeight:500 }}>
+                  {copied ? '✓ Copiado' : 'Copiar URL'}
+                </button>
               </div>
-              <button onClick={copyWebhookUrl}
-                style={{ width:'100%', padding:'8px', border:`1px solid ${plat.border}`, borderRadius:8, fontSize:12, background:plat.bg, color:plat.color, cursor:'pointer', fontWeight:500 }}>
-                {copied ? '✓ Copiado' : 'Copiar URL'}
-              </button>
-            </div>
+            )}
 
             <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
               <div style={{ fontSize:13, fontWeight:500, marginBottom:14 }}>Cómo configurar en {plat.label}</div>
@@ -498,10 +485,12 @@ async function handleSave() {
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop:14, padding:'10px 14px', background:'#F8FAFC', borderRadius:8, fontSize:12, color:'#6B7280', lineHeight:1.6 }}>
-                <strong style={{ color:'#374151' }}>Alternativa sin webhook:</strong> exporta los pedidos en Excel/CSV y súbelos en{' '}
-                <a href="/pedidos/carga-masiva" style={{ color:'#2563EB' }}>Carga masiva</a>.
-              </div>
+              {tab !== 'MERCADOLIBRE' && (
+                <div style={{ marginTop:14, padding:'10px 14px', background:'#F8FAFC', borderRadius:8, fontSize:12, color:'#6B7280', lineHeight:1.6 }}>
+                  <strong style={{ color:'#374151' }}>Alternativa sin webhook:</strong> exporta los pedidos en Excel/CSV y súbelos en{' '}
+                  <a href="/pedidos/carga-masiva" style={{ color:'#2563EB' }}>Carga masiva</a>.
+                </div>
+              )}
             </div>
           </div>
         </div>
