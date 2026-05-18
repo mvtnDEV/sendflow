@@ -1,19 +1,16 @@
 export const dynamic = 'force-dynamic'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
-import { decrypt } from '@/lib/utils/crypto'
+import { decrypt, encrypt } from '@/lib/utils/crypto'
 import { fetchMLOrder, extractMLOrderId, refreshMLToken } from '@/lib/integrations/mercadolibre'
 import { upsertOrderFromWebhook } from '@/lib/services/order.service'
 
-// POST /api/webhooks/mercadolibre
-// ML envía una notificación con el resource path, luego hay que ir a buscar el pedido
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Body inválido' }, { status: 400 })
 
-  // Solo procesar notificaciones de pedidos
-   console.log('[ML webhook] body:', JSON.stringify(body))
+  console.log('[ML webhook] body:', JSON.stringify(body))
+
   if (body.topic !== 'orders_v2') {
     return NextResponse.json({ ok: true, skipped: true })
   }
@@ -23,7 +20,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'resource inválido' }, { status: 400 })
   }
 
-  // Identificar la integración por user_id de ML
   const integration = await prisma.storeIntegration.findFirst({
     where: {
       platform:        'MERCADOLIBRE',
@@ -31,15 +27,25 @@ export async function POST(req: NextRequest) {
       isActive:        true,
     },
   })
-
   if (!integration) {
     return NextResponse.json({ error: 'Integración no encontrada' }, { status: 404 })
   }
 
   try {
-    // Las credenciales son: "accessToken|refreshToken" cifrado
-    const creds        = decrypt(integration.apiKeyEnc)
-    const [accessToken, refreshToken] = creds.split('|')
+    const creds = decrypt(integration.apiKeyEnc)
+
+    // Soportar tanto formato pipe como JSON por compatibilidad
+    let accessToken: string
+    let refreshToken: string
+    if (creds.startsWith('{')) {
+      const parsed = JSON.parse(creds)
+      accessToken  = parsed.accessToken
+      refreshToken = parsed.refreshToken
+    } else {
+      const [at, rt] = creds.split('|')
+      accessToken  = at
+      refreshToken = rt
+    }
 
     let token = accessToken
     let normalized
@@ -47,13 +53,11 @@ export async function POST(req: NextRequest) {
     try {
       normalized = await fetchMLOrder(orderId, token)
     } catch (err: any) {
-      // Si el token expiró (6h), hacer refresh y reintentar
-      if (err.message?.includes('401')) {
+      if (err.message?.includes('401') || err.message?.includes('403')) {
+        console.log('[ML webhook] Token expirado, haciendo refresh...')
         const refreshed = await refreshMLToken(refreshToken)
-        token      = refreshed.accessToken
+        token = refreshed.accessToken
 
-        // Actualizar token en la DB cifrado
-        const { encrypt } = await import('@/lib/utils/crypto')
         await prisma.storeIntegration.update({
           where: { id: integration.id },
           data:  { apiKeyEnc: encrypt(`${refreshed.accessToken}|${refreshed.refreshToken}`) },
