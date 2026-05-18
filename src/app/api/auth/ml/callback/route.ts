@@ -47,17 +47,18 @@ export async function GET(req: NextRequest) {
     })
 
     if (storeId) {
-      await prisma.storeIntegration.upsert({
+await prisma.storeIntegration.upsert({
         where:  { storeId_platform: { storeId, platform: 'MERCADOLIBRE' } },
-        update: { apiKeyEnc: encrypt(credentials), isActive: true, lastSyncAt: new Date() },
+        update: { apiKeyEnc: encrypt(credentials), externalStoreId: String(mlUser.id), isActive: true, lastSyncAt: new Date() },
         create: {
           storeId,
-          platform:   'MERCADOLIBRE',
-          apiKeyEnc:  encrypt(credentials),
-          isActive:   true,
-          lastSyncAt: new Date(),
+          platform:        'MERCADOLIBRE',
+          apiKeyEnc:       encrypt(credentials),
+          externalStoreId: String(mlUser.id),
+          isActive:        true,
+          lastSyncAt:      new Date(),
         },
-      })
+      }))
     }
 
     return NextResponse.redirect(`${process.env.APP_URL}/integraciones?success=ml`)
