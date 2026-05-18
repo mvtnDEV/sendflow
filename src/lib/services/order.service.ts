@@ -234,11 +234,13 @@ export async function listOrders(filters: OrderFilters) {
   }
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
-    where.OR = [
-      { createdAt: todayRange() },
-      { status: 'PENDING' },
-    ]
-  } else if (filters.dateFrom || filters.dateTo) {
+  where.OR = [
+    { createdAt:   todayRange() },
+    { status:      'PENDING' },
+    { receivedAt:  todayRange() },
+    { inTransitAt: todayRange() },
+  ]
+} else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
       ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
       ...(filters.dateTo   && { lte: new Date(filters.dateTo + 'T23:59:59') }),
