@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
         { qrCode:      q },
         { orderNumber: q },
         { orderNumber: `#${q}` },
-        { externalId:  q },
+        { sourceId:    q }, // buscar por ID de origen (WooCommerce, Shopify, Senby)
+        { externalId:  q }, // buscar por ID de Envios Now también
       ],
     },
     include: {
