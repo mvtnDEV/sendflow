@@ -23,7 +23,6 @@ export async function POST(req: NextRequest) {
   if (!addressComuna) return NextResponse.json({ ok: false, error: 'addressComuna es requerido' }, { status: 400 })
   if (!addressRegion) return NextResponse.json({ ok: false, error: 'addressRegion es requerido' }, { status: 400 })
 
-  // Usar storeId del body, o el de la API Key, o la primera tienda activa
   let resolvedStoreId = storeId || apiKey.storeId
   if (!resolvedStoreId) {
     const firstStore = await prisma.store.findFirst({ where: { isActive: true }, select: { id: true } })
@@ -43,7 +42,7 @@ export async function POST(req: NextRequest) {
       addressRegion,
       addressNotes,
       bultos:        bultos ?? 1,
-      externalId,
+      sourceId:      externalId, // ID de Senby va a sourceId
       createdBy:     'api',
     })
 
@@ -59,9 +58,9 @@ export async function POST(req: NextRequest) {
       }
     }, { status: 201 })
 
-  } catch (err) {
+  } catch (err: any) {
     console.error('[API v1] Error creando pedido:', err)
-    return NextResponse.json({ ok: false, error: 'Error interno del servidor' }, { status: 500 })
+    return NextResponse.json({ ok: false, error: err.message ?? 'Error interno' }, { status: 500 })
   }
 }
 
@@ -70,38 +69,40 @@ export async function GET(req: NextRequest) {
   const apiKey = await verifyApiKey(req)
   if (!apiKey) return NextResponse.json({ ok: false, error: 'API Key inválida o no enviada' }, { status: 401 })
 
-const status     = searchParams.get('status')     ?? undefined
-const date       = searchParams.get('date')       ?? undefined
-const externalId = searchParams.get('externalId') ?? undefined
-const dateFrom   = searchParams.get('dateFrom')   ?? undefined
-const dateTo     = searchParams.get('dateTo')     ?? undefined
-const page       = Number(searchParams.get('page') ?? 1)
-const pageSize   = Math.min(Number(searchParams.get('pageSize') ?? 20), 100)
-const skip       = (page - 1) * pageSize
+  const searchParams = req.nextUrl.searchParams
+  const status     = searchParams.get('status')     ?? undefined
+  const date       = searchParams.get('date')       ?? undefined
+  const externalId = searchParams.get('externalId') ?? undefined
+  const dateFrom   = searchParams.get('dateFrom')   ?? undefined
+  const dateTo     = searchParams.get('dateTo')     ?? undefined
+  const page       = Number(searchParams.get('page') ?? 1)
+  const pageSize   = Math.min(Number(searchParams.get('pageSize') ?? 20), 100)
+  const skip       = (page - 1) * pageSize
 
-const where: any = {}
-if (apiKey.storeId) where.storeId = apiKey.storeId
-if (status)     where.status     = status
-if (externalId) where.externalId = externalId
-if (date) {
-  const d = new Date(date)
-  where.createdAt = {
-    gte: new Date(d.setHours(0, 0, 0, 0)),
-    lte: new Date(d.setHours(23, 59, 59, 999)),
+  const where: any = {}
+  if (apiKey.storeId) where.storeId = apiKey.storeId
+  if (status)     where.status   = status
+  if (externalId) where.sourceId = externalId // buscar por sourceId
+  if (date) {
+    const d = new Date(date)
+    where.createdAt = {
+      gte: new Date(d.setHours(0, 0, 0, 0)),
+      lte: new Date(d.setHours(23, 59, 59, 999)),
+    }
+  } else if (dateFrom || dateTo) {
+    where.createdAt = {
+      ...(dateFrom && { gte: new Date(dateFrom) }),
+      ...(dateTo   && { lte: new Date(dateTo + 'T23:59:59') }),
+    }
   }
-} else if (dateFrom || dateTo) {
-  where.createdAt = {
-    ...(dateFrom && { gte: new Date(dateFrom) }),
-    ...(dateTo   && { lte: new Date(dateTo + 'T23:59:59') }),
-  }
-}
 
   const [items, total] = await Promise.all([
     prisma.order.findMany({
       where, skip, take: pageSize,
       orderBy: { createdAt: 'desc' },
       select: {
-        id: true, orderNumber: true, externalId: true,
+        id: true, orderNumber: true,
+        externalId: true, sourceId: true,
         status: true, customerName: true, customerPhone: true,
         addressStreet: true, addressComuna: true, addressRegion: true,
         bultos: true, createdAt: true, receivedAt: true,
@@ -115,7 +116,11 @@ if (date) {
   return NextResponse.json({
     ok: true,
     data: {
-      items: items.map(o => ({ ...o, storeName: o.store.name })),
+      items: items.map(o => ({
+        ...o,
+        storeName:  o.store.name,
+        externalId: o.sourceId, // devolver sourceId como externalId para compatibilidad
+      })),
       total, page, pageSize,
       totalPages: Math.ceil(total / pageSize),
     }
