@@ -101,6 +101,7 @@ model Order {
   integrationId   String?
   externalId      String?     // ID de Envios Now (se asigna al recepcionar)
   sourceId        String?     // ID de origen: WooCommerce, Shopify, Senby, etc.
+  subStoreName    String?     // Sub-tienda de Senby: Envíame, Jacinta Tienda, ETN Meli
   platform        Platform    @default(MANUAL)
 
   customerName    String
