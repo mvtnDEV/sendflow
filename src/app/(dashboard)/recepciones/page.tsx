@@ -176,24 +176,25 @@ export default async function RecepcionesPage({ searchParams }: Props) {
       </div>
 
       {/* Tabla + acciones */}
-      <RecepcionesClient
-        orders={result.items as any}
-        storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
-        todayOnly={todayOnly}
-        total={result.total}
-        page={page}
-        totalPages={result.totalPages}
-        searchParams={{
-          historial: searchParams.historial,
-          storeId:   searchParams.storeId,
-          status:    searchParams.status,
-          search:    searchParams.search,
-          platform:  searchParams.platform,
-          dateFrom:  searchParams.dateFrom,
-          dateTo:    searchParams.dateTo,
-          pageSize:  String(pageSize),
-        }}
-      />
+<RecepcionesClient
+  orders={result.items as any}
+  storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
+  todayOnly={todayOnly}
+  total={result.total}
+  page={page}
+  totalPages={result.totalPages}
+  userRole={user?.role ?? ''}
+  searchParams={{
+    historial: searchParams.historial,
+    storeId:   searchParams.storeId,
+    status:    searchParams.status,
+    search:    searchParams.search,
+    platform:  searchParams.platform,
+    dateFrom:  searchParams.dateFrom,
+    dateTo:    searchParams.dateTo,
+    pageSize:  String(pageSize),
+  }}
+/>
     </div>
   )
 }
