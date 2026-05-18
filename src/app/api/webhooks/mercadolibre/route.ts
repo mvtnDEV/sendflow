@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
   if (!body) return NextResponse.json({ error: 'Body inválido' }, { status: 400 })
 
   // Solo procesar notificaciones de pedidos
+   console.log('[ML webhook] body:', JSON.stringify(body))
   if (body.topic !== 'orders_v2') {
     return NextResponse.json({ ok: true, skipped: true })
   }
