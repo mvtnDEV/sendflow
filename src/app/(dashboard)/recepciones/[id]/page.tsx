@@ -25,44 +25,8 @@ const PLATFORM_LABEL: Record<string, string> = {
   MANUAL:       'Manual',
 }
 
-// Estados traducidos de cada plataforma
-const WC_STATUS: Record<string, string> = {
-  pending:        'Pago pendiente',
-  processing:     'En proceso',
-  on_hold:        'En espera',
-  completed:      'Completado',
-  cancelled:      'Cancelado',
-  refunded:       'Reembolsado',
-  failed:         'Fallido',
-  checkout_draft: 'Borrador',
-}
-
-const SHOPIFY_STATUS: Record<string, string> = {
-  pending:    'Pago pendiente',
-  authorized: 'Autorizado',
-  partially_paid: 'Pago parcial',
-  paid:       'Pagado',
-  partially_refunded: 'Reembolso parcial',
-  refunded:   'Reembolsado',
-  voided:     'Anulado',
-}
-
-const ML_STATUS: Record<string, string> = {
-  confirmed:       'Confirmado',
-  payment_required:'Pago requerido',
-  payment_in_process: 'Pago en proceso',
-  partially_paid:  'Pago parcial',
-  paid:            'Pagado',
-  cancelled:       'Cancelado',
-  invalid:         'Inválido',
-}
-
 function formatRawStatus(status: string): string {
-  // Convierte "enviado_gonzalo" → "Enviado Gonzalo"
-  return status
-    .replace(/_/g, ' ')
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, l => l.toUpperCase())
+  return status.replace(/_/g, ' ').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
 
 function getPlatformStatus(platform: string, rawPayload: any): string | null {
@@ -93,15 +57,41 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
     CANCELLED:  { bg: '#F1F5F9', color: '#475569' },
   }
-  const sc           = statusBadge[order.status] ?? statusBadge.PENDING
-  const subStoreName = (order as any).subStoreName as string | null
+  const sc             = statusBadge[order.status] ?? statusBadge.PENDING
+  const subStoreName   = (order as any).subStoreName as string | null
   const platformStatus = user?.role === 'STORE_ADMIN'
     ? getPlatformStatus(order.platform, order.rawPayload)
     : null
 
+  const rows = [
+    ['N° pedido',  order.orderNumber],
+    ['Tienda',     `${order.store.name} · ${PLATFORM_LABEL[order.platform] ?? order.platform}`],
+    ...(subStoreName ? [['Sub-tienda', subStoreName]] : []),
+    ['Cliente',    order.customerName],
+    ['Teléfono',   order.customerPhone ?? '—'],
+    ['Email',      order.customerEmail ?? '—'],
+    ['Dirección',  order.addressStreet],
+    ['Comuna',     order.addressComuna],
+    ['Región',     order.addressRegion],
+    ['Bultos',     String(order.bultos)],
+    ['Creado',     fmt(order.createdAt)],
+    ...(order.receivedAt  ? [['Recepcionado', fmt(order.receivedAt)]]  : []),
+    ...(order.inTransitAt ? [['En camino',    fmt(order.inTransitAt)]] : []),
+    ...(order.deliveredAt ? [['Entregado',    fmt(order.deliveredAt)]] : []),
+  ]
+
   return (
-    <div>
-      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .detail-grid { grid-template-columns: 1fr !important; }
+          .detail-header { flex-wrap: wrap; gap: 8px; }
+          .print-btn { margin-left: 0 !important; width: 100%; justify-content: center; }
+        }
+      `}</style>
+
+      {/* Header */}
+      <div className="detail-header" style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
         <Link href="/recepciones" style={{ color:'#6B7280', textDecoration:'none', fontSize:13 }}>
           ← Recepciones
         </Link>
@@ -114,42 +104,25 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             {subStoreName}
           </span>
         )}
-        <a href={`/api/labels/${order.id}`} target="_blank"
-          style={{ marginLeft:'auto', padding:'7px 14px', background:'#0B1628', color:'white', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none' }}>
+        <a href={`/api/labels/${order.id}`} target="_blank" className="print-btn"
+          style={{ marginLeft:'auto', padding:'7px 14px', background:'#0B1628', color:'white', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
           🖨 Imprimir etiqueta
         </a>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:16 }}>
+      <div className="detail-grid" style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:16 }}>
         <div>
           {/* Datos del pedido */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20, marginBottom:14 }}>
             <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14 }}>Datos del pedido</div>
-            {[
-              ['N° pedido',  order.orderNumber],
-              ['Tienda',     `${order.store.name} · ${PLATFORM_LABEL[order.platform] ?? order.platform}`],
-              ...(subStoreName ? [['Sub-tienda', subStoreName]] : []),
-              ['Cliente',    order.customerName],
-              ['Teléfono',   order.customerPhone ?? '—'],
-              ['Email',      order.customerEmail ?? '—'],
-              ['Dirección',  order.addressStreet],
-              ['Comuna',     order.addressComuna],
-              ['Región',     order.addressRegion],
-              ['Bultos',     String(order.bultos)],
-              ['Creado',     fmt(order.createdAt)],
-              ...(order.receivedAt  ? [['Recepcionado', fmt(order.receivedAt)]]  : []),
-              ...(order.inTransitAt ? [['En camino',    fmt(order.inTransitAt)]] : []),
-              ...(order.deliveredAt ? [['Entregado',    fmt(order.deliveredAt)]] : []),
-            ].map(([label, value]) => (
-              <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>
-                <span style={{ color:'#6B7280' }}>{label}</span>
-                <span style={{ fontWeight:500 }}>{value}</span>
+            {rows.map(([label, value]) => (
+              <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', padding:'9px 0', borderBottom:'1px solid #F1F5F9', fontSize:13, gap:12 }}>
+                <span style={{ color:'#6B7280', flexShrink:0 }}>{label}</span>
+                <span style={{ fontWeight:500, textAlign:'right', wordBreak:'break-word' }}>{value}</span>
               </div>
             ))}
-
-            {/* Estado de la plataforma — solo STORE_ADMIN */}
             {platformStatus && (
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>
                 <span style={{ color:'#6B7280' }}>Estado en {PLATFORM_LABEL[order.platform]}</span>
                 <span style={{ padding:'2px 10px', borderRadius:20, fontSize:11, fontWeight:500, background:'#EFF6FF', color:'#1D4ED8' }}>
                   {platformStatus}
@@ -158,31 +131,27 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             )}
           </div>
 
-          {/* Evidencia de entrega */}
+          {/* Evidencia */}
           {order.evidencePhoto1 && (
             <div style={{ background:'white', border:'1px solid #BBF7D0', borderRadius:12, padding:20, marginBottom:14 }}>
               <div style={{ fontSize:12, fontWeight:500, color:'#166534', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:14, display:'flex', alignItems:'center', gap:6 }}>
                 📷 Evidencia de entrega
                 {order.evidenceTakenAt && (
-                  <span style={{ fontSize:11, color:'#6B7280', fontWeight:400, marginLeft:'auto' }}>
-                    {fmt(order.evidenceTakenAt)}
-                  </span>
+                  <span style={{ fontSize:11, color:'#6B7280', fontWeight:400, marginLeft:'auto' }}>{fmt(order.evidenceTakenAt)}</span>
                 )}
               </div>
               <div style={{ display:'grid', gridTemplateColumns:order.evidencePhoto2?'1fr 1fr':'1fr', gap:12, marginBottom:12 }}>
                 <div>
                   <div style={{ fontSize:11, color:'#6B7280', marginBottom:5 }}>Foto 1</div>
                   <a href={order.evidencePhoto1} target="_blank">
-                    <img src={order.evidencePhoto1} alt="Evidencia 1"
-                      style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
+                    <img src={order.evidencePhoto1} alt="Evidencia 1" style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
                   </a>
                 </div>
                 {order.evidencePhoto2 && (
                   <div>
                     <div style={{ fontSize:11, color:'#6B7280', marginBottom:5 }}>Foto 2</div>
                     <a href={order.evidencePhoto2} target="_blank">
-                      <img src={order.evidencePhoto2} alt="Evidencia 2"
-                        style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
+                      <img src={order.evidencePhoto2} alt="Evidencia 2" style={{ width:'100%', borderRadius:8, border:'1px solid #E2E8F0', maxHeight:200, objectFit:'cover', cursor:'pointer' }}/>
                     </a>
                   </div>
                 )}
@@ -241,7 +210,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               </svg>
             </div>
             <div style={{ fontSize:14, fontWeight:500, marginBottom:2 }}>{order.orderNumber}</div>
-            <div style={{ fontSize:11, color:'#9CA3AF', marginBottom:14, fontFamily:'monospace' }}>{order.qrCode}</div>
+            <div style={{ fontSize:11, color:'#9CA3AF', marginBottom:14, fontFamily:'monospace', wordBreak:'break-all' }}>{order.qrCode}</div>
             <a href={`/api/labels/${order.id}`} target="_blank"
               style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'9px', background:'#2563EB', color:'white', borderRadius:8, textDecoration:'none', fontSize:13, fontWeight:500 }}>
               🖨 Imprimir etiqueta
@@ -254,11 +223,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:12, padding:16, textAlign:'center' }}>
                 <div style={{ fontSize:20, marginBottom:4 }}>✅</div>
                 <div style={{ fontSize:14, fontWeight:500, color:'#166534' }}>Pedido entregado</div>
-                {order.deliveredAt && (
-                  <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
-                    {fmt(order.deliveredAt)}
-                  </div>
-                )}
+                {order.deliveredAt && <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>{fmt(order.deliveredAt)}</div>}
                 <div style={{ fontSize:12, color:'#16A34A', marginTop:4 }}>
                   {order.evidencePhoto1 ? '📷 Con evidencia fotográfica' : '⚠ Sin evidencia'}
                 </div>
@@ -268,9 +233,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               <div style={{ background:'#FFF1F2', border:'1px solid #FECDD3', borderRadius:12, padding:16, textAlign:'center' }}>
                 <div style={{ fontSize:20, marginBottom:4 }}>❌</div>
                 <div style={{ fontSize:14, fontWeight:500, color:'#9F1239' }}>No entregado</div>
-                <div style={{ fontSize:12, color:'#9F1239', marginTop:4 }}>
-                  Puedes reintentar la entrega desde las acciones
-                </div>
+                <div style={{ fontSize:12, color:'#9F1239', marginTop:4 }}>Puedes reintentar la entrega desde las acciones</div>
               </div>
             )}
             {order.status === 'CANCELLED' && (
