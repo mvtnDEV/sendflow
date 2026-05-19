@@ -36,6 +36,8 @@ function getPlatformStatus(platform: string, rawPayload: any): string | null {
   return formatRawStatus(status)
 }
 
+const NOTAS_INTERNAS = ['envios now', 'enviame', 'enviosnow', 'now:', 'id now', 'delivery id']
+
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
   const user  = await getSessionUser()
   const order = await prisma.order.findUnique({
@@ -49,6 +51,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   if (!order) notFound()
   if (!canAccessStore(user!, order.storeId)) redirect('/recepciones')
 
+  const isStoreAdmin = user?.role === 'STORE_ADMIN'
+
   const statusBadge: Record<string, { bg: string; color: string }> = {
     PENDING:    { bg: '#FFFBEB', color: '#92400E' },
     RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
@@ -59,9 +63,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   }
   const sc             = statusBadge[order.status] ?? statusBadge.PENDING
   const subStoreName   = (order as any).subStoreName as string | null
-  const platformStatus = user?.role === 'STORE_ADMIN'
+  const platformStatus = isStoreAdmin
     ? getPlatformStatus(order.platform, order.rawPayload)
     : null
+
+  // Filtrar eventos internos para STORE_ADMIN
+  const visibleEvents = order.events.filter(ev => {
+    if (!isStoreAdmin) return true
+    if (ev.note && NOTAS_INTERNAS.some(n => ev.note!.toLowerCase().includes(n))) return false
+    return true
+  })
 
   const rows = [
     ['N° pedido',  order.orderNumber],
@@ -169,8 +180,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             <div style={{ fontSize:12, fontWeight:500, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:16 }}>Historial</div>
             <div style={{ position:'relative', paddingLeft:24 }}>
               <div style={{ position:'absolute', left:8, top:0, bottom:0, width:1, background:'#E2E8F0' }}/>
-              {order.events.map((ev, i) => {
-                const isLast = i === order.events.length - 1
+              {visibleEvents.map((ev, i) => {
+                const isLast = i === visibleEvents.length - 1
                 return (
                   <div key={ev.id} style={{ position:'relative', paddingBottom:isLast?0:20 }}>
                     <div style={{ position:'absolute', left:-20, top:2, width:16, height:16, borderRadius:'50%', background:'#2563EB', border:'2px solid #2563EB', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1 }}>
@@ -179,10 +190,12 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                       </svg>
                     </div>
                     <div style={{ fontSize:13, fontWeight:500 }}>{STATUS_LABEL[ev.status] ?? ev.status}</div>
-                    {ev.note && <div style={{ fontSize:12, color:'#6B7280', marginTop:1 }}>{ev.note}</div>}
+                    {ev.note && !NOTAS_INTERNAS.some(n => ev.note!.toLowerCase().includes(n)) && (
+                      <div style={{ fontSize:12, color:'#6B7280', marginTop:1 }}>{ev.note}</div>
+                    )}
                     <div style={{ fontSize:11, color:'#9CA3AF', marginTop:2 }}>
                       {fmt(ev.createdAt)}
-                      {ev.createdBy && ev.createdBy !== 'system' && ev.createdBy !== 'webhook' && ev.createdBy !== 'enviosnow-webhook' && ` · ${ev.createdBy}`}
+                      {!isStoreAdmin && ev.createdBy && ev.createdBy !== 'system' && ev.createdBy !== 'webhook' && ev.createdBy !== 'enviosnow-webhook' && ` · ${ev.createdBy}`}
                     </div>
                   </div>
                 )
