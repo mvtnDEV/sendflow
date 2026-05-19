@@ -1,7 +1,5 @@
 import type { NormalizedOrder } from '@/types'
 
-// ─── Tipos de ML ──────────────────────────────────────────────────────────────
-
 interface MLOrder {
   id: number
   status: string
@@ -15,7 +13,7 @@ interface MLOrder {
   shipping: {
     id: number
     receiver_address?: {
-      street_name: string
+      street_name:  string
       street_number: string
       city:    { name: string }
       state:   { name: string }
@@ -31,22 +29,40 @@ interface MLOrder {
   }[]
 }
 
-// ─── Normalización ────────────────────────────────────────────────────────────
+interface MLShipment {
+  receiver_address?: {
+    street_name:   string
+    street_number: string
+    city:          { name: string }
+    state:         { name: string }
+    zip_code:      string
+    comment?:      string
+    phone?:        { number: string; area_code?: string }
+    receiver_name?: string
+  }
+}
 
-export function normalizeMLOrder(raw: MLOrder): NormalizedOrder {
-  const addr = raw.shipping?.receiver_address
-
+export function normalizeMLOrder(raw: MLOrder, shipment?: MLShipment): NormalizedOrder {
+  // Priorizar dirección del shipment si no viene en la orden
+  const addr = raw.shipping?.receiver_address ?? shipment?.receiver_address
   const street = addr
     ? `${addr.street_name} ${addr.street_number}`.trim()
     : 'Dirección no disponible'
 
+  // Intentar obtener nombre real del destinatario desde shipment
+  const customerName = shipment?.receiver_address?.receiver_name ?? raw.buyer.nickname
+
+  // Intentar obtener teléfono desde shipment si no viene en buyer
+  const phone = raw.buyer.phone ?? shipment?.receiver_address?.phone
+  const customerPhone = phone
+    ? `${phone.area_code ?? ''} ${phone.number}`.trim()
+    : undefined
+
   return {
     externalId:    String(raw.id),
     platform:      'MERCADOLIBRE',
-    customerName:  raw.buyer.nickname,
-    customerPhone: raw.buyer.phone
-      ? `${raw.buyer.phone.area_code ?? ''} ${raw.buyer.phone.number}`.trim()
-      : undefined,
+    customerName,
+    customerPhone,
     customerEmail: raw.buyer.email,
     addressStreet: street,
     addressComuna: addr?.city.name  ?? '',
@@ -56,8 +72,6 @@ export function normalizeMLOrder(raw: MLOrder): NormalizedOrder {
   }
 }
 
-// ─── Fetch de orden por ID ────────────────────────────────────────────────────
-
 export async function fetchMLOrder(
   orderId:     string,
   accessToken: string,
@@ -65,16 +79,29 @@ export async function fetchMLOrder(
   const res = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-
   if (!res.ok) {
     throw new Error(`ML API ${res.status}: ${await res.text()}`)
   }
-
   const order = (await res.json()) as MLOrder
-  return normalizeMLOrder(order)
-}
 
-// ─── Refresh de token OAuth ───────────────────────────────────────────────────
+  // Si el shipping tiene ID pero no tiene dirección, consultamos el envío
+  let shipment: MLShipment | undefined
+  if (order.shipping?.id && !order.shipping?.receiver_address) {
+    try {
+      const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${order.shipping.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (shipRes.ok) {
+        shipment = await shipRes.json()
+        console.log('[ML] Dirección obtenida del shipment:', order.shipping.id)
+      }
+    } catch (err) {
+      console.warn('[ML] No se pudo obtener shipment:', err)
+    }
+  }
+
+  return normalizeMLOrder(order, shipment)
+}
 
 export async function refreshMLToken(refreshToken: string): Promise<{
   accessToken:  string
@@ -91,9 +118,7 @@ export async function refreshMLToken(refreshToken: string): Promise<{
       refresh_token: refreshToken,
     }),
   })
-
   if (!res.ok) throw new Error(`ML token refresh ${res.status}`)
-
   const data = await res.json()
   return {
     accessToken:  data.access_token,
@@ -102,10 +127,7 @@ export async function refreshMLToken(refreshToken: string): Promise<{
   }
 }
 
-// ─── Parseo de notificación ───────────────────────────────────────────────────
-
 export function extractMLOrderId(resource: string): string | null {
-  // resource = "/orders/123456789"
   const match = resource.match(/\/orders\/(\d+)/)
   return match ? match[1] : null
 }
