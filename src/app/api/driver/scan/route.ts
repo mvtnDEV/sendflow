@@ -3,18 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
 export async function GET(req: NextRequest) {
- const raw = req.nextUrl.searchParams.get('q')?.trim()
+  const raw = req.nextUrl.searchParams.get('q')?.trim()
   if (!raw) return NextResponse.json({ ok: false, error: 'Parámetro q requerido' }, { status: 400 })
-  console.log('[SCAN] raw:', raw)
 
-  // Intentar parsear como JSON (etiquetas ML Flex)
   let q = raw
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed?.id) q = String(parsed.id)
-  } catch {}
-
-  // Extraer campos del JSON de ML Flex
   let shippingId: string | null = null
   try {
     const parsed = JSON.parse(raw)
@@ -33,13 +25,7 @@ export async function GET(req: NextRequest) {
         { orderNumber: `#${q}` },
         { sourceId:    q },
         { externalId:  q },
-        // Buscar el shipping ID dentro del rawPayload de ML
-        ...(shippingId ? [{
-          rawPayload: {
-            path:   ['shipping', 'id'],
-            equals: Number(shippingId),
-          }
-        }] : []),
+        ...(shippingId ? [{ rawPayload: { path: ['shipping', 'id'], equals: Number(shippingId) } }] : []),
       ],
     },
     include: {
