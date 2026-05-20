@@ -187,6 +187,20 @@ export default function RecepcionesClient({
           .mobile-card { display: none !important; }
           .desktop-table { display: block !important; }
         }
+        .sticky-arrow {
+          position: sticky;
+          right: 0;
+          z-index: 2;
+        }
+        .sticky-arrow-header {
+          position: sticky;
+          right: 0;
+          z-index: 3;
+          background: #F8FAFC;
+        }
+        tbody tr:hover .sticky-arrow {
+          background: #F0F7FF !important;
+        }
       `}</style>
 
       <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
@@ -261,7 +275,7 @@ export default function RecepcionesClient({
                   {isStoreAdmin && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado WOO</th>}
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado</th>
                   <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Hora</th>
-                  <th style={{ padding:'10px 12px', borderBottom:'1px solid #E2E8F0' }}></th>
+                  <th className="sticky-arrow-header" style={{ padding:'10px 12px', borderBottom:'1px solid #E2E8F0', width:48 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -276,7 +290,6 @@ export default function RecepcionesClient({
                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelected(order.id)} style={{ cursor:'pointer', width:15, height:15 }}/>
                       </td>
 
-                      {/* N° pedido — STORE_ADMIN ve sourceId primero */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
                         {isStoreAdmin && sourceLabel ? (
                           <div>
@@ -288,7 +301,6 @@ export default function RecepcionesClient({
                         )}
                       </td>
 
-                      {/* Sub-tienda */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
                         {order.subStoreName ? (
                           <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFF7ED', color:'#C2410C', fontWeight:500, whiteSpace:'nowrap', border:'1px solid #FED7AA' }}>{order.subStoreName}</span>
@@ -297,7 +309,6 @@ export default function RecepcionesClient({
                         )}
                       </td>
 
-                      {/* Tienda */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
                         <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>{order.store?.name ?? '—'}</span>
                       </td>
@@ -309,12 +320,10 @@ export default function RecepcionesClient({
                       </td>
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{PLATFORM_LABEL[order.platform] ?? order.platform}</td>
 
-                      {/* Bultos — solo SUPER_ADMIN */}
                       {!isStoreAdmin && (
                         <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, textAlign:'center' }}>{order.bultos}</td>
                       )}
 
-                      {/* Estado WOO — solo STORE_ADMIN */}
                       {isStoreAdmin && (
                         <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                           {platformStatus ? (
@@ -325,7 +334,6 @@ export default function RecepcionesClient({
                         </td>
                       )}
 
-                      {/* Estado SendFlow */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                         <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
                           <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
@@ -338,7 +346,9 @@ export default function RecepcionesClient({
                         {fmtTime(order.createdAt)}
                         {!todayOnly && <div style={{ fontSize:11 }}>{fmtDate(order.createdAt)}</div>}
                       </td>
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
+
+                      {/* Flecha fija a la derecha */}
+                      <td className="sticky-arrow" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', background: isSelected ? '#F0F7FF' : 'white', boxShadow:'-3px 0 8px rgba(0,0,0,0.06)' }}>
                         <Link href={`/recepciones/${order.id}`} style={{ color:'#2563EB', fontSize:18, textDecoration:'none', fontWeight:700, padding:'4px 8px', background:'#EFF6FF', borderRadius:6, display:'inline-block' }}>→</Link>
                       </td>
                     </tr>
