@@ -3,8 +3,6 @@ import { generateOrderNumber, ensureUniqueQrCode } from '@/lib/utils/order-numbe
 import type { OrderFilters, NormalizedOrder, DashboardStats } from '@/types'
 import type { OrderStatus, Platform } from '@prisma/client'
 
-// ─── Regiones permitidas ──────────────────────────────────────────────────────
-
 const REGIONES_PERMITIDAS = [
   'metropolitana',
   'región metropolitana',
@@ -17,8 +15,6 @@ function isRegionPermitida(region: string): boolean {
   const r = region.toLowerCase().trim()
   return REGIONES_PERMITIDAS.some(allowed => r.includes(allowed) || allowed.includes(r))
 }
-
-// ─── Crear pedido ─────────────────────────────────────────────────────────────
 
 interface CreateOrderInput {
   storeId:        string
@@ -83,8 +79,6 @@ export async function createOrder(input: CreateOrderInput) {
   return order
 }
 
-// ─── Upsert desde webhook ─────────────────────────────────────────────────────
-
 export async function upsertOrderFromWebhook(
   storeId:       string,
   integrationId: string,
@@ -126,8 +120,6 @@ export async function upsertOrderFromWebhook(
   })
 }
 
-// ─── Cambiar estado ───────────────────────────────────────────────────────────
-
 const STATUS_TIMESTAMP: Partial<Record<OrderStatus, string>> = {
   RECEIVED:   'receivedAt',
   IN_TRANSIT: 'inTransitAt',
@@ -165,7 +157,6 @@ export async function updateOrderStatus(
     include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
   })
 
-  // Enviar a Envios Now al recepcionar
   if (status === 'RECEIVED') {
     try {
       const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
@@ -185,7 +176,6 @@ export async function updateOrderStatus(
     }
   }
 
-  // Notificar webhooks de salida
   try {
     const { notifyWebhooks } = await import('./webhook.service')
     await notifyWebhooks(orderId, status, previousStatus)
@@ -196,8 +186,6 @@ export async function updateOrderStatus(
   return order
 }
 
-// ─── Buscar por QR ────────────────────────────────────────────────────────────
-
 export async function findOrderByQr(qrCode: string) {
   return prisma.order.findUnique({
     where: { qrCode },
@@ -207,8 +195,6 @@ export async function findOrderByQr(qrCode: string) {
     },
   })
 }
-
-// ─── Listar pedidos ───────────────────────────────────────────────────────────
 
 export async function listOrders(filters: OrderFilters) {
   const page     = filters.page     ?? 1
@@ -234,21 +220,38 @@ export async function listOrders(filters: OrderFilters) {
   }
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
-  where.OR = [
-    { createdAt:   todayRange() },
-    { status:      'PENDING' },
-    { receivedAt:  todayRange() },
-    { inTransitAt: todayRange() },
-  ]
-} else if (filters.dateFrom || filters.dateTo) {
+    where.OR = [
+      { createdAt:   todayRange() },
+      { status:      'PENDING' },
+      { receivedAt:  todayRange() },
+      { inTransitAt: todayRange() },
+    ]
+  } else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
       ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
       ...(filters.dateTo   && { lte: new Date(filters.dateTo + 'T23:59:59') }),
     }
   }
 
+  // SUPER_ADMIN: ocultar pedidos WooCommerce que NO tengan estado enviado_intralog
+  if (filters.superAdminView) {
+    where.NOT = {
+      AND: [
+        { platform: 'WOOCOMMERCE' },
+        {
+          NOT: {
+            rawPayload: {
+              path:   ['status'],
+              equals: 'enviado_intralog',
+            },
+          },
+        },
+      ],
+    }
+  }
+
   const [items, total] = await Promise.all([
-   prisma.order.findMany({
+    prisma.order.findMany({
       where,
       skip,
       take:    pageSize,
@@ -257,17 +260,13 @@ export async function listOrders(filters: OrderFilters) {
         store:       { select: { id: true, name: true, slug: true } },
         integration: { select: { platform: true } },
         events:      { orderBy: { createdAt: 'desc' }, take: 1 },
-        _count:      false,
       },
-      // rawPayload se incluye automáticamente al no usar select
     }),
     prisma.order.count({ where }),
   ])
 
   return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
 }
-
-// ─── Stats para el dashboard ──────────────────────────────────────────────────
 
 function todayRange() {
   const now = new Date()
