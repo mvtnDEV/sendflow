@@ -34,7 +34,6 @@ export async function POST(req: NextRequest) {
   try {
     const creds = decrypt(integration.apiKeyEnc)
 
-    // Soportar tanto formato pipe como JSON por compatibilidad
     let accessToken: string
     let refreshToken: string
     if (creds.startsWith('{')) {
@@ -53,17 +52,23 @@ export async function POST(req: NextRequest) {
     try {
       normalized = await fetchMLOrder(orderId, token)
     } catch (err: any) {
+      // Pedido sin despacho a domicilio — ignorar silenciosamente
+      if (err.message?.includes('sin despacho')) {
+        console.log('[ML webhook] Pedido sin despacho, ignorando:', orderId)
+        return NextResponse.json({ ok: true, skipped: true })
+      }
+      // Token expirado — hacer refresh y reintentar
       if (err.message?.includes('401') || err.message?.includes('403')) {
         console.log('[ML webhook] Token expirado, haciendo refresh...')
         const refreshed = await refreshMLToken(refreshToken)
         token = refreshed.accessToken
-
         await prisma.storeIntegration.update({
           where: { id: integration.id },
           data:  { apiKeyEnc: encrypt(`${refreshed.accessToken}|${refreshed.refreshToken}`) },
         })
-
         normalized = await fetchMLOrder(orderId, token)
+        // Si después del refresh también es sin despacho
+        if (!normalized) return NextResponse.json({ ok: true, skipped: true })
       } else {
         throw err
       }
@@ -76,7 +81,12 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ ok: true })
-  } catch (err) {
+  } catch (err: any) {
+    // Capturar error de sin despacho que puede venir del segundo intento
+    if (err.message?.includes('sin despacho')) {
+      console.log('[ML webhook] Pedido sin despacho (post-refresh), ignorando:', orderId)
+      return NextResponse.json({ ok: true, skipped: true })
+    }
     console.error('[ML webhook]', err)
     return NextResponse.json({ error: 'Error interno' }, { status: 500 })
   }
