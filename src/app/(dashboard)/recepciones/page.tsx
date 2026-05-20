@@ -40,19 +40,23 @@ export default async function RecepcionesPage({ searchParams }: Props) {
   const todayOnly   = !verTodo && !searchParams.dateFrom && !searchParams.dateTo
   const today       = new Date()
   const todayStr    = today.toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long', timeZone: TZ })
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN'
 
   const [stats, result, stores] = await Promise.all([
     getDashboardStats(filterStore, todayOnly),
     listOrders({
-      storeId:  filterStore,
-      status:   searchParams.status,
-      search:   searchParams.search,
-      platform: searchParams.platform,
-      dateFrom: searchParams.dateFrom,
-      dateTo:   searchParams.dateTo,
-      todayOnly, page, pageSize,
+      storeId:        filterStore,
+      status:         searchParams.status,
+      search:         searchParams.search,
+      platform:       searchParams.platform,
+      dateFrom:       searchParams.dateFrom,
+      dateTo:         searchParams.dateTo,
+      todayOnly,
+      page,
+      pageSize,
+      superAdminView: isSuperAdmin,
     }),
-    user?.role === 'SUPER_ADMIN'
+    isSuperAdmin
       ? prisma.store.findMany({ select: { id:true, name:true }, orderBy: { name:'asc' } })
       : Promise.resolve([]),
   ])
@@ -85,7 +89,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
       </div>
 
       {/* Stat bar */}
-      <div style={{ background:'#0B1628', borderRadius:12, padding:'14px 20px', display:'flex', marginBottom:16 }}>
+      <div style={{ background:'#0B1628', borderRadius:12, padding:'14px 20px', display:'flex', marginBottom:16, overflowX:'auto' }}>
         {[
           { label:'Total',         value:stats.total,     ring:null,                 color:'' },
           { label:'Envíos',        value:stats.total,     ring:null,                 color:'' },
@@ -94,7 +98,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
           { label:'Pendientes',    value:stats.pending,   ring:null,                 color:'' },
           { label:'No entregados', value:stats.incident,  ring:null,                 color:'' },
         ].map((s, i, arr) => (
-          <div key={s.label} style={{ flex:1, padding:'0 14px', borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.08)':'none' }}>
+          <div key={s.label} style={{ flex:1, padding:'0 14px', borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.08)':'none', minWidth:80 }}>
             <div style={{ fontSize:9, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:3 }}>{s.label}</div>
             {s.ring !== null ? (
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -175,26 +179,25 @@ export default async function RecepcionesPage({ searchParams }: Props) {
         </div>
       </div>
 
-      {/* Tabla + acciones */}
-<RecepcionesClient
-  orders={result.items as any}
-  storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
-  todayOnly={todayOnly}
-  total={result.total}
-  page={page}
-  totalPages={result.totalPages}
-  userRole={user?.role ?? ''}
-  searchParams={{
-    historial: searchParams.historial,
-    storeId:   searchParams.storeId,
-    status:    searchParams.status,
-    search:    searchParams.search,
-    platform:  searchParams.platform,
-    dateFrom:  searchParams.dateFrom,
-    dateTo:    searchParams.dateTo,
-    pageSize:  String(pageSize),
-  }}
-/>
+      <RecepcionesClient
+        orders={result.items as any}
+        storeName={stores.find(s => s.id === searchParams.storeId)?.name || 'todas-las-tiendas'}
+        todayOnly={todayOnly}
+        total={result.total}
+        page={page}
+        totalPages={result.totalPages}
+        userRole={user?.role ?? ''}
+        searchParams={{
+          historial: searchParams.historial,
+          storeId:   searchParams.storeId,
+          status:    searchParams.status,
+          search:    searchParams.search,
+          platform:  searchParams.platform,
+          dateFrom:  searchParams.dateFrom,
+          dateTo:    searchParams.dateTo,
+          pageSize:  String(pageSize),
+        }}
+      />
     </div>
   )
 }
