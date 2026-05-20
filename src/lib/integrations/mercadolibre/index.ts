@@ -11,7 +11,7 @@ interface MLOrder {
     email?: string
   }
   shipping: {
-    id: number
+    id: number | null
     receiver_address?: {
       street_name:  string
       street_number: string
@@ -31,29 +31,25 @@ interface MLOrder {
 
 interface MLShipment {
   receiver_address?: {
-    street_name:   string
-    street_number: string
-    city:          { name: string }
-    state:         { name: string }
-    zip_code:      string
-    comment?:      string
-    phone?:        { number: string; area_code?: string }
+    street_name:    string
+    street_number:  string
+    city:           { name: string }
+    state:          { name: string }
+    zip_code:       string
+    comment?:       string
+    phone?:         { number: string; area_code?: string }
     receiver_name?: string
   }
 }
 
 export function normalizeMLOrder(raw: MLOrder, shipment?: MLShipment): NormalizedOrder {
-  // Priorizar dirección del shipment si no viene en la orden
   const addr = raw.shipping?.receiver_address ?? shipment?.receiver_address
   const street = addr
     ? `${addr.street_name} ${addr.street_number}`.trim()
     : 'Dirección no disponible'
 
-  // Intentar obtener nombre real del destinatario desde shipment
-  const customerName = shipment?.receiver_address?.receiver_name ?? raw.buyer.nickname
-
-  // Intentar obtener teléfono desde shipment si no viene en buyer
-  const phone = raw.buyer.phone ?? shipment?.receiver_address?.phone
+  const customerName  = shipment?.receiver_address?.receiver_name ?? raw.buyer.nickname
+  const phone         = raw.buyer.phone ?? shipment?.receiver_address?.phone
   const customerPhone = phone
     ? `${phone.area_code ?? ''} ${phone.number}`.trim()
     : undefined
@@ -84,9 +80,14 @@ export async function fetchMLOrder(
   }
   const order = (await res.json()) as MLOrder
 
-  // Si el shipping tiene ID pero no tiene dirección, consultamos el envío
+  // Si no tiene shipping ID es retiro en punto — no es despacho a domicilio
+  if (!order.shipping?.id) {
+    throw new Error('Pedido sin despacho a domicilio — retiro en punto, ignorando')
+  }
+
+  // Si tiene shipping ID pero sin dirección, consultar el shipment
   let shipment: MLShipment | undefined
-  if (order.shipping?.id && !order.shipping?.receiver_address) {
+  if (!order.shipping?.receiver_address) {
     try {
       const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${order.shipping.id}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
