@@ -14,6 +14,16 @@ export async function GET(req: NextRequest) {
     if (parsed?.id) q = String(parsed.id)
   } catch {}
 
+  // Extraer campos del JSON de ML Flex
+  let shippingId: string | null = null
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed?.id) {
+      q = String(parsed.id)
+      shippingId = String(parsed.id)
+    }
+  } catch {}
+
   const order = await prisma.order.findFirst({
     where: {
       OR: [
@@ -21,8 +31,15 @@ export async function GET(req: NextRequest) {
         { qrCode:      q },
         { orderNumber: q },
         { orderNumber: `#${q}` },
-        { sourceId:    q }, // buscar por ID de origen (WooCommerce, Shopify, Senby)
-        { externalId:  q }, // buscar por ID de Envios Now también
+        { sourceId:    q },
+        { externalId:  q },
+        // Buscar el shipping ID dentro del rawPayload de ML
+        ...(shippingId ? [{
+          rawPayload: {
+            path:   ['shipping', 'id'],
+            equals: Number(shippingId),
+          }
+        }] : []),
       ],
     },
     include: {
