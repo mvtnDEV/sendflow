@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
 export async function GET(req: NextRequest) {
-  const raw = req.nextUrl.searchParams.get('q')?.trim()
+ const raw = req.nextUrl.searchParams.get('q')?.trim()
   if (!raw) return NextResponse.json({ ok: false, error: 'Parámetro q requerido' }, { status: 400 })
+  console.log('[SCAN] raw:', raw)
 
   // Intentar parsear como JSON (etiquetas ML Flex)
   let q = raw
