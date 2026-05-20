@@ -177,7 +177,6 @@ export default function RecepcionesClient({
 
   return (
     <div>
-      {/* Estilos responsive */}
       <style>{`
         @media (max-width: 768px) {
           .col-hide-mobile { display: none !important; }
@@ -190,7 +189,6 @@ export default function RecepcionesClient({
         }
       `}</style>
 
-      {/* Barra de acciones */}
       <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
         {pendientes.length > 0 && (
           <button onClick={recepcionarTodos} disabled={loadingRecepcionar}
@@ -253,17 +251,16 @@ export default function RecepcionesClient({
                     <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor:'pointer', width:15, height:15 }}/>
                   </th>
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>N° pedido</th>
-                  {isStoreAdmin && <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>ID Origen</th>}
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Sub-tienda</th>
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Tienda</th>
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Cliente</th>
-                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }} className="col-hide-mobile">Teléfono</th>
-                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }} className="col-hide-mobile">Dirección</th>
-                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }} className="col-hide-mobile">Plataforma</th>
-                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }} className="col-hide-mobile">Bultos</th>
-                  {isStoreAdmin && <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }} className="col-hide-mobile">Estado WOO</th>}
+                  <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Teléfono</th>
+                  <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Dirección</th>
+                  <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Plataforma</th>
+                  {!isStoreAdmin && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Bultos</th>}
+                  {isStoreAdmin && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado WOO</th>}
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado</th>
-                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }} className="col-hide-mobile">Hora</th>
+                  <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Hora</th>
                   <th style={{ padding:'10px 12px', borderBottom:'1px solid #E2E8F0' }}></th>
                 </tr>
               </thead>
@@ -278,6 +275,8 @@ export default function RecepcionesClient({
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelected(order.id)} style={{ cursor:'pointer', width:15, height:15 }}/>
                       </td>
+
+                      {/* N° pedido — STORE_ADMIN ve sourceId primero */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
                         {isStoreAdmin && sourceLabel ? (
                           <div>
@@ -288,15 +287,8 @@ export default function RecepcionesClient({
                           <Link href={`/recepciones/${order.id}`} style={{ color:'#1D4ED8', textDecoration:'none' }}>{order.orderNumber}</Link>
                         )}
                       </td>
-                      {isStoreAdmin && (
-                        <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
-                          {sourceLabel ? (
-                            <span style={{ fontSize:11, padding:'2px 8px', borderRadius:4, background:'#F0FDF4', color:'#166534', fontWeight:500, fontFamily:'monospace', whiteSpace:'nowrap' }}>{sourceLabel}</span>
-                          ) : (
-                            <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
-                          )}
-                        </td>
-                      )}
+
+                      {/* Sub-tienda */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
                         {order.subStoreName ? (
                           <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFF7ED', color:'#C2410C', fontWeight:500, whiteSpace:'nowrap', border:'1px solid #FED7AA' }}>{order.subStoreName}</span>
@@ -304,16 +296,25 @@ export default function RecepcionesClient({
                           <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
                         )}
                       </td>
+
+                      {/* Tienda */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
                         <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>{order.store?.name ?? '—'}</span>
                       </td>
+
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{order.customerName}</td>
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{order.customerPhone || '—'}</td>
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                         {order.addressStreet}, {order.addressComuna}
                       </td>
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{PLATFORM_LABEL[order.platform] ?? order.platform}</td>
-                      <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, textAlign:'center' }}>{order.bultos}</td>
+
+                      {/* Bultos — solo SUPER_ADMIN */}
+                      {!isStoreAdmin && (
+                        <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, textAlign:'center' }}>{order.bultos}</td>
+                      )}
+
+                      {/* Estado WOO — solo STORE_ADMIN */}
                       {isStoreAdmin && (
                         <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                           {platformStatus ? (
@@ -323,6 +324,8 @@ export default function RecepcionesClient({
                           )}
                         </td>
                       )}
+
+                      {/* Estado SendFlow */}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                         <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
                           <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
@@ -330,6 +333,7 @@ export default function RecepcionesClient({
                         </span>
                         {order.evidencePhoto1 && <span style={{ marginLeft:4, fontSize:11 }}>📷</span>}
                       </td>
+
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
                         {fmtTime(order.createdAt)}
                         {!todayOnly && <div style={{ fontSize:11 }}>{fmtDate(order.createdAt)}</div>}
@@ -347,9 +351,9 @@ export default function RecepcionesClient({
           {/* CARDS MOBILE */}
           <div className="mobile-card" style={{ flexDirection:'column', gap:8 }}>
             {orders.map(order => {
-              const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-              const isSelected  = selected.has(order.id)
-              const sourceLabel = formatSourceId(order.sourceId, order.platform)
+              const sc             = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+              const isSelected     = selected.has(order.id)
+              const sourceLabel    = formatSourceId(order.sourceId, order.platform)
               const platformStatus = getPlatformStatus(order.rawPayload)
               return (
                 <div key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white', border:'1px solid #E2E8F0', borderRadius:12, padding:14, position:'relative' }}>
