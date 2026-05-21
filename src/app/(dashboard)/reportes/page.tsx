@@ -1,16 +1,16 @@
 'use client'
 import { useEffect, useState } from 'react'
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-
 interface Summary {
   total:number; previous:number; change:number
   delivered:number; pending:number; inTransit:number
   received:number; incidents:number; successRate:number
+  nsHoy: number | null; nsTotal:number; nsDelivered:number
 }
-interface DayData  { date:string; label:string; total:number; delivered:number }
-interface PlatData { platform:string; count:number; pct:number }
-interface StoreData{ storeId:string; storeName:string; count:number }
+interface DayData   { date:string; label:string; total:number; delivered:number }
+interface NsDay     { date:string; label:string; inTransit:number; delivered:number; incident:number; ns:number|null }
+interface PlatData  { platform:string; count:number; pct:number }
+interface StoreData { storeId:string; storeName:string; count:number }
 interface DriverData{ driverId:string; driverName:string; delivered:number }
 interface ComunaData{ comuna:string; region:string; count:number }
 interface AvgDelivery{ avgHours:number; count:number }
@@ -18,6 +18,7 @@ interface AvgDelivery{ avgHours:number; count:number }
 interface ReportData {
   summary:     Summary
   byDay:       DayData[]
+  nsDiario:    NsDay[]
   byPlatform:  PlatData[]
   byStore:     StoreData[]
   byDriver:    DriverData[]
@@ -33,19 +34,30 @@ const PLAT_COLOR: Record<string,string> = {
   SHOPIFY:'#2563EB', WOOCOMMERCE:'#7C3AED', JUMPSELLER:'#D97706',
   MERCADOLIBRE:'#059669', MANUAL:'#6B7280',
 }
-
 const PERIOD_LABEL: Record<string,string> = {
   today:'Hoy', week:'Últimos 7 días', month:'Este mes',
   last_month:'Mes anterior', '3months':'Últimos 3 meses',
 }
 
-// ─── Componente principal ─────────────────────────────────────────────────────
+function nsColor(ns: number | null): string {
+  if (ns === null) return '#9CA3AF'
+  if (ns >= 95) return '#16A34A'
+  if (ns >= 85) return '#D97706'
+  return '#DC2626'
+}
+
+function nsLabel(ns: number | null): string {
+  if (ns === null) return '—'
+  if (ns >= 95) return '✅ Excelente'
+  if (ns >= 85) return '⚠️ Regular'
+  return '❌ Bajo'
+}
 
 export default function ReportesPage() {
   const [data,    setData]    = useState<ReportData | null>(null)
   const [period,  setPeriod]  = useState('month')
   const [loading, setLoading] = useState(true)
-  const [tab,     setTab]     = useState<'overview'|'plataformas'|'conductores'|'comunas'>('overview')
+  const [tab,     setTab]     = useState<'ns'|'overview'|'plataformas'|'conductores'|'comunas'>('ns')
 
   useEffect(() => { load() }, [period])
 
@@ -62,21 +74,22 @@ export default function ReportesPage() {
     if (!data) return
     const rows = [
       ['Métrica','Valor'],
-      ['Total pedidos', data.summary.total],
-      ['Entregados',    data.summary.delivered],
-      ['Tasa de éxito', `${data.summary.successRate}%`],
-      ['En camino',     data.summary.inTransit],
-      ['Incidencias',   data.summary.incidents],
-      ['Tiempo promedio entrega', `${data.avgDelivery.avgHours}h`],
+      ['Total pedidos',          data.summary.total],
+      ['Entregados',             data.summary.delivered],
+      ['NS Hoy',                 data.summary.nsHoy !== null ? `${data.summary.nsHoy}%` : '—'],
+      ['Tasa de éxito período',  `${data.summary.successRate}%`],
+      ['En camino',              data.summary.inTransit],
+      ['Incidencias',            data.summary.incidents],
+      ['Tiempo promedio entrega',`${data.avgDelivery.avgHours}h`],
       [],
-      ['Fecha','Total','Entregados'],
-      ...data.byDay.map(d => [d.label, d.total, d.delivered]),
+      ['Fecha','Salieron a ruta','Entregados','Incidencias','NS%'],
+      ...data.nsDiario.map(d => [d.label, d.inTransit, d.delivered, d.incident, d.ns !== null ? `${d.ns}%` : '—']),
     ]
     const csv  = rows.map(r => r.join(',')).join('\n')
     const blob = new Blob(['\ufeff'+csv], { type:'text/csv;charset=utf-8;' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
-    a.href = url; a.download = `reporte_sendflow_${period}.csv`; a.click()
+    a.href = url; a.download = `reporte_moovex_${period}.csv`; a.click()
     URL.revokeObjectURL(url)
   }
 
@@ -100,38 +113,75 @@ export default function ReportesPage() {
           </p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          {/* Selector período */}
           <select value={period} onChange={e=>setPeriod(e.target.value)}
             style={{ padding:'7px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', fontFamily:'inherit' }}>
             {Object.entries(PERIOD_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
           </select>
           <button onClick={exportCSV} disabled={!data}
-            style={{ padding:'7px 14px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
-            ⬇ Exportar CSV
+            style={{ padding:'7px 14px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer' }}>
+            ⬇ CSV
           </button>
         </div>
       </div>
 
+      {/* NS Hoy — banner principal */}
+      {s && (
+        <div style={{ background:'#0B1628', borderRadius:12, padding:'20px 24px', marginBottom:20, display:'flex', alignItems:'center', gap:24, flexWrap:'wrap' }}>
+          <div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:4 }}>
+              Nivel de Servicio — Hoy
+            </div>
+            <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
+              <span style={{ fontSize:52, fontWeight:700, color: s.nsHoy !== null ? nsColor(s.nsHoy) : '#9CA3AF', lineHeight:1 }}>
+                {s.nsHoy !== null ? `${s.nsHoy}%` : '—'}
+              </span>
+              {s.nsHoy !== null && (
+                <span style={{ fontSize:14, color: nsColor(s.nsHoy), fontWeight:500 }}>
+                  {nsLabel(s.nsHoy)}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize:12, color:'rgba(255,255,255,.4)', marginTop:4 }}>
+              {s.nsDelivered} entregados de {s.nsTotal} en ruta hoy
+            </div>
+          </div>
+          <div style={{ borderLeft:'1px solid rgba(255,255,255,.08)', paddingLeft:24, display:'flex', gap:24, flexWrap:'wrap' }}>
+            {[
+              { label:'En camino',  value:s.inTransit, color:'#38BDF8' },
+              { label:'Entregados', value:s.delivered,  color:'#4ADE80' },
+              { label:'Incidencias',value:s.incidents,  color:'#F87171' },
+              { label:'Pendientes', value:s.pending,    color:'#FCD34D' },
+            ].map(item => (
+              <div key={item.label}>
+                <div style={{ fontSize:10, color:'rgba(255,255,255,.35)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:2 }}>{item.label}</div>
+                <div style={{ fontSize:24, fontWeight:600, color:item.color }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* KPIs */}
       {s && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:12, marginBottom:20 }}>
-          <KPICard label="Total pedidos"    value={s.total}       change={s.change}       accent="#2563EB" sub={`vs período anterior`}/>
-          <KPICard label="Tasa de éxito"   value={`${s.successRate}%`} accent="#16A34A" sub={`${s.delivered} entregados`}/>
-          <KPICard label="Incidencias"     value={s.incidents}    accent="#DC2626" sub={s.total>0?`${Math.round(s.incidents/s.total*100)}% del total`:''}/>
-          <KPICard label="Tiempo promedio" value={data?.avgDelivery.avgHours ? `${data.avgDelivery.avgHours}h` : '—'} accent="#7C3AED" sub="desde creación a entrega"/>
+          <KPICard label="Total pedidos"    value={s.total}       change={s.change}       accent="#2563EB" sub="vs período anterior"/>
+          <KPICard label="NS del período"   value={`${s.successRate}%`} accent="#16A34A" sub={`${s.delivered} entregados`}/>
+          <KPICard label="Incidencias"      value={s.incidents}   accent="#DC2626" sub={s.total>0?`${Math.round(s.incidents/s.total*100)}% del total`:''}/>
+          <KPICard label="Tiempo promedio"  value={data?.avgDelivery.avgHours ? `${data.avgDelivery.avgHours}h` : '—'} accent="#7C3AED" sub="creación a entrega"/>
         </div>
       )}
 
       {/* Tabs */}
-      <div style={{ display:'flex', gap:0, marginBottom:16, borderBottom:'1px solid #E2E8F0' }}>
+      <div style={{ display:'flex', gap:0, marginBottom:16, borderBottom:'1px solid #E2E8F0', overflowX:'auto' }}>
         {([
+          { key:'ns',           label:'📊 NS Diario' },
           { key:'overview',     label:'📈 Evolución' },
           { key:'plataformas',  label:'🔗 Plataformas' },
           { key:'conductores',  label:'🚚 Conductores' },
           { key:'comunas',      label:'📍 Comunas' },
         ] as {key:typeof tab;label:string}[]).map(t => (
           <button key={t.key} onClick={()=>setTab(t.key)}
-            style={{ padding:'10px 18px', fontSize:13, fontWeight:tab===t.key?500:400, background:'none', border:'none', cursor:'pointer',
+            style={{ padding:'10px 18px', fontSize:13, fontWeight:tab===t.key?500:400, background:'none', border:'none', cursor:'pointer', whiteSpace:'nowrap',
               color:        tab===t.key ? '#2563EB' : '#6B7280',
               borderBottom: `2px solid ${tab===t.key ? '#2563EB' : 'transparent'}`,
               marginBottom: -1,
@@ -141,24 +191,71 @@ export default function ReportesPage() {
         ))}
       </div>
 
+      {/* ── Tab: NS Diario ── */}
+      {tab === 'ns' && data && (
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {/* Gráfico NS */}
+          <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
+            <div style={{ fontSize:13, fontWeight:500, marginBottom:4 }}>Nivel de Servicio — Últimos 14 días</div>
+            <div style={{ fontSize:12, color:'#9CA3AF', marginBottom:20 }}>% de pedidos entregados sobre pedidos que salieron a ruta ese día</div>
+            <NSChart data={data.nsDiario}/>
+          </div>
+
+          {/* Tabla NS diario */}
+          <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
+            <div style={{ padding:'14px 18px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>Detalle por día</div>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'#F8FAFC' }}>
+                  {['Fecha','En ruta','Entregados','Incidencias','NS%','Estado'].map(h => (
+                    <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...data.nsDiario].reverse().map((d, i) => (
+                  <tr key={d.date} style={{ background: i%2===0?'white':'#FAFAFA' }}>
+                    <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>{d.label}</td>
+                    <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{d.inTransit || '—'}</td>
+                    <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, color:'#16A34A', fontWeight:500 }}>{d.delivered || '—'}</td>
+                    <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, color: d.incident > 0 ? '#DC2626' : '#9CA3AF' }}>{d.incident || '—'}</td>
+                    <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9' }}>
+                      {d.ns !== null ? (
+                        <span style={{ fontSize:14, fontWeight:700, color: nsColor(d.ns) }}>{d.ns}%</span>
+                      ) : (
+                        <span style={{ fontSize:12, color:'#D1D5DB' }}>Sin datos</span>
+                      )}
+                    </td>
+                    <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
+                      {d.ns !== null ? (
+                        <span style={{ padding:'2px 8px', borderRadius:20, background: d.ns>=95?'#F0FDF4':d.ns>=85?'#FFFBEB':'#FFF1F2', color: nsColor(d.ns), fontWeight:500 }}>
+                          {nsLabel(d.ns)}
+                        </span>
+                      ) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── Tab: Evolución ── */}
       {tab === 'overview' && data && (
         <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:14 }}>
-          {/* Gráfico de barras de pedidos por día */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
             <div style={{ fontSize:13, fontWeight:500, marginBottom:18 }}>Pedidos por día</div>
             <BarChart data={data.byDay} maxItems={30}/>
           </div>
-
-          {/* Estado actual */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
             <div style={{ fontSize:13, fontWeight:500, marginBottom:16 }}>Distribución de estados</div>
             {s && [
-              { label:'Entregados',   value:s.delivered, color:'#7C3AED' },
-              { label:'En camino',    value:s.inTransit, color:'#16A34A' },
-              { label:'Recepcionados',value:s.received,  color:'#2563EB' },
-              { label:'Pendientes',   value:s.pending,   color:'#D97706' },
-              { label:'Incidencias',  value:s.incidents, color:'#DC2626' },
+              { label:'Entregados',    value:s.delivered, color:'#7C3AED' },
+              { label:'En camino',     value:s.inTransit, color:'#16A34A' },
+              { label:'Recepcionados', value:s.received,  color:'#2563EB' },
+              { label:'Pendientes',    value:s.pending,   color:'#D97706' },
+              { label:'Incidencias',   value:s.incidents, color:'#DC2626' },
             ].map(item => (
               <div key={item.label} style={{ marginBottom:12 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
@@ -166,7 +263,7 @@ export default function ReportesPage() {
                   <span style={{ fontWeight:500 }}>{item.value}</span>
                 </div>
                 <div style={{ height:6, background:'#F1F5F9', borderRadius:3, overflow:'hidden' }}>
-                  <div style={{ width: s.total > 0 ? `${Math.round(item.value/s.total*100)}%` : '0%', height:'100%', background:item.color, borderRadius:3, transition:'width .4s' }}/>
+                  <div style={{ width: s.total>0?`${Math.round(item.value/s.total*100)}%`:'0%', height:'100%', background:item.color, borderRadius:3, transition:'width .4s' }}/>
                 </div>
               </div>
             ))}
@@ -197,8 +294,6 @@ export default function ReportesPage() {
               </div>
             ))}
           </div>
-
-          {/* Por tienda */}
           {data.byStore.length > 0 && (
             <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
               <div style={{ fontSize:13, fontWeight:500, marginBottom:16 }}>Top tiendas</div>
@@ -221,13 +316,11 @@ export default function ReportesPage() {
             Entregas por conductor — {PERIOD_LABEL[period]}
           </div>
           {data.byDriver.length === 0 ? (
-            <div style={{ padding:40, textAlign:'center', color:'#9CA3AF', fontSize:13 }}>
-              Sin datos de conductores para este período
-            </div>
+            <div style={{ padding:40, textAlign:'center', color:'#9CA3AF', fontSize:13 }}>Sin datos para este período</div>
           ) : (
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead><tr style={{ background:'#F8FAFC' }}>
-                {['#','Conductor','Entregas realizadas','Rendimiento'].map(h => (
+                {['#','Conductor','Entregas','Rendimiento'].map(h => (
                   <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em' }}>{h}</th>
                 ))}
               </tr></thead>
@@ -268,7 +361,7 @@ export default function ReportesPage() {
       {tab === 'comunas' && data && (
         <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
           <div style={{ padding:'14px 18px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
-            Top comunas con más envíos — {PERIOD_LABEL[period]}
+            Top comunas — {PERIOD_LABEL[period]}
           </div>
           {data.byComuna.length === 0 ? (
             <div style={{ padding:40, textAlign:'center', color:'#9CA3AF', fontSize:13 }}>Sin datos para este período</div>
@@ -310,8 +403,8 @@ function KPICard({ label, value, accent, sub, change }: { label:string; value:st
       <div style={{ display:'flex', alignItems:'baseline', gap:8 }}>
         <div style={{ fontSize:26, fontWeight:600, lineHeight:1 }}>{value}</div>
         {change !== undefined && change !== 0 && (
-          <span style={{ fontSize:12, fontWeight:500, color: change > 0 ? '#16A34A' : '#DC2626' }}>
-            {change > 0 ? '▲' : '▼'} {Math.abs(change)}%
+          <span style={{ fontSize:12, fontWeight:500, color: change>0?'#16A34A':'#DC2626' }}>
+            {change>0?'▲':'▼'} {Math.abs(change)}%
           </span>
         )}
       </div>
@@ -320,22 +413,73 @@ function KPICard({ label, value, accent, sub, change }: { label:string; value:st
   )
 }
 
-function BarChart({ data, maxItems = 30 }: { data: DayData[]; maxItems?: number }) {
-  const visible = data.slice(-maxItems)
-  const max     = Math.max(...visible.map(d => d.total), 1)
+function NSChart({ data }: { data: NsDay[] }) {
+  const hasData = data.some(d => d.ns !== null)
+
+  if (!hasData) return (
+    <div style={{ textAlign:'center', padding:'40px 0', color:'#9CA3AF', fontSize:13 }}>
+      Sin datos de NS por día todavía
+    </div>
+  )
 
   return (
     <div>
-      {/* Barras */}
-      <div style={{ display:'flex', alignItems:'flex-end', gap:3, height:120, marginBottom:6 }}>
-        {visible.map((d, i) => (
-          <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2, height:'100%', justifyContent:'flex-end' }} title={`${d.label}: ${d.total} pedidos, ${d.delivered} entregados`}>
-            <div style={{ width:'100%', background:'#2563EB', borderRadius:'2px 2px 0 0', opacity:.85, minHeight: d.total > 0 ? 2 : 0,
-              height: `${Math.round(d.total/max*100)}%`, transition:'height .3s' }}/>
+      {/* Líneas de referencia */}
+      <div style={{ position:'relative', height:140, marginBottom:8 }}>
+        {/* Línea 95% */}
+        <div style={{ position:'absolute', top:'5%', left:0, right:0, borderTop:'1px dashed #16A34A', opacity:.4 }}>
+          <span style={{ position:'absolute', right:0, top:-10, fontSize:9, color:'#16A34A' }}>95%</span>
+        </div>
+        {/* Línea 85% */}
+        <div style={{ position:'absolute', top:'15%', left:0, right:0, borderTop:'1px dashed #D97706', opacity:.4 }}>
+          <span style={{ position:'absolute', right:0, top:-10, fontSize:9, color:'#D97706' }}>85%</span>
+        </div>
+        {/* Barras */}
+        <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:'100%' }}>
+          {data.map((d, i) => {
+            const height = d.ns !== null ? `${d.ns}%` : '0%'
+            const color  = d.ns !== null ? (d.ns>=95?'#16A34A':d.ns>=85?'#D97706':'#DC2626') : '#F1F5F9'
+            return (
+              <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', height:'100%', justifyContent:'flex-end' }}
+                title={d.ns !== null ? `${d.label}: NS ${d.ns}% (${d.delivered}/${d.inTransit})` : `${d.label}: Sin datos`}>
+                <div style={{ width:'100%', background:color, borderRadius:'3px 3px 0 0', minHeight: d.ns!==null?2:0, height, transition:'height .4s', opacity: d.ns!==null?.9:.3 }}/>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      {/* Labels */}
+      <div style={{ display:'flex', gap:4 }}>
+        {data.map((d, i) => (
+          <div key={i} style={{ flex:1, textAlign:'center', fontSize:9, color:'#9CA3AF', overflow:'hidden' }}>
+            {i % 2 === 0 ? d.label : ''}
           </div>
         ))}
       </div>
-      {/* Labels (cada 5 días) */}
+      {/* Leyenda */}
+      <div style={{ display:'flex', gap:16, marginTop:10, fontSize:11 }}>
+        <span style={{ display:'flex', alignItems:'center', gap:4, color:'#16A34A' }}><span style={{ width:10,height:10,borderRadius:2,background:'#16A34A',display:'inline-block' }}/> ≥95% Excelente</span>
+        <span style={{ display:'flex', alignItems:'center', gap:4, color:'#D97706' }}><span style={{ width:10,height:10,borderRadius:2,background:'#D97706',display:'inline-block' }}/> 85-94% Regular</span>
+        <span style={{ display:'flex', alignItems:'center', gap:4, color:'#DC2626' }}><span style={{ width:10,height:10,borderRadius:2,background:'#DC2626',display:'inline-block' }}/> &lt;85% Bajo</span>
+      </div>
+    </div>
+  )
+}
+
+function BarChart({ data, maxItems = 30 }: { data: DayData[]; maxItems?: number }) {
+  const visible = data.slice(-maxItems)
+  const max     = Math.max(...visible.map(d => d.total), 1)
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'flex-end', gap:3, height:120, marginBottom:6 }}>
+        {visible.map((d, i) => (
+          <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2, height:'100%', justifyContent:'flex-end' }}
+            title={`${d.label}: ${d.total} pedidos`}>
+            <div style={{ width:'100%', background:'#2563EB', borderRadius:'2px 2px 0 0', opacity:.85, minHeight: d.total>0?2:0,
+              height:`${Math.round(d.total/max*100)}%`, transition:'height .3s' }}/>
+          </div>
+        ))}
+      </div>
       <div style={{ display:'flex', gap:3 }}>
         {visible.map((d, i) => (
           <div key={i} style={{ flex:1, textAlign:'center', fontSize:9, color:'#9CA3AF', overflow:'hidden' }}>
@@ -343,10 +487,9 @@ function BarChart({ data, maxItems = 30 }: { data: DayData[]; maxItems?: number 
           </div>
         ))}
       </div>
-      {/* Leyenda */}
       <div style={{ display:'flex', gap:14, marginTop:8, fontSize:11, color:'#6B7280' }}>
         <span style={{ display:'flex', alignItems:'center', gap:4 }}>
-          <span style={{ width:10, height:10, borderRadius:2, background:'#2563EB', display:'inline-block' }}/>
+          <span style={{ width:10,height:10,borderRadius:2,background:'#2563EB',display:'inline-block' }}/>
           Pedidos creados
         </span>
       </div>
