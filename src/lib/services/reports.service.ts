@@ -118,7 +118,8 @@ export async function getExecutiveSummary(storeId?: string, period = 'month') {
 
   const delivered    = statusMap['DELIVERED']  || 0
   const incidents    = statusMap['INCIDENT']   || 0
-  const successRate  = current > 0 ? Math.round((delivered / current) * 100) : 0
+  const dispatched  = delivered + (statusMap['IN_TRANSIT'] || 0) + incidents
+  const successRate = dispatched > 0 ? Math.round((delivered / dispatched) * 100) : 0
   const change       = previous > 0 ? Math.round(((current - previous) / previous) * 100) : 0
 
   // NS hoy
