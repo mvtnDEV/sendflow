@@ -222,11 +222,11 @@ export async function listOrders(filters: OrderFilters) {
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     where.OR = [
       { createdAt:   todayRange() },
-      { status:      'PENDING' },
       { status:      'IN_TRANSIT' },
       { receivedAt:  todayRange() },
       { inTransitAt: todayRange() },
       { deliveredAt: todayRange() },
+      ...(filters.superAdminView ? [] : [{ status: 'PENDING' }]),
     ]
   } else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
