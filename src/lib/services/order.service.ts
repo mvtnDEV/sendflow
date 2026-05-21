@@ -4,17 +4,41 @@ import type { OrderFilters, NormalizedOrder, DashboardStats } from '@/types'
 import type { OrderStatus, Platform } from '@prisma/client'
 
 const REGIONES_PERMITIDAS = [
-  'metropolitana',
-  'región metropolitana',
-  'region metropolitana',
-  'rm',
-  'metropolitana de santiago',
+  'metropolitana', 'región metropolitana', 'region metropolitana',
+  'rm', 'metropolitana de santiago',
 ]
 
 function isRegionPermitida(region: string): boolean {
   const r = region.toLowerCase().trim()
   return REGIONES_PERMITIDAS.some(allowed => r.includes(allowed) || allowed.includes(r))
 }
+
+// ─── todayRange cacheado por proceso ─────────────────────────────────────────
+let _todayCache: { range: { gte: Date; lte: Date }; day: string } | null = null
+
+function todayRange() {
+  const now = new Date()
+  const santiagoParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now)
+
+  const year  = santiagoParts.find(p => p.type === 'year')!.value
+  const month = santiagoParts.find(p => p.type === 'month')!.value
+  const day   = santiagoParts.find(p => p.type === 'day')!.value
+  const key   = `${year}-${month}-${day}`
+
+  if (_todayCache?.day === key) return _todayCache.range
+
+  const range = {
+    gte: new Date(`${year}-${month}-${day}T00:00:00-03:00`),
+    lte: new Date(`${year}-${month}-${day}T23:59:59-03:00`),
+  }
+  _todayCache = { range, day: key }
+  return range
+}
+
+// ─── Crear pedido ─────────────────────────────────────────────────────────────
 
 interface CreateOrderInput {
   storeId:        string
@@ -45,7 +69,7 @@ export async function createOrder(input: CreateOrderInput) {
     ensureUniqueQrCode(input.platform),
   ])
 
-  const order = await prisma.order.create({
+  return prisma.order.create({
     data: {
       orderNumber,
       qrCode,
@@ -75,9 +99,9 @@ export async function createOrder(input: CreateOrderInput) {
     },
     include: { store: true, events: true },
   })
-
-  return order
 }
+
+// ─── Upsert desde webhook ─────────────────────────────────────────────────────
 
 export async function upsertOrderFromWebhook(
   storeId:       string,
@@ -85,7 +109,8 @@ export async function upsertOrderFromWebhook(
   data:          NormalizedOrder,
 ) {
   const existing = await prisma.order.findFirst({
-    where: { integrationId, sourceId: data.externalId },
+    where:  { integrationId, sourceId: data.externalId },
+    select: { id: true },
   })
 
   if (existing) {
@@ -120,6 +145,8 @@ export async function upsertOrderFromWebhook(
   })
 }
 
+// ─── Cambiar estado ───────────────────────────────────────────────────────────
+
 const STATUS_TIMESTAMP: Partial<Record<OrderStatus, string>> = {
   RECEIVED:   'receivedAt',
   IN_TRANSIT: 'inTransitAt',
@@ -133,7 +160,6 @@ export async function updateOrderStatus(
   createdBy?: string,
 ) {
   const timestampField = STATUS_TIMESTAMP[status]
-  const now = new Date()
 
   const previous = await prisma.order.findUnique({
     where:  { id: orderId },
@@ -145,7 +171,7 @@ export async function updateOrderStatus(
     where: { id: orderId },
     data: {
       status,
-      ...(timestampField ? { [timestampField]: now } : {}),
+      ...(timestampField ? { [timestampField]: new Date() } : {}),
       events: {
         create: {
           status,
@@ -169,7 +195,6 @@ export async function updateOrderStatus(
           where: { id: order.id },
           data:  { externalId: String(result.id) },
         })
-        console.log('[EnviosNow] Envío creado, ID Now:', result.id)
       }
     } catch (err) {
       console.error('[EnviosNow] Error enviando pedido:', err)
@@ -186,9 +211,11 @@ export async function updateOrderStatus(
   return order
 }
 
+// ─── Buscar por QR ────────────────────────────────────────────────────────────
+
 export async function findOrderByQr(qrCode: string) {
   return prisma.order.findUnique({
-    where: { qrCode },
+    where:   { qrCode },
     include: {
       store:  { select: { id: true, name: true } },
       events: { orderBy: { createdAt: 'asc' } },
@@ -196,10 +223,13 @@ export async function findOrderByQr(qrCode: string) {
   })
 }
 
+// ─── Listar pedidos ───────────────────────────────────────────────────────────
+
 export async function listOrders(filters: OrderFilters) {
   const page     = filters.page     ?? 1
   const pageSize = filters.pageSize ?? 10
   const skip     = (page - 1) * pageSize
+  const today    = todayRange()
 
   const where: any = {}
 
@@ -221,11 +251,11 @@ export async function listOrders(filters: OrderFilters) {
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     where.OR = [
-      { createdAt:   todayRange() },
+      { createdAt:   today },
       { status:      'IN_TRANSIT' },
-      { receivedAt:  todayRange() },
-      { inTransitAt: todayRange() },
-      { deliveredAt: todayRange() },
+      { receivedAt:  today },
+      { inTransitAt: today },
+      { deliveredAt: today },
       ...(filters.superAdminView ? [] : [{ status: 'PENDING' }]),
     ]
   } else if (filters.dateFrom || filters.dateTo) {
@@ -235,19 +265,11 @@ export async function listOrders(filters: OrderFilters) {
     }
   }
 
-  // SUPER_ADMIN: ocultar pedidos WooCommerce que NO tengan estado enviado_intralog
   if (filters.superAdminView) {
     where.NOT = {
       AND: [
         { platform: 'WOOCOMMERCE' },
-        {
-          NOT: {
-            rawPayload: {
-              path:   ['status'],
-              equals: 'enviado_intralog',
-            },
-          },
-        },
+        { NOT: { rawPayload: { path: ['status'], equals: 'enviado_intralog' } } },
       ],
     }
   }
@@ -258,10 +280,22 @@ export async function listOrders(filters: OrderFilters) {
       skip,
       take:    pageSize,
       orderBy: { createdAt: 'desc' },
-      include: {
-        store:       { select: { id: true, name: true, slug: true } },
-        integration: { select: { platform: true } },
-        events:      { orderBy: { createdAt: 'desc' }, take: 1 },
+      select: {
+        id:            true,
+        orderNumber:   true,
+        platform:      true,
+        status:        true,
+        customerName:  true,
+        customerPhone: true,
+        addressStreet: true,
+        addressComuna: true,
+        bultos:        true,
+        sourceId:      true,
+        subStoreName:  true,
+        createdAt:     true,
+        evidencePhoto1:true,
+        rawPayload:    true,
+        store: { select: { id: true, name: true } },
       },
     }),
     prisma.order.count({ where }),
@@ -270,48 +304,41 @@ export async function listOrders(filters: OrderFilters) {
   return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
 }
 
-function todayRange() {
-  const now = new Date()
-  const santiagoParts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Santiago',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(now)
-
-  const year  = santiagoParts.find(p => p.type === 'year')!.value
-  const month = santiagoParts.find(p => p.type === 'month')!.value
-  const day   = santiagoParts.find(p => p.type === 'day')!.value
-
-  const startSantiago = new Date(`${year}-${month}-${day}T00:00:00-03:00`)
-  const endSantiago   = new Date(`${year}-${month}-${day}T23:59:59-03:00`)
-
-  return { gte: startSantiago, lte: endSantiago }
-}
+// ─── Stats dashboard ──────────────────────────────────────────────────────────
 
 export async function getDashboardStats(storeId?: string, todayOnly = true): Promise<DashboardStats> {
-  const todayFilter: any = {}
-  if (storeId) todayFilter.storeId = storeId
-  if (todayOnly) todayFilter.createdAt = todayRange()
+  const today = todayRange()
 
-  const pendingFilter: any = { status: 'PENDING' }
-  if (storeId) pendingFilter.storeId = storeId
+  const baseWhere: any = {}
+  if (storeId) baseWhere.storeId = storeId
+  if (todayOnly) baseWhere.createdAt = today
 
-  const [counts, pendingCount, byPlatform, byStore] = await Promise.all([
+  const pendingWhere: any = { status: 'PENDING' }
+  if (storeId) pendingWhere.storeId = storeId
+
+  // Una sola query groupBy para todos los estados + pendientes
+  const [byStatus, byPlatform, byStore] = await Promise.all([
     prisma.order.groupBy({
-      by:    ['status'],
-      where: { ...todayFilter, status: { not: 'PENDING' } },
+      by:     ['status'],
+      where:  baseWhere,
       _count: { _all: true },
     }),
-    prisma.order.count({ where: pendingFilter }),
-    prisma.order.groupBy({ by: ['platform'], where: todayFilter, _count: { _all: true } }),
+    prisma.order.groupBy({
+      by:     ['platform'],
+      where:  baseWhere,
+      _count: { _all: true },
+    }),
     storeId ? [] : prisma.order.groupBy({
-      by: ['storeId'], where: todayFilter, _count: { _all: true },
-      orderBy: { _count: { storeId: 'desc' } }, take: 5,
+      by:      ['storeId'],
+      where:   baseWhere,
+      _count:  { _all: true },
+      orderBy: { _count: { storeId: 'desc' } },
+      take:    5,
     }),
   ])
 
   const countMap: Record<string, number> = {}
-  counts.forEach(c => { countMap[c.status] = c._count._all })
-  countMap['PENDING'] = pendingCount
+  byStatus.forEach(s => { countMap[s.status] = s._count._all })
 
   const total = Object.values(countMap).reduce((a, b) => a + b, 0)
 
