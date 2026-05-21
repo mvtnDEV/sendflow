@@ -19,17 +19,64 @@ function rangeFor(period: string): { start: Date; end: Date } {
       break
     case 'last_month': {
       start.setMonth(start.getMonth() - 1, 1)
-      end.setDate(0) // último día del mes anterior
+      end.setDate(0)
       end.setHours(23, 59, 59, 999)
       break
     }
     case '3months':
       start.setMonth(start.getMonth() - 3)
       break
-    default: // 'today'
+    default:
       break
   }
   return { start, end }
+}
+
+// ─── NS Diario (últimos 14 días) ──────────────────────────────────────────────
+
+export async function getNivelServicioDiario(storeId?: string, days = 14) {
+  const start = new Date()
+  start.setDate(start.getDate() - (days - 1))
+  start.setHours(0, 0, 0, 0)
+
+  const where: any = {
+    inTransitAt: { gte: start },
+    status: { in: ['IN_TRANSIT', 'DELIVERED', 'INCIDENT'] },
+  }
+  if (storeId) where.storeId = storeId
+
+  const orders = await prisma.order.findMany({
+    where,
+    select: { inTransitAt: true, status: true, deliveredAt: true },
+  })
+
+  // Agrupar por día de salida a ruta
+  const byDay: Record<string, { inTransit: number; delivered: number; incident: number }> = {}
+
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start)
+    d.setDate(d.getDate() + i)
+    const key = d.toISOString().slice(0, 10)
+    byDay[key] = { inTransit: 0, delivered: 0, incident: 0 }
+  }
+
+  orders.forEach(o => {
+    if (!o.inTransitAt) return
+    const key = o.inTransitAt.toISOString().slice(0, 10)
+    if (!byDay[key]) return
+    byDay[key].inTransit++
+    if (o.status === 'DELIVERED') byDay[key].delivered++
+    if (o.status === 'INCIDENT')  byDay[key].incident++
+  })
+
+  return Object.entries(byDay).map(([date, d]) => ({
+    date,
+    label:      new Date(date + 'T12:00:00').toLocaleDateString('es-CL', { day:'2-digit', month:'short' }),
+    inTransit:  d.inTransit,
+    delivered:  d.delivered,
+    incident:   d.incident,
+    ns:         d.inTransit > 0 ? Math.round((d.delivered / d.inTransit) * 100) : null,
+  }))
 }
 
 // ─── Resumen ejecutivo ────────────────────────────────────────────────────────
@@ -39,7 +86,6 @@ export async function getExecutiveSummary(storeId?: string, period = 'month') {
   const where: any     = { createdAt: { gte: start, lte: end } }
   if (storeId) where.storeId = storeId
 
-  // Período anterior para comparativa
   const prevEnd   = new Date(start)
   prevEnd.setMilliseconds(-1)
   const prevStart = new Date(prevEnd)
@@ -51,34 +97,52 @@ export async function getExecutiveSummary(storeId?: string, period = 'month') {
   const prevWhere: any = { createdAt: { gte: prevStart, lte: prevEnd } }
   if (storeId) prevWhere.storeId = storeId
 
-  const [current, previous, byStatus] = await Promise.all([
+  // NS del día actual
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const nsWhere: any = {
+    inTransitAt: { gte: todayStart },
+    status: { in: ['IN_TRANSIT', 'DELIVERED', 'INCIDENT'] },
+  }
+  if (storeId) nsWhere.storeId = storeId
+
+  const [current, previous, byStatus, nsOrders] = await Promise.all([
     prisma.order.count({ where }),
     prisma.order.count({ where: prevWhere }),
     prisma.order.groupBy({ by: ['status'], where, _count: { _all: true } }),
+    prisma.order.findMany({ where: nsWhere, select: { status: true } }),
   ])
 
   const statusMap: Record<string, number> = {}
   byStatus.forEach(s => { statusMap[s.status] = s._count._all })
 
-  const delivered  = statusMap['DELIVERED']  || 0
-  const incidents  = statusMap['INCIDENT']   || 0
-  const successRate = current > 0 ? Math.round((delivered / current) * 100) : 0
-  const change      = previous > 0 ? Math.round(((current - previous) / previous) * 100) : 0
+  const delivered    = statusMap['DELIVERED']  || 0
+  const incidents    = statusMap['INCIDENT']   || 0
+  const successRate  = current > 0 ? Math.round((delivered / current) * 100) : 0
+  const change       = previous > 0 ? Math.round(((current - previous) / previous) * 100) : 0
+
+  // NS hoy
+  const nsTotal     = nsOrders.length
+  const nsDelivered = nsOrders.filter(o => o.status === 'DELIVERED').length
+  const nsHoy       = nsTotal > 0 ? Math.round((nsDelivered / nsTotal) * 100) : null
 
   return {
     total:       current,
     previous,
-    change,       // % vs período anterior (+12 = creció 12%)
+    change,
     delivered,
     pending:     statusMap['PENDING']    || 0,
     inTransit:   statusMap['IN_TRANSIT'] || 0,
     received:    statusMap['RECEIVED']   || 0,
     incidents,
     successRate,
+    nsHoy,
+    nsTotal,
+    nsDelivered,
   }
 }
 
-// ─── Pedidos por día (para gráfico de línea) ──────────────────────────────────
+// ─── Pedidos por día ──────────────────────────────────────────────────────────
 
 export async function getOrdersByDay(storeId?: string, days = 30) {
   const start = new Date()
@@ -94,9 +158,7 @@ export async function getOrdersByDay(storeId?: string, days = 30) {
     orderBy: { createdAt: 'asc' },
   })
 
-  // Agrupar por día
   const byDay: Record<string, { total: number; delivered: number }> = {}
-
   for (let i = 0; i < days; i++) {
     const d = new Date(start)
     d.setDate(d.getDate() + i)
@@ -202,7 +264,7 @@ export async function getByDriver(storeId?: string, period = 'month') {
     }))
 }
 
-// ─── Por comuna (mapa de calor) ───────────────────────────────────────────────
+// ─── Por comuna ───────────────────────────────────────────────────────────────
 
 export async function getByComuna(storeId?: string, period = 'month') {
   const { start, end } = rangeFor(period)
