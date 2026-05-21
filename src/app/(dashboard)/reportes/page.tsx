@@ -77,12 +77,12 @@ export default function ReportesPage() {
       ['Total pedidos',          data.summary.total],
       ['Entregados',             data.summary.delivered],
       ['NS Hoy',                 data.summary.nsHoy !== null ? `${data.summary.nsHoy}%` : '—'],
-      ['Tasa de éxito período',  `${data.summary.successRate}%`],
+      ['NS del período',         `${data.summary.successRate}%`],
       ['En camino',              data.summary.inTransit],
       ['Incidencias',            data.summary.incidents],
       ['Tiempo promedio entrega',`${data.avgDelivery.avgHours}h`],
       [],
-      ['Fecha','Salieron a ruta','Entregados','Incidencias','NS%'],
+      ['Fecha','En ruta','Entregados','Incidencias','NS%'],
       ...data.nsDiario.map(d => [d.label, d.inTransit, d.delivered, d.incident, d.ns !== null ? `${d.ns}%` : '—']),
     ]
     const csv  = rows.map(r => r.join(',')).join('\n')
@@ -104,8 +104,9 @@ export default function ReportesPage() {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:10 }}>
+
+      {/* ── ZONA 1 (regla Z): Header — izquierda título, derecha controles ── */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:10 }}>
         <div>
           <h1 style={{ fontSize:20, fontWeight:500 }}>Reportes y métricas</h1>
           <p style={{ fontSize:13, color:'#6B7280', marginTop:3 }}>
@@ -124,61 +125,55 @@ export default function ReportesPage() {
         </div>
       </div>
 
-      {/* NS Hoy — banner principal */}
+      {/* ── ZONA 2 (regla Z): diagonal — NS grande + KPIs operacionales ── */}
       {s && (
-        <div style={{ background:'#0B1628', borderRadius:12, padding:'20px 24px', marginBottom:20, display:'flex', alignItems:'center', gap:24, flexWrap:'wrap' }}>
-          <div>
-            <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:4 }}>
-              Nivel de Servicio — Hoy
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 3fr', gap:14, marginBottom:20 }}>
+
+          {/* NS Hoy — foco visual principal */}
+          <div style={{ background:'#0B1628', borderRadius:12, padding:24, display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', textAlign:'center' }}>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8 }}>
+              NS Hoy
             </div>
-            <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
-              <span style={{ fontSize:52, fontWeight:700, color: s.nsHoy !== null ? nsColor(s.nsHoy) : '#9CA3AF', lineHeight:1 }}>
-                {s.nsHoy !== null ? `${s.nsHoy}%` : '—'}
-              </span>
-              {s.nsHoy !== null && (
-                <span style={{ fontSize:14, color: nsColor(s.nsHoy), fontWeight:500 }}>
-                  {nsLabel(s.nsHoy)}
-                </span>
-              )}
+            <div style={{ fontSize:64, fontWeight:800, color: s.nsHoy !== null ? nsColor(s.nsHoy) : '#4B5563', lineHeight:1, marginBottom:8 }}>
+              {s.nsHoy !== null ? `${s.nsHoy}%` : '—'}
             </div>
-            <div style={{ fontSize:12, color:'rgba(255,255,255,.4)', marginTop:4 }}>
-              {s.nsDelivered} entregados de {s.nsTotal} en ruta hoy
+            <div style={{ fontSize:13, color: s.nsHoy !== null ? nsColor(s.nsHoy) : '#6B7280', fontWeight:500, marginBottom:12 }}>
+              {nsLabel(s.nsHoy)}
             </div>
-          </div>
-          <div style={{ borderLeft:'1px solid rgba(255,255,255,.08)', paddingLeft:24, display:'flex', gap:24, flexWrap:'wrap' }}>
-            {[
-              { label:'En camino',  value:s.inTransit, color:'#38BDF8' },
-              { label:'Entregados', value:s.delivered,  color:'#4ADE80' },
-              { label:'Incidencias',value:s.incidents,  color:'#F87171' },
-              { label:'Pendientes', value:s.pending,    color:'#FCD34D' },
-            ].map(item => (
-              <div key={item.label}>
-                <div style={{ fontSize:10, color:'rgba(255,255,255,.35)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:2 }}>{item.label}</div>
-                <div style={{ fontSize:24, fontWeight:600, color:item.color }}>{item.value}</div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,.35)', lineHeight:1.5 }}>
+              {s.nsDelivered} entregados<br/>de {s.nsTotal} en ruta hoy
+            </div>
+            {/* Barra NS */}
+            {s.nsHoy !== null && (
+              <div style={{ width:'100%', marginTop:14 }}>
+                <div style={{ height:6, background:'rgba(255,255,255,.1)', borderRadius:3, overflow:'hidden' }}>
+                  <div style={{ width:`${s.nsHoy}%`, height:'100%', background: nsColor(s.nsHoy), borderRadius:3, transition:'width .6s' }}/>
+                </div>
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, color:'rgba(255,255,255,.2)', marginTop:3 }}>
+                  <span>0%</span><span>50%</span><span>100%</span>
+                </div>
               </div>
-            ))}
+            )}
+          </div>
+
+          {/* KPIs operacionales — sin pendientes */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
+            <KPICard label="En ruta hoy"     value={s.inTransit}  accent="#2563EB" sub="pedidos activos"/>
+            <KPICard label="Entregados hoy"  value={s.nsDelivered} accent="#16A34A" sub="con evidencia"/>
+            <KPICard label="Incidencias"     value={s.incidents}  accent="#DC2626" sub={s.nsTotal>0?`${Math.round(s.incidents/(s.nsTotal||1)*100)}% del total`:'del período'}/>
+            <KPICard label="Tiempo promedio" value={data?.avgDelivery.avgHours ? `${data.avgDelivery.avgHours}h` : '—'} accent="#7C3AED" sub="creación a entrega"/>
           </div>
         </div>
       )}
 
-      {/* KPIs */}
-      {s && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:12, marginBottom:20 }}>
-          <KPICard label="Total pedidos"    value={s.total}       change={s.change}       accent="#2563EB" sub="vs período anterior"/>
-          <KPICard label="NS del período"   value={`${s.successRate}%`} accent="#16A34A" sub={`${s.delivered} entregados`}/>
-          <KPICard label="Incidencias"      value={s.incidents}   accent="#DC2626" sub={s.total>0?`${Math.round(s.incidents/s.total*100)}% del total`:''}/>
-          <KPICard label="Tiempo promedio"  value={data?.avgDelivery.avgHours ? `${data.avgDelivery.avgHours}h` : '—'} accent="#7C3AED" sub="creación a entrega"/>
-        </div>
-      )}
-
-      {/* Tabs */}
+      {/* ── ZONA 3 (regla Z): abajo — tabs + contenido ── */}
       <div style={{ display:'flex', gap:0, marginBottom:16, borderBottom:'1px solid #E2E8F0', overflowX:'auto' }}>
         {([
-          { key:'ns',           label:'📊 NS Diario' },
-          { key:'overview',     label:'📈 Evolución' },
-          { key:'plataformas',  label:'🔗 Plataformas' },
-          { key:'conductores',  label:'🚚 Conductores' },
-          { key:'comunas',      label:'📍 Comunas' },
+          { key:'ns',          label:'📊 NS Diario' },
+          { key:'overview',    label:'📈 Evolución' },
+          { key:'plataformas', label:'🔗 Plataformas' },
+          { key:'conductores', label:'🚚 Conductores' },
+          { key:'comunas',     label:'📍 Comunas' },
         ] as {key:typeof tab;label:string}[]).map(t => (
           <button key={t.key} onClick={()=>setTab(t.key)}
             style={{ padding:'10px 18px', fontSize:13, fontWeight:tab===t.key?500:400, background:'none', border:'none', cursor:'pointer', whiteSpace:'nowrap',
@@ -194,14 +189,11 @@ export default function ReportesPage() {
       {/* ── Tab: NS Diario ── */}
       {tab === 'ns' && data && (
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          {/* Gráfico NS */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
             <div style={{ fontSize:13, fontWeight:500, marginBottom:4 }}>Nivel de Servicio — Últimos 14 días</div>
-            <div style={{ fontSize:12, color:'#9CA3AF', marginBottom:20 }}>% de pedidos entregados sobre pedidos que salieron a ruta ese día</div>
+            <div style={{ fontSize:12, color:'#9CA3AF', marginBottom:20 }}>% pedidos entregados sobre pedidos que salieron a ruta ese día</div>
             <NSChart data={data.nsDiario}/>
           </div>
-
-          {/* Tabla NS diario */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
             <div style={{ padding:'14px 18px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>Detalle por día</div>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -218,7 +210,7 @@ export default function ReportesPage() {
                     <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>{d.label}</td>
                     <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{d.inTransit || '—'}</td>
                     <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, color:'#16A34A', fontWeight:500 }}>{d.delivered || '—'}</td>
-                    <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, color: d.incident > 0 ? '#DC2626' : '#9CA3AF' }}>{d.incident || '—'}</td>
+                    <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, color: d.incident>0?'#DC2626':'#9CA3AF' }}>{d.incident || '—'}</td>
                     <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9' }}>
                       {d.ns !== null ? (
                         <span style={{ fontSize:14, fontWeight:700, color: nsColor(d.ns) }}>{d.ns}%</span>
@@ -245,28 +237,36 @@ export default function ReportesPage() {
       {tab === 'overview' && data && (
         <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:14 }}>
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
-            <div style={{ fontSize:13, fontWeight:500, marginBottom:18 }}>Pedidos por día</div>
+            <div style={{ fontSize:13, fontWeight:500, marginBottom:4 }}>Pedidos por día</div>
+            <div style={{ fontSize:12, color:'#9CA3AF', marginBottom:18 }}>Total de pedidos creados en el período</div>
             <BarChart data={data.byDay} maxItems={30}/>
           </div>
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
-            <div style={{ fontSize:13, fontWeight:500, marginBottom:16 }}>Distribución de estados</div>
+            <div style={{ fontSize:13, fontWeight:500, marginBottom:16 }}>Distribución del período</div>
             {s && [
-              { label:'Entregados',    value:s.delivered, color:'#7C3AED' },
-              { label:'En camino',     value:s.inTransit, color:'#16A34A' },
-              { label:'Recepcionados', value:s.received,  color:'#2563EB' },
-              { label:'Pendientes',    value:s.pending,   color:'#D97706' },
+              { label:'Entregados',    value:s.delivered, color:'#16A34A' },
+              { label:'En camino',     value:s.inTransit, color:'#2563EB' },
+              { label:'Recepcionados', value:s.received,  color:'#7C3AED' },
               { label:'Incidencias',   value:s.incidents, color:'#DC2626' },
-            ].map(item => (
-              <div key={item.label} style={{ marginBottom:12 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
-                  <span style={{ color:'#4B5563' }}>{item.label}</span>
-                  <span style={{ fontWeight:500 }}>{item.value}</span>
+            ].map(item => {
+              const base = s.delivered + s.inTransit + s.received + s.incidents
+              return (
+                <div key={item.label} style={{ marginBottom:12 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
+                    <span style={{ color:'#4B5563' }}>{item.label}</span>
+                    <span style={{ fontWeight:500 }}>{item.value}</span>
+                  </div>
+                  <div style={{ height:6, background:'#F1F5F9', borderRadius:3, overflow:'hidden' }}>
+                    <div style={{ width: base>0?`${Math.round(item.value/base*100)}%`:'0%', height:'100%', background:item.color, borderRadius:3, transition:'width .4s' }}/>
+                  </div>
                 </div>
-                <div style={{ height:6, background:'#F1F5F9', borderRadius:3, overflow:'hidden' }}>
-                  <div style={{ width: s.total>0?`${Math.round(item.value/s.total*100)}%`:'0%', height:'100%', background:item.color, borderRadius:3, transition:'width .4s' }}/>
-                </div>
-              </div>
-            ))}
+              )
+            })}
+            <div style={{ marginTop:16, padding:'12px 14px', background:'#F8FAFC', borderRadius:8 }}>
+              <div style={{ fontSize:11, color:'#6B7280', marginBottom:2 }}>NS del período</div>
+              <div style={{ fontSize:22, fontWeight:700, color: nsColor(s.successRate) }}>{s.successRate}%</div>
+              <div style={{ fontSize:11, color:'#9CA3AF' }}>{s.delivered} entregados de {s.total} totales</div>
+            </div>
           </div>
         </div>
       )}
@@ -280,7 +280,7 @@ export default function ReportesPage() {
               <div key={p.platform} style={{ marginBottom:14 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ width:10, height:10, borderRadius:'50%', background:PLAT_COLOR[p.platform]||'#6B7280', flexShrink:0, display:'inline-block' }}/>
+                    <span style={{ width:10,height:10,borderRadius:'50%',background:PLAT_COLOR[p.platform]||'#6B7280',flexShrink:0,display:'inline-block' }}/>
                     <span style={{ fontSize:13 }}>{PLATFORM_LABEL[p.platform]||p.platform}</span>
                   </div>
                   <div style={{ display:'flex', gap:10, fontSize:12 }}>
@@ -299,7 +299,7 @@ export default function ReportesPage() {
               <div style={{ fontSize:13, fontWeight:500, marginBottom:16 }}>Top tiendas</div>
               {data.byStore.map((s, i) => (
                 <div key={s.storeId} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>
-                  <span style={{ width:22, height:22, borderRadius:'50%', background:'#F1F5F9', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:600, flexShrink:0 }}>{i+1}</span>
+                  <span style={{ width:22,height:22,borderRadius:'50%',background:'#F1F5F9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:600,flexShrink:0 }}>{i+1}</span>
                   <span style={{ flex:1 }}>{s.storeName}</span>
                   <span style={{ fontWeight:500 }}>{s.count}</span>
                 </div>
@@ -333,7 +333,7 @@ export default function ReportesPage() {
                       <td style={{ padding:'12px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, color:'#9CA3AF' }}>{i+1}</td>
                       <td style={{ padding:'12px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
                         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                          <div style={{ width:32, height:32, borderRadius:'50%', background:'#0B1628', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:500, color:'white' }}>
+                          <div style={{ width:32,height:32,borderRadius:'50%',background:'#0B1628',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:500,color:'white' }}>
                             {d.driverName.slice(0,2).toUpperCase()}
                           </div>
                           {d.driverName}
@@ -415,26 +415,20 @@ function KPICard({ label, value, accent, sub, change }: { label:string; value:st
 
 function NSChart({ data }: { data: NsDay[] }) {
   const hasData = data.some(d => d.ns !== null)
-
   if (!hasData) return (
     <div style={{ textAlign:'center', padding:'40px 0', color:'#9CA3AF', fontSize:13 }}>
       Sin datos de NS por día todavía
     </div>
   )
-
   return (
     <div>
-      {/* Líneas de referencia */}
       <div style={{ position:'relative', height:140, marginBottom:8 }}>
-        {/* Línea 95% */}
         <div style={{ position:'absolute', top:'5%', left:0, right:0, borderTop:'1px dashed #16A34A', opacity:.4 }}>
           <span style={{ position:'absolute', right:0, top:-10, fontSize:9, color:'#16A34A' }}>95%</span>
         </div>
-        {/* Línea 85% */}
         <div style={{ position:'absolute', top:'15%', left:0, right:0, borderTop:'1px dashed #D97706', opacity:.4 }}>
           <span style={{ position:'absolute', right:0, top:-10, fontSize:9, color:'#D97706' }}>85%</span>
         </div>
-        {/* Barras */}
         <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:'100%' }}>
           {data.map((d, i) => {
             const height = d.ns !== null ? `${d.ns}%` : '0%'
@@ -448,7 +442,6 @@ function NSChart({ data }: { data: NsDay[] }) {
           })}
         </div>
       </div>
-      {/* Labels */}
       <div style={{ display:'flex', gap:4 }}>
         {data.map((d, i) => (
           <div key={i} style={{ flex:1, textAlign:'center', fontSize:9, color:'#9CA3AF', overflow:'hidden' }}>
@@ -456,7 +449,6 @@ function NSChart({ data }: { data: NsDay[] }) {
           </div>
         ))}
       </div>
-      {/* Leyenda */}
       <div style={{ display:'flex', gap:16, marginTop:10, fontSize:11 }}>
         <span style={{ display:'flex', alignItems:'center', gap:4, color:'#16A34A' }}><span style={{ width:10,height:10,borderRadius:2,background:'#16A34A',display:'inline-block' }}/> ≥95% Excelente</span>
         <span style={{ display:'flex', alignItems:'center', gap:4, color:'#D97706' }}><span style={{ width:10,height:10,borderRadius:2,background:'#D97706',display:'inline-block' }}/> 85-94% Regular</span>
