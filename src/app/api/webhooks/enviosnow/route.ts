@@ -7,6 +7,8 @@ const STATE_MAP: Record<string, string> = {
   'cancelado':    'CANCELLED',
   'por entregar': 'IN_TRANSIT',
   'pendiente':    'INCIDENT',
+  'no entregado': 'INCIDENT',
+  'fallido':      'INCIDENT',
 }
 
 const STATUS_PRIORITY: Record<string, number> = {
@@ -34,50 +36,59 @@ export async function POST(req: NextRequest) {
 
     for (const delivery of deliveries) {
       const externalId = delivery.externalId ?? delivery.external_id ?? null
+      const nowId      = delivery.id ? String(delivery.id) : null
       const state      = delivery.state ?? delivery.status ?? null
 
-      console.log('[EnviosNow] externalId:', externalId, '| state:', state)
+      console.log('[EnviosNow] externalId:', externalId, '| nowId:', nowId, '| state:', state)
 
-      if (!externalId || !state) {
+      // Necesitamos al menos un ID y un estado
+      if ((!externalId && !nowId) || !state) {
         results.push({ status: 'skipped_no_id_or_state' })
         continue
       }
 
       const newStatus = STATE_MAP[String(state).toLowerCase()]
       if (!newStatus) {
-        results.push({ externalId, state, status: 'unknown_state' })
+        results.push({ externalId, nowId, state, status: 'unknown_state' })
         continue
       }
 
-      const extId = String(externalId)
+      // Buscar pedido por externalId, orderNumber o ID interno de Now
+      const extId = String(externalId ?? nowId)
+      const orConditions: any[] = []
+
+      if (externalId) {
+        orConditions.push({ externalId: String(externalId) })
+        orConditions.push({ orderNumber: String(externalId) })
+        orConditions.push({ orderNumber: `#${externalId}` })
+      }
+      if (nowId) {
+        orConditions.push({ externalId: nowId })
+      }
+
       const order = await prisma.order.findFirst({
-        where: {
-          OR: [
-            { externalId: extId },
-            { orderNumber: extId },
-            { orderNumber: `#${extId}` },
-          ],
-        },
+        where: { OR: orConditions },
+        select: { id: true, orderNumber: true, status: true },
       })
 
-      console.log('[EnviosNow] Pedido:', order ? order.orderNumber : 'NO ENCONTRADO')
+      console.log('[EnviosNow] Pedido:', order ? order.orderNumber : 'NO ENCONTRADO', '| extId buscado:', extId)
 
       if (!order) {
-        results.push({ externalId, status: 'not_found' })
+        results.push({ externalId, nowId, status: 'not_found' })
         continue
       }
 
-     // Permitir DELIVERED aunque venga desde INCIDENT
-const isDeliveredFromIncident = newStatus === 'DELIVERED' && order.status === 'INCIDENT'
+      // Permitir DELIVERED aunque venga desde INCIDENT
+      const isDeliveredFromIncident = newStatus === 'DELIVERED' && order.status === 'INCIDENT'
 
-if (!isDeliveredFromIncident && (STATUS_PRIORITY[newStatus] ?? 0) <= (STATUS_PRIORITY[order.status] ?? 0)) {
-  results.push({ externalId, status: 'skipped', reason: 'lower_priority' })
-  continue
-}
+      if (!isDeliveredFromIncident && (STATUS_PRIORITY[newStatus] ?? 0) <= (STATUS_PRIORITY[order.status] ?? 0)) {
+        results.push({ externalId, nowId, status: 'skipped', reason: 'lower_priority' })
+        continue
+      }
 
-      const now    = new Date()
-      const images = delivery.images ?? []
-      const note   = delivery.deliveryComment || delivery.commentary || 'Actualizado desde Envios Now'
+      const now          = new Date()
+      const images       = delivery.images ?? []
+      const note         = delivery.deliveryComment || delivery.commentary || 'Actualizado desde Envios Now'
       const receiverName = delivery.receiverName || null
       const receiverRut  = delivery.receiverRut && delivery.receiverRut !== 'No da rut' ? delivery.receiverRut : null
 
@@ -99,14 +110,14 @@ if (!isDeliveredFromIncident && (STATUS_PRIORITY[newStatus] ?? 0) <= (STATUS_PRI
             create: {
               status:    newStatus as any,
               note:      `Envios Now · ${note}${receiverName ? ` · Recibió: ${receiverName}` : ''}`,
-              createdBy: 'enviosnow',
+              createdBy: 'enviosnow-webhook',
             },
           },
         },
       })
 
       console.log('[EnviosNow] Actualizado:', extId, '->', newStatus)
-      results.push({ externalId, status: 'updated', newStatus })
+      results.push({ externalId, nowId, status: 'updated', newStatus })
     }
 
     console.log('[EnviosNow] Resultados:', JSON.stringify(results))
