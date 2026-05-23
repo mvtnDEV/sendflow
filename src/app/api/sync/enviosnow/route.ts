@@ -16,15 +16,16 @@ const STATE_MAP: Record<string, string> = {
 }
 
 export async function POST(req: NextRequest) {
-  // Verificar secret header para uso desde terminal
-  const secret = req.headers.get('x-sync-secret')
-  if (secret !== 'moovex-sync-2026') {
+  const secret     = req.headers.get('x-sync-secret')
+  const isCron     = req.headers.get('x-vercel-cron') === '1'
+  const isValidSecret = secret === 'moovex-sync-2026'
+
+  if (!isCron && !isValidSecret) {
     const user = await getSessionUser()
     if (!user || user.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
   }
-
   // Obtener todos los pedidos IN_TRANSIT con externalId
   const orders = await prisma.order.findMany({
     where: {
