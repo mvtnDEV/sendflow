@@ -66,11 +66,14 @@ export default function Sidebar({ user, open, onClose }: {
       display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden'
     }}>
       {/* Logo */}
+{/* Logo */}
       <div style={{ padding: '20px 18px 16px', borderBottom: '1px solid rgba(255,255,255,.07)', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ width: 32, height: 32, borderRadius: 8, background: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="white"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.2L13 6l-5 2.8L3 6l5-2.8zM2 7.2l5 2.8v4.6L2 11.8V7.2zm6 7.4V9.8l5-2.8v4.6L8 14.6z"/></svg>
+          <svg width="18" height="18" viewBox="0 0 28 28" fill="none">
+            <path d="M4 22V8l10 8 10-8v14" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </div>
-        <span style={{ fontSize: 15, fontWeight: 500, color: 'white', flex: 1 }}>Send<span style={{ color: '#38BDF8' }}>Flow</span></span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: 'white', flex: 1, letterSpacing:'-0.3px' }}>Moovex</span>
         {/* Botón cerrar en móvil */}
         {onClose && (
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.4)', cursor: 'pointer', padding: 4, display: 'flex' }}>
