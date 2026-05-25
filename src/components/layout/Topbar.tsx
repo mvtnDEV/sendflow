@@ -30,7 +30,7 @@ export default function Topbar({ user, onMenuClick }: {
   const pathname = usePathname()
   const title = Object.entries(PAGE_TITLES).find(([k]) =>
     pathname === k || pathname.startsWith(k + '/')
-  )?.[1] ?? 'SendFlow'
+  )?.[1] ?? 'Moovex'
 
   const today = new Date().toLocaleDateString('es-CL', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
