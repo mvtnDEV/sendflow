@@ -13,7 +13,6 @@ function isRegionPermitida(region: string): boolean {
   return REGIONES_PERMITIDAS.some(allowed => r.includes(allowed) || allowed.includes(r))
 }
 
-// ─── todayRange cacheado por proceso ─────────────────────────────────────────
 let _todayCache: { range: { gte: Date; lte: Date }; day: string } | null = null
 
 function todayRange() {
@@ -37,8 +36,6 @@ function todayRange() {
   _todayCache = { range, day: key }
   return range
 }
-
-// ─── Crear pedido ─────────────────────────────────────────────────────────────
 
 interface CreateOrderInput {
   storeId:        string
@@ -101,8 +98,6 @@ export async function createOrder(input: CreateOrderInput) {
   })
 }
 
-// ─── Upsert desde webhook ─────────────────────────────────────────────────────
-
 export async function upsertOrderFromWebhook(
   storeId:       string,
   integrationId: string,
@@ -144,8 +139,6 @@ export async function upsertOrderFromWebhook(
     createdBy:     'webhook',
   })
 }
-
-// ─── Cambiar estado ───────────────────────────────────────────────────────────
 
 const STATUS_TIMESTAMP: Partial<Record<OrderStatus, string>> = {
   RECEIVED:   'receivedAt',
@@ -211,8 +204,6 @@ export async function updateOrderStatus(
   return order
 }
 
-// ─── Buscar por QR ────────────────────────────────────────────────────────────
-
 export async function findOrderByQr(qrCode: string) {
   return prisma.order.findUnique({
     where:   { qrCode },
@@ -222,8 +213,6 @@ export async function findOrderByQr(qrCode: string) {
     },
   })
 }
-
-// ─── Listar pedidos ───────────────────────────────────────────────────────────
 
 export async function listOrders(filters: OrderFilters) {
   const page     = filters.page     ?? 1
@@ -256,7 +245,12 @@ export async function listOrders(filters: OrderFilters) {
       { receivedAt:  today },
       { inTransitAt: today },
       { deliveredAt: today },
-      ...(filters.superAdminView ? [] : [{ status: 'PENDING' }]),
+      // SUPER_ADMIN solo ve pendientes de carga manual
+      // STORE_ADMIN ve todos sus pendientes
+      ...(filters.superAdminView
+        ? [{ status: 'PENDING', platform: 'MANUAL' }]
+        : [{ status: 'PENDING' }]
+      ),
     ]
   } else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
@@ -265,13 +259,34 @@ export async function listOrders(filters: OrderFilters) {
     }
   }
 
+  // SUPER_ADMIN: filtros adicionales
   if (filters.superAdminView) {
-    where.NOT = {
-      AND: [
-        { platform: 'WOOCOMMERCE' },
-        { NOT: { rawPayload: { path: ['status'], equals: 'enviado_intralog' } } },
-      ],
-    }
+    // Ocultar WooCommerce sin enviado_intralog
+    // Y ocultar PENDING que no sean MANUAL en historial completo
+    where.AND = [
+      // No mostrar WooCommerce sin enviado_intralog
+      {
+        NOT: {
+          AND: [
+            { platform: 'WOOCOMMERCE' },
+            { NOT: { rawPayload: { path: ['status'], equals: 'enviado_intralog' } } },
+          ],
+        },
+      },
+      // En historial (no todayOnly) ocultar PENDING que no sean MANUAL
+      ...(!filters.todayOnly && !filters.status ? [{
+        NOT: {
+          AND: [
+            { status: 'PENDING' },
+            { NOT: { platform: 'MANUAL' } },
+          ],
+        },
+      }] : []),
+      // En historial ocultar RECEIVED
+      ...(!filters.todayOnly && !filters.status ? [{
+        NOT: { status: 'RECEIVED' },
+      }] : []),
+    ]
   }
 
   const [items, total] = await Promise.all([
@@ -304,8 +319,6 @@ export async function listOrders(filters: OrderFilters) {
   return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
 }
 
-// ─── Stats dashboard ──────────────────────────────────────────────────────────
-
 export async function getDashboardStats(storeId?: string, todayOnly = true): Promise<DashboardStats> {
   const today = todayRange()
 
@@ -313,10 +326,6 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
   if (storeId) baseWhere.storeId = storeId
   if (todayOnly) baseWhere.createdAt = today
 
-  const pendingWhere: any = { status: 'PENDING' }
-  if (storeId) pendingWhere.storeId = storeId
-
-  // Una sola query groupBy para todos los estados + pendientes
   const [byStatus, byPlatform, byStore] = await Promise.all([
     prisma.order.groupBy({
       by:     ['status'],
