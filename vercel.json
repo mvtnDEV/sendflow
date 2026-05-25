@@ -3,10 +3,6 @@
     {
       "path": "/api/retention-cleanup",
       "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/sync/enviosnow",
-      "schedule": "*/30 * * * *"
     }
   ],
   "headers": [
