@@ -239,19 +239,25 @@ export async function listOrders(filters: OrderFilters) {
   }
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
-    where.OR = [
-      { createdAt:   today },
-      { status:      'IN_TRANSIT' },
-      { receivedAt:  today },
-      { inTransitAt: today },
-      { deliveredAt: today },
-      // SUPER_ADMIN solo ve pendientes de carga manual
-      // STORE_ADMIN ve todos sus pendientes
-      ...(filters.superAdminView
-        ? [{ status: 'PENDING', platform: 'MANUAL' }]
-        : [{ status: 'PENDING' }]
-      ),
-    ]
+    if (filters.superAdminView) {
+      // SUPER_ADMIN: solo ve activos del día + MANUAL pendientes
+      where.OR = [
+        { status:      'IN_TRANSIT' },
+        { inTransitAt: today },
+        { deliveredAt: today },
+        { status:      'INCIDENT' },
+        { status: 'PENDING', platform: 'MANUAL' },
+      ]
+    } else {
+      // STORE_ADMIN: ve todo del día incluyendo sus pendientes
+      where.OR = [
+        { createdAt:   today },
+        { status:      'PENDING' },
+        { receivedAt:  today },
+        { inTransitAt: today },
+        { deliveredAt: today },
+      ]
+    }
   } else if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {
       ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
@@ -259,10 +265,8 @@ export async function listOrders(filters: OrderFilters) {
     }
   }
 
-  // SUPER_ADMIN: filtros adicionales
+  // SUPER_ADMIN: filtros adicionales para historial
   if (filters.superAdminView) {
-    // Ocultar WooCommerce sin enviado_intralog
-    // Y ocultar PENDING que no sean MANUAL en historial completo
     where.AND = [
       // No mostrar WooCommerce sin enviado_intralog
       {
@@ -273,7 +277,7 @@ export async function listOrders(filters: OrderFilters) {
           ],
         },
       },
-      // En historial (no todayOnly) ocultar PENDING que no sean MANUAL
+      // En historial ocultar PENDING que no sean MANUAL
       ...(!filters.todayOnly && !filters.status ? [{
         NOT: {
           AND: [
