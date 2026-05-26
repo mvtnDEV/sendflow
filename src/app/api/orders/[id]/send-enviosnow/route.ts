@@ -26,7 +26,8 @@ export async function POST(
     const payload = toEnviosNowPayload(order)
     const result  = await createEnviosNowDelivery(payload)
 
-    if (!result.ok) {
+   if (!result.ok) {
+      console.error('[send-enviosnow] Error Now:', result.error, '| payload:', JSON.stringify(payload))
       return NextResponse.json({ ok: false, error: result.error })
     }
 
