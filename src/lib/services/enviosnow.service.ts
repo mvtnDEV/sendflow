@@ -7,7 +7,6 @@ function getApiKey(): string {
 interface EnviosNowPayload {
   contactName:  string
   contactPhone: string
-  contactEmail?: string
   externalId:   string
   pickupDate:   string
   address:      string
@@ -69,7 +68,6 @@ export function toEnviosNowPayload(order: {
   orderNumber:   string
   customerName:  string
   customerPhone: string | null
-  customerEmail: string | null
   addressStreet: string
   addressComuna: string
   createdAt:     Date
@@ -83,14 +81,9 @@ export function toEnviosNowPayload(order: {
 
   const pickupDate = new Date().toISOString().split('T')[0]
 
-  const emailValido = order.customerEmail && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,4}$/.test(order.customerEmail)
-    ? order.customerEmail
-    : undefined
-
   return {
     contactName:  order.customerName,
     contactPhone: phone,
-    contactEmail: emailValido,
     externalId:   order.orderNumber.replace('#', ''),
     pickupDate,
     address:      order.addressStreet,
