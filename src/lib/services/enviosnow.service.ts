@@ -1,4 +1,3 @@
-// Servicio de integración con Envios Now
 const API_BASE = 'https://api.enviosnow.cl/api/v1'
 
 function getApiKey(): string {
@@ -21,9 +20,6 @@ interface EnviosNowResult {
   error?:  string
 }
 
-/**
- * Crea un envío en Envios Now
- */
 export async function createEnviosNowDelivery(
   payload: EnviosNowPayload
 ): Promise<EnviosNowResult> {
@@ -36,55 +32,39 @@ export async function createEnviosNowDelivery(
       },
       body: JSON.stringify(payload),
     })
-
     const data = await res.json()
-
     if (res.status === 201 || res.ok) {
       return { ok: true, id: data.id }
     }
-
-    // ID externo duplicado — ya existe en Envios Now
     if (data.errorCode === 'DUPLICATE_EXTERNAL_ID') {
       return { ok: true, id: 'duplicate' }
     }
-
     return { ok: false, error: data.message ?? 'Error creando envío' }
-
   } catch (err: any) {
     console.error('[EnviosNow] Error:', err)
     return { ok: false, error: err.message }
   }
 }
 
-/**
- * Cancela un envío en Envios Now por externalId
- */
 export async function cancelEnviosNowDelivery(
   externalId: string
 ): Promise<EnviosNowResult> {
   try {
-    // Primero buscar el ID interno
     const res = await fetch(`${API_BASE}/delivery/externalId/${encodeURIComponent(externalId)}`, {
       headers: { 'X-API-Key': getApiKey() },
     })
     const data = await res.json()
     if (!res.ok || !data.id) return { ok: false, error: 'No encontrado en Envios Now' }
-
-    // Cancelar
     const cancelRes = await fetch(`${API_BASE}/delivery/${data.id}/cancel`, {
       method:  'PUT',
       headers: { 'X-API-Key': getApiKey() },
     })
     return { ok: cancelRes.ok }
-
   } catch (err: any) {
     return { ok: false, error: err.message }
   }
 }
 
-/**
- * Convierte un pedido de SendFlow al formato de Envios Now
- */
 export function toEnviosNowPayload(order: {
   orderNumber:   string
   customerName:  string
@@ -94,18 +74,15 @@ export function toEnviosNowPayload(order: {
   addressComuna: string
   createdAt:     Date
 }): EnviosNowPayload {
-  // Formatear teléfono al formato chileno 9XXXXXXXX
   const rawPhone = order.customerPhone?.replace(/\D/g, '') ?? ''
   const phone = rawPhone.startsWith('56')
     ? rawPhone.slice(2)
     : rawPhone.startsWith('9') && rawPhone.length === 9
     ? rawPhone
-    : '912345678' // fallback
+    : '912345678'
 
-  // Fecha de retiro = hoy
   const pickupDate = new Date().toISOString().split('T')[0]
 
- // Validar email antes de enviarlo
   const emailValido = order.customerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(order.customerEmail)
     ? order.customerEmail
     : undefined
@@ -119,3 +96,4 @@ export function toEnviosNowPayload(order: {
     address:      order.addressStreet,
     commune:      order.addressComuna,
   }
+}
