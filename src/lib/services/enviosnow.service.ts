@@ -83,7 +83,7 @@ export function toEnviosNowPayload(order: {
 
   const pickupDate = new Date().toISOString().split('T')[0]
 
-  const emailValido = order.customerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(order.customerEmail)
+  const emailValido = order.customerEmail && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,4}$/.test(order.customerEmail)
     ? order.customerEmail
     : undefined
 
