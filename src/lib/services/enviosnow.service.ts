@@ -105,13 +105,17 @@ export function toEnviosNowPayload(order: {
   // Fecha de retiro = hoy
   const pickupDate = new Date().toISOString().split('T')[0]
 
+ // Validar email antes de enviarlo
+  const emailValido = order.customerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(order.customerEmail)
+    ? order.customerEmail
+    : undefined
+
   return {
     contactName:  order.customerName,
     contactPhone: phone,
-    contactEmail: order.customerEmail || undefined,
-    externalId:   order.orderNumber.replace('#', ''), // ej: "847291"
+    contactEmail: emailValido,
+    externalId:   order.orderNumber.replace('#', ''),
     pickupDate,
     address:      order.addressStreet,
     commune:      order.addressComuna,
   }
-}
