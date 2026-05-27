@@ -9,31 +9,40 @@ const PLATFORM_COLOR: Record<string, { bg: string; color: string }> = {
   MANUAL:       { bg: '#F1F5F9', color: '#475569' },
 }
 
-const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
-const lbl: React.CSSProperties = { fontSize: 12, fontWeight: 500, color: '#4B5563', display: 'block', marginBottom: 5 }
+const inp: React.CSSProperties = { width:'100%', padding:'9px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }
+const lbl: React.CSSProperties = { fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }
+
+function fmt(n: any) {
+  if (!n) return null
+  return `$${Number(n).toLocaleString('es-CL')}`
+}
 
 export default function TiendasClient({ stores: initial, isSuperAdmin, platformLabel }: any) {
-  const [stores,     setStores]     = useState(initial)
-  const [modal,      setModal]      = useState(false)
-  const [editModal,  setEditModal]  = useState(false)
-  const [saving,     setSaving]     = useState(false)
-  const [error,      setError]      = useState('')
-  const [form,       setForm]       = useState({ name: '', email: '', phone: '', rut: '' })
-  const [editForm,   setEditForm]   = useState<any>(null)
+  const [stores,    setStores]    = useState(initial)
+  const [modal,     setModal]     = useState(false)
+  const [editModal, setEditModal] = useState(false)
+  const [saving,    setSaving]    = useState(false)
+  const [error,     setError]     = useState('')
+  const [form,      setForm]      = useState({ name:'', email:'', phone:'', rut:'' })
+  const [editForm,  setEditForm]  = useState<any>(null)
 
   const set     = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
   const setEdit = (k: string, v: string) => setEditForm((f: any) => ({ ...f, [k]: v }))
 
   function openEdit(store: any) {
     setEditForm({
-      id:            store.id,
-      name:          store.name         || '',
-      email:         store.email        || '',
-      phone:         store.phone        || '',
-      rut:           store.rut          || '',
-      encargado:     store.encargado    || '',
-      addressRetiro: store.addressRetiro|| '',
-      montoMensual:  store.montoMensual ? String(store.montoMensual) : '',
+      id:                store.id,
+      name:              store.name              || '',
+      email:             store.email             || '',
+      phone:             store.phone             || '',
+      rut:               store.rut               || '',
+      encargado:         store.encargado         || '',
+      addressRetiro:     store.addressRetiro     || '',
+      tarifaUrbana:      store.tarifaUrbana      ? String(store.tarifaUrbana)      : '',
+      tarifaExtraUrbana: store.tarifaExtraUrbana ? String(store.tarifaExtraUrbana) : '',
+      tarifaRural:       store.tarifaRural       ? String(store.tarifaRural)       : '',
+      tarifaRetiro:      store.tarifaRetiro      ? String(store.tarifaRetiro)      : '',
+      fechaTarifa:       store.fechaTarifa        || '',
     })
     setError('')
     setEditModal(true)
@@ -53,7 +62,7 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
       if (!data.ok) { setError(data.error || 'Error creando tienda'); return }
       setStores((s: any) => [...s, { ...data.data, integrations: [], _count: { orders: 0 } }])
       setModal(false)
-      setForm({ name: '', email: '', phone: '', rut: '' })
+      setForm({ name:'', email:'', phone:'', rut:'' })
     } catch { setError('Error de conexión') }
     finally { setSaving(false) }
   }
@@ -62,17 +71,21 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
     if (!editForm.name) { setError('El nombre es requerido'); return }
     setSaving(true); setError('')
     try {
-      const res  = await fetch(`/api/stores/${editForm.id}`, {
+      const res = await fetch(`/api/stores/${editForm.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name:          editForm.name,
-          email:         editForm.email,
-          phone:         editForm.phone,
-          rut:           editForm.rut,
-          encargado:     editForm.encargado,
-          addressRetiro: editForm.addressRetiro,
-          montoMensual:  editForm.montoMensual ? parseFloat(editForm.montoMensual) : null,
+          name:              editForm.name,
+          email:             editForm.email             || null,
+          phone:             editForm.phone             || null,
+          rut:               editForm.rut               || null,
+          encargado:         editForm.encargado         || null,
+          addressRetiro:     editForm.addressRetiro     || null,
+          tarifaUrbana:      editForm.tarifaUrbana      ? parseFloat(editForm.tarifaUrbana)      : null,
+          tarifaExtraUrbana: editForm.tarifaExtraUrbana ? parseFloat(editForm.tarifaExtraUrbana) : null,
+          tarifaRural:       editForm.tarifaRural       ? parseFloat(editForm.tarifaRural)       : null,
+          tarifaRetiro:      editForm.tarifaRetiro      ? parseFloat(editForm.tarifaRetiro)      : null,
+          fechaTarifa:       editForm.fechaTarifa       || null,
         }),
       })
       const data = await res.json()
@@ -118,19 +131,24 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:500, fontSize:15 }}>{store.name}</div>
                   <div style={{ fontSize:12, color:'#9CA3AF', marginTop:2 }}>{store._count.orders} pedidos totales</div>
-                  {store.email     && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>✉ {store.email}</div>}
-                  {store.phone     && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>📞 {store.phone}</div>}
-                  {store.rut       && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>RUT: {store.rut}</div>}
-                  {store.encargado && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>👤 {store.encargado}</div>}
+                  {store.email         && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>✉ {store.email}</div>}
+                  {store.phone         && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>📞 {store.phone}</div>}
+                  {store.rut           && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>RUT: {store.rut}</div>}
+                  {store.encargado     && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>👤 {store.encargado}</div>}
                   {store.addressRetiro && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>📍 {store.addressRetiro}</div>}
-                  {store.montoMensual && (
-                    <div style={{ fontSize:12, marginTop:4 }}>
-                      <span style={{ padding:'2px 8px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500 }}>
-                        💰 ${Number(store.montoMensual).toLocaleString('es-CL')} /mes
-                      </span>
+                  {store.fechaTarifa   && <div style={{ fontSize:11, color:'#9CA3AF', marginTop:2 }}>Tarifa vigente: {store.fechaTarifa}</div>}
+
+                  {/* Tarifas */}
+                  {(store.tarifaUrbana || store.tarifaExtraUrbana || store.tarifaRural || store.tarifaRetiro) && (
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:8 }}>
+                      {store.tarifaUrbana      && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500 }}>Urbana {fmt(store.tarifaUrbana)}</span>}
+                      {store.tarifaExtraUrbana && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFF7ED', color:'#C2410C', fontWeight:500 }}>Extra {fmt(store.tarifaExtraUrbana)}</span>}
+                      {store.tarifaRural       && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500 }}>Rural {fmt(store.tarifaRural)}</span>}
+                      {store.tarifaRetiro      && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F5F3FF', color:'#5B21B6', fontWeight:500 }}>Retiro {fmt(store.tarifaRetiro)}</span>}
                     </div>
                   )}
                 </div>
+
                 <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
                   <span style={{ fontSize:11, padding:'3px 9px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500 }}>
                     {store.isActive ? 'Activa' : 'Inactiva'}
@@ -198,17 +216,17 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
       {editModal && editForm && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50, padding:16 }}
           onClick={e => { if (e.target===e.currentTarget) setEditModal(false) }}>
-          <div style={{ background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:480, maxHeight:'90vh', overflowY:'auto' }}>
+          <div style={{ background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:500, maxHeight:'90vh', overflowY:'auto' }}>
             <div style={{ fontSize:16, fontWeight:500, marginBottom:4 }}>Editar tienda</div>
             <div style={{ fontSize:12, color:'#9CA3AF', marginBottom:20 }}>{editForm.name}</div>
             {error && <div style={{ background:'#FFF1F2', border:'1px solid #FECDD3', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#9F1239', marginBottom:14 }}>{error}</div>}
 
             <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:20 }}>
 
+              {/* Datos generales */}
               <div style={{ fontSize:11, fontWeight:600, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', borderBottom:'1px solid #F1F5F9', paddingBottom:6 }}>
                 Datos generales
               </div>
-
               <div><label style={lbl}>Nombre *</label>
                 <input style={inp} value={editForm.name} onChange={e => setEdit('name', e.target.value)}/></div>
               <div><label style={lbl}>Email de contacto</label>
@@ -218,21 +236,31 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
               <div><label style={lbl}>RUT empresa</label>
                 <input style={inp} placeholder="12.345.678-9" value={editForm.rut} onChange={e => setEdit('rut', e.target.value)}/></div>
 
+              {/* Datos operacionales */}
               <div style={{ fontSize:11, fontWeight:600, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', borderBottom:'1px solid #F1F5F9', paddingBottom:6, marginTop:8 }}>
                 Datos operacionales
               </div>
-
               <div><label style={lbl}>Nombre encargado</label>
                 <input style={inp} placeholder="Juan Pérez" value={editForm.encargado} onChange={e => setEdit('encargado', e.target.value)}/></div>
               <div><label style={lbl}>Dirección de retiro</label>
                 <input style={inp} placeholder="Av. Providencia 1234, Providencia" value={editForm.addressRetiro} onChange={e => setEdit('addressRetiro', e.target.value)}/></div>
 
+              {/* Tarifas */}
               <div style={{ fontSize:11, fontWeight:600, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', borderBottom:'1px solid #F1F5F9', paddingBottom:6, marginTop:8 }}>
-                Facturación
+                Tarifas (CLP)
               </div>
-
-              <div><label style={lbl}>Monto mensual (CLP)</label>
-                <input type="number" style={inp} placeholder="150000" value={editForm.montoMensual} onChange={e => setEdit('montoMensual', e.target.value)}/></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <div><label style={lbl}>Tarifa Urbana</label>
+                  <input type="number" style={inp} placeholder="2790" value={editForm.tarifaUrbana} onChange={e => setEdit('tarifaUrbana', e.target.value)}/></div>
+                <div><label style={lbl}>Tarifa Extra Urbana</label>
+                  <input type="number" style={inp} placeholder="3790" value={editForm.tarifaExtraUrbana} onChange={e => setEdit('tarifaExtraUrbana', e.target.value)}/></div>
+                <div><label style={lbl}>Tarifa Rural</label>
+                  <input type="number" style={inp} placeholder="3990" value={editForm.tarifaRural} onChange={e => setEdit('tarifaRural', e.target.value)}/></div>
+                <div><label style={lbl}>Tarifa Retiro</label>
+                  <input type="number" style={inp} placeholder="3000" value={editForm.tarifaRetiro} onChange={e => setEdit('tarifaRetiro', e.target.value)}/></div>
+              </div>
+              <div><label style={lbl}>Fecha vigencia tarifa</label>
+                <input style={inp} placeholder="abril 2026" value={editForm.fechaTarifa} onChange={e => setEdit('fechaTarifa', e.target.value)}/></div>
             </div>
 
             <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
