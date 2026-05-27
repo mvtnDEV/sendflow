@@ -17,13 +17,17 @@ export async function PATCH(
   const store = await prisma.store.update({
     where: { id: params.id },
     data: {
-      name:          body.name,
-      email:         body.email         || null,
-      phone:         body.phone         || null,
-      rut:           body.rut           || null,
-      encargado:     body.encargado     || null,
-      addressRetiro: body.addressRetiro || null,
-      montoMensual:  body.montoMensual  ?? null,
+      name:              body.name,
+      email:             body.email             ?? null,
+      phone:             body.phone             ?? null,
+      rut:               body.rut               ?? null,
+      encargado:         body.encargado         ?? null,
+      addressRetiro:     body.addressRetiro     ?? null,
+      tarifaUrbana:      body.tarifaUrbana      ?? null,
+      tarifaExtraUrbana: body.tarifaExtraUrbana ?? null,
+      tarifaRural:       body.tarifaRural       ?? null,
+      tarifaRetiro:      body.tarifaRetiro      ?? null,
+      fechaTarifa:       body.fechaTarifa       ?? null,
     },
   })
 
