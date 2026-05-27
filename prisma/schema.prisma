@@ -65,7 +65,11 @@ model Store {
   reportEmail   String?
   encargado     String?
   addressRetiro String?
-  montoMensual  Decimal? @db.Decimal(10,2)
+  tarifaUrbana       Decimal? @db.Decimal(10,2)
+  tarifaExtraUrbana  Decimal? @db.Decimal(10,2)
+  tarifaRural        Decimal? @db.Decimal(10,2)
+  tarifaRetiro       Decimal? @db.Decimal(10,2)
+  fechaTarifa        String?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
