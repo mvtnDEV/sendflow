@@ -136,10 +136,12 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
                   {store.rut           && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>RUT: {store.rut}</div>}
                   {store.encargado     && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>👤 {store.encargado}</div>}
                   {store.addressRetiro && <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>📍 {store.addressRetiro}</div>}
-                  {store.fechaTarifa   && <div style={{ fontSize:11, color:'#9CA3AF', marginTop:2 }}>Tarifa vigente: {store.fechaTarifa}</div>}
 
-                  {/* Tarifas */}
-                  {(store.tarifaUrbana || store.tarifaExtraUrbana || store.tarifaRural || store.tarifaRetiro) && (
+                  {/* Fecha tarifa — solo SUPER_ADMIN */}
+                  {isSuperAdmin && store.fechaTarifa && <div style={{ fontSize:11, color:'#9CA3AF', marginTop:2 }}>Tarifa vigente: {store.fechaTarifa}</div>}
+
+                  {/* Tarifas — solo SUPER_ADMIN */}
+                  {isSuperAdmin && (store.tarifaUrbana || store.tarifaExtraUrbana || store.tarifaRural || store.tarifaRetiro) && (
                     <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:8 }}>
                       {store.tarifaUrbana      && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500 }}>Urbana {fmt(store.tarifaUrbana)}</span>}
                       {store.tarifaExtraUrbana && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFF7ED', color:'#C2410C', fontWeight:500 }}>Extra {fmt(store.tarifaExtraUrbana)}</span>}
@@ -222,8 +224,6 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
             {error && <div style={{ background:'#FFF1F2', border:'1px solid #FECDD3', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#9F1239', marginBottom:14 }}>{error}</div>}
 
             <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:20 }}>
-
-              {/* Datos generales */}
               <div style={{ fontSize:11, fontWeight:600, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', borderBottom:'1px solid #F1F5F9', paddingBottom:6 }}>
                 Datos generales
               </div>
@@ -236,7 +236,6 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
               <div><label style={lbl}>RUT empresa</label>
                 <input style={inp} placeholder="12.345.678-9" value={editForm.rut} onChange={e => setEdit('rut', e.target.value)}/></div>
 
-              {/* Datos operacionales */}
               <div style={{ fontSize:11, fontWeight:600, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', borderBottom:'1px solid #F1F5F9', paddingBottom:6, marginTop:8 }}>
                 Datos operacionales
               </div>
@@ -245,7 +244,6 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
               <div><label style={lbl}>Dirección de retiro</label>
                 <input style={inp} placeholder="Av. Providencia 1234, Providencia" value={editForm.addressRetiro} onChange={e => setEdit('addressRetiro', e.target.value)}/></div>
 
-              {/* Tarifas */}
               <div style={{ fontSize:11, fontWeight:600, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.05em', borderBottom:'1px solid #F1F5F9', paddingBottom:6, marginTop:8 }}>
                 Tarifas (CLP)
               </div>
