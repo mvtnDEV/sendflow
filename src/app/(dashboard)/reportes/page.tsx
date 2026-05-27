@@ -54,12 +54,26 @@ function nsLabel(ns: number | null): string {
 }
 
 export default function ReportesPage() {
-  const [data,    setData]    = useState<ReportData | null>(null)
-  const [period,  setPeriod]  = useState('month')
-  const [loading, setLoading] = useState(true)
-  const [tab,     setTab]     = useState<'ns'|'overview'|'plataformas'|'conductores'|'comunas'>('ns')
+  const [data,          setData]          = useState<ReportData | null>(null)
+  const [period,        setPeriod]        = useState('month')
+  const [loading,       setLoading]       = useState(true)
+  const [tab,           setTab]           = useState<'ns'|'overview'|'plataformas'|'conductores'|'comunas'>('ns')
+  const [userRole,      setUserRole]      = useState<string>('')
+  const [stores,        setStores]        = useState<{id:string;name:string}[]>([])
+  const [storeExport,   setStoreExport]   = useState('')
+  const [fechaExport,   setFechaExport]   = useState(new Date().toISOString().split('T')[0])
+  const [loadingExport2,setLoadingExport2]= useState(false)
 
   useEffect(() => { load() }, [period])
+
+  useEffect(() => {
+    fetch('/api/auth/session').then(r => r.json()).then(d => {
+      if (d?.user?.role) setUserRole(d.user.role)
+    })
+    fetch('/api/stores/list').then(r => r.json()).then(d => {
+      if (d.ok) setStores(d.data)
+    })
+  }, [])
 
   async function load() {
     setLoading(true)
@@ -93,6 +107,38 @@ export default function ReportesPage() {
     URL.revokeObjectURL(url)
   }
 
+  async function exportTienda() {
+    setLoadingExport2(true)
+    try {
+      const params = new URLSearchParams()
+      if (storeExport) params.set('storeId', storeExport)
+      params.set('fecha', fechaExport)
+      const res  = await fetch(`/api/reports/export-tienda?${params.toString()}`)
+      const data = await res.json()
+      if (!data.ok || !data.data?.length) { alert('No hay pedidos para exportar'); return }
+      const XLSX = await import('xlsx')
+      const rows = data.data.map((o: any) => ({
+        'ID Moovex':         o.orderNumber,
+        'ID WooCommerce':    o.sourceId || '—',
+        'Tienda':            o.tienda,
+        'Sub-tienda':        o.subTienda || '—',
+        'Cliente':           o.cliente,
+        'Dirección':         o.direccion,
+        'Comuna':            o.comuna,
+        'Estado':            o.estado,
+        'Motivo no entrega': o.motivoNoEntrega || '—',
+        'Entregado en':      o.entregadoEn || '—',
+      }))
+      const ws = XLSX.utils.json_to_sheet(rows)
+      ws['!cols'] = [{wch:14},{wch:16},{wch:20},{wch:16},{wch:24},{wch:28},{wch:16},{wch:14},{wch:28},{wch:20}]
+      const wb = XLSX.utils.book_new()
+      const nombreTienda = stores.find(s => s.id === storeExport)?.name ?? 'todas'
+      XLSX.utils.book_append_sheet(wb, ws, 'Pedidos')
+      XLSX.writeFile(wb, `reporte_${nombreTienda}_${fechaExport}.xlsx`)
+    } catch { alert('Error exportando') }
+    finally { setLoadingExport2(false) }
+  }
+
   if (loading && !data) return (
     <div style={{ padding:60, textAlign:'center', color:'#9CA3AF' }}>
       <div style={{ fontSize:32, marginBottom:10 }}>📊</div>
@@ -104,8 +150,6 @@ export default function ReportesPage() {
 
   return (
     <div>
-
-      {/* ── ZONA 1 (regla Z): Header — izquierda título, derecha controles ── */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:10 }}>
         <div>
           <h1 style={{ fontSize:20, fontWeight:500 }}>Reportes y métricas</h1>
@@ -125,15 +169,10 @@ export default function ReportesPage() {
         </div>
       </div>
 
-      {/* ── ZONA 2 (regla Z): diagonal — NS grande + KPIs operacionales ── */}
       {s && (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 3fr', gap:14, marginBottom:20 }}>
-
-          {/* NS Hoy — foco visual principal */}
           <div style={{ background:'#0B1628', borderRadius:12, padding:24, display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', textAlign:'center' }}>
-            <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8 }}>
-              NS Hoy
-            </div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8 }}>NS Hoy</div>
             <div style={{ fontSize:64, fontWeight:800, color: s.nsHoy !== null ? nsColor(s.nsHoy) : '#4B5563', lineHeight:1, marginBottom:8 }}>
               {s.nsHoy !== null ? `${s.nsHoy}%` : '—'}
             </div>
@@ -143,7 +182,6 @@ export default function ReportesPage() {
             <div style={{ fontSize:11, color:'rgba(255,255,255,.35)', lineHeight:1.5 }}>
               {s.nsDelivered} entregados<br/>de {s.nsTotal} en ruta hoy
             </div>
-            {/* Barra NS */}
             {s.nsHoy !== null && (
               <div style={{ width:'100%', marginTop:14 }}>
                 <div style={{ height:6, background:'rgba(255,255,255,.1)', borderRadius:3, overflow:'hidden' }}>
@@ -155,18 +193,15 @@ export default function ReportesPage() {
               </div>
             )}
           </div>
-
-          {/* KPIs operacionales — sin pendientes */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
-            <KPICard label="En ruta hoy"     value={s.inTransit}  accent="#2563EB" sub="pedidos activos"/>
+            <KPICard label="En ruta hoy"     value={s.inTransit}   accent="#2563EB" sub="pedidos activos"/>
             <KPICard label="Entregados hoy"  value={s.nsDelivered} accent="#16A34A" sub="con evidencia"/>
-            <KPICard label="Incidencias"     value={s.incidents}  accent="#DC2626" sub={s.nsTotal>0?`${Math.round(s.incidents/(s.nsTotal||1)*100)}% del total`:'del período'}/>
+            <KPICard label="Incidencias"     value={s.incidents}   accent="#DC2626" sub={s.nsTotal>0?`${Math.round(s.incidents/(s.nsTotal||1)*100)}% del total`:'del período'}/>
             <KPICard label="Tiempo promedio" value={data?.avgDelivery.avgHours ? `${data.avgDelivery.avgHours}h` : '—'} accent="#7C3AED" sub="creación a entrega"/>
           </div>
         </div>
       )}
 
-      {/* ── ZONA 3 (regla Z): abajo — tabs + contenido ── */}
       <div style={{ display:'flex', gap:0, marginBottom:16, borderBottom:'1px solid #E2E8F0', overflowX:'auto' }}>
         {([
           { key:'ns',          label:'📊 NS Diario' },
@@ -177,16 +212,12 @@ export default function ReportesPage() {
         ] as {key:typeof tab;label:string}[]).map(t => (
           <button key={t.key} onClick={()=>setTab(t.key)}
             style={{ padding:'10px 18px', fontSize:13, fontWeight:tab===t.key?500:400, background:'none', border:'none', cursor:'pointer', whiteSpace:'nowrap',
-              color:        tab===t.key ? '#2563EB' : '#6B7280',
-              borderBottom: `2px solid ${tab===t.key ? '#2563EB' : 'transparent'}`,
-              marginBottom: -1,
-            }}>
+              color: tab===t.key?'#2563EB':'#6B7280', borderBottom:`2px solid ${tab===t.key?'#2563EB':'transparent'}`, marginBottom:-1 }}>
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* ── Tab: NS Diario ── */}
       {tab === 'ns' && data && (
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
@@ -212,11 +243,8 @@ export default function ReportesPage() {
                     <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, color:'#16A34A', fontWeight:500 }}>{d.delivered || '—'}</td>
                     <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:13, color: d.incident>0?'#DC2626':'#9CA3AF' }}>{d.incident || '—'}</td>
                     <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9' }}>
-                      {d.ns !== null ? (
-                        <span style={{ fontSize:14, fontWeight:700, color: nsColor(d.ns) }}>{d.ns}%</span>
-                      ) : (
-                        <span style={{ fontSize:12, color:'#D1D5DB' }}>Sin datos</span>
-                      )}
+                      {d.ns !== null ? <span style={{ fontSize:14, fontWeight:700, color: nsColor(d.ns) }}>{d.ns}%</span>
+                        : <span style={{ fontSize:12, color:'#D1D5DB' }}>Sin datos</span>}
                     </td>
                     <td style={{ padding:'11px 16px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
                       {d.ns !== null ? (
@@ -233,7 +261,6 @@ export default function ReportesPage() {
         </div>
       )}
 
-      {/* ── Tab: Evolución ── */}
       {tab === 'overview' && data && (
         <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:14 }}>
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
@@ -271,7 +298,6 @@ export default function ReportesPage() {
         </div>
       )}
 
-      {/* ── Tab: Plataformas ── */}
       {tab === 'plataformas' && data && (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
@@ -309,7 +335,6 @@ export default function ReportesPage() {
         </div>
       )}
 
-      {/* ── Tab: Conductores ── */}
       {tab === 'conductores' && data && (
         <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
           <div style={{ padding:'14px 18px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
@@ -357,7 +382,6 @@ export default function ReportesPage() {
         </div>
       )}
 
-      {/* ── Tab: Comunas ── */}
       {tab === 'comunas' && data && (
         <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
           <div style={{ padding:'14px 18px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
@@ -390,11 +414,33 @@ export default function ReportesPage() {
           )}
         </div>
       )}
+
+      {/* ── Reporte por tienda — solo SUPER_ADMIN ── */}
+      {userRole === 'SUPER_ADMIN' && (
+        <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20, marginTop:16 }}>
+          <div style={{ fontSize:13, fontWeight:500, marginBottom:4 }}>📥 Reporte por tienda</div>
+          <div style={{ fontSize:12, color:'#9CA3AF', marginBottom:16 }}>
+            Descarga el Excel de pedidos del día por tienda — estados En camino, Entregado y No entregado
+          </div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+            <select value={storeExport} onChange={e => setStoreExport(e.target.value)}
+              style={{ padding:'7px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', fontFamily:'inherit', minWidth:200 }}>
+              <option value="">Todas las tiendas</option>
+              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <input type="date" value={fechaExport} onChange={e => setFechaExport(e.target.value)}
+              style={{ padding:'7px 12px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, fontFamily:'inherit' }}/>
+            <button onClick={exportTienda} disabled={loadingExport2}
+              style={{ padding:'7px 16px', background:loadingExport2?'#86EFAC':'#16A34A', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingExport2?'not-allowed':'pointer' }}>
+              {loadingExport2 ? '⏳ Generando...' : '⬇ Descargar Excel'}
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
-
-// ─── Sub-componentes ──────────────────────────────────────────────────────────
 
 function KPICard({ label, value, accent, sub, change }: { label:string; value:string|number; accent:string; sub?:string; change?:number }) {
   return (
