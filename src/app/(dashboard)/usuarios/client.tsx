@@ -19,10 +19,10 @@ const ROLE_LABEL: Record<Role, string> = {
   VIEWER:      'Visualizador',
 }
 const ROLE_COLOR: Record<Role, { bg: string; color: string }> = {
-  SUPER_ADMIN: { bg:'#EFF6FF', color:'#1D4ED8' },
-  STORE_ADMIN: { bg:'#F0FDF4', color:'#166534' },
-  DRIVER:      { bg:'#FFF7ED', color:'#C2410C' },
-  VIEWER:      { bg:'#F5F3FF', color:'#5B21B6' },
+  SUPER_ADMIN: { bg:'rgba(99,102,241,0.1)',  color:'#A5B4FC' },
+  STORE_ADMIN: { bg:'rgba(16,185,129,0.1)',  color:'#6EE7B7' },
+  DRIVER:      { bg:'rgba(245,158,11,0.1)',  color:'#FCD34D' },
+  VIEWER:      { bg:'rgba(139,92,246,0.1)',  color:'#C4B5FD' },
 }
 const ROLE_DESC: Record<Role, string> = {
   SUPER_ADMIN: 'Acceso total al sistema — ve todas las tiendas, crea usuarios',
@@ -48,7 +48,7 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
 
   const filtered = users.filter(u => {
     const matchRole   = filter === 'ALL' || u.role === filter
-    const q = search.toLowerCase()
+    const q           = search.toLowerCase()
     const matchSearch = !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
     return matchRole && matchSearch
   })
@@ -67,12 +67,8 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
     setForm({ name:u.name, email:u.email, password:'', confirmPassword:'', role:u.role, storeId:u.storeId||'', phone:u.phone||'', pin:'' })
     setError(''); setModal('edit')
   }
-  function openPassword(u: UserRow) {
-    setSelected(u)
-    setForm(f => ({ ...f, password:'', confirmPassword:'', pin:'' }))
-    setError(''); setModal('password')
-  }
-  function openDelete(u: UserRow) { setSelected(u); setModal('delete') }
+  function openPassword(u: UserRow) { setSelected(u); setForm(f => ({ ...f, password:'', confirmPassword:'', pin:'' })); setError(''); setModal('password') }
+  function openDelete(u: UserRow)   { setSelected(u); setModal('delete') }
 
   function validate(): string | null {
     if (!form.name.trim())  return 'El nombre es requerido'
@@ -80,14 +76,14 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Email inválido'
     if (form.role !== 'DRIVER') {
       if (modal === 'create' && !form.password) return 'La contraseña es requerida'
-      if (form.password && form.password.length < 8) return 'La contraseña debe tener al menos 8 caracteres'
+      if (form.password && form.password.length < 8) return 'Mínimo 8 caracteres'
       if (form.password && form.password !== form.confirmPassword) return 'Las contraseñas no coinciden'
     }
     if (form.role === 'DRIVER') {
-      if (modal === 'create' && !form.pin) return 'El PIN es requerido para conductores'
-      if (form.pin && (form.pin.length !== 4 || !/^\d+$/.test(form.pin))) return 'El PIN debe ser exactamente 4 dígitos'
+      if (modal === 'create' && !form.pin) return 'El PIN es requerido'
+      if (form.pin && (form.pin.length !== 4 || !/^\d+$/.test(form.pin))) return 'El PIN debe ser 4 dígitos'
     }
-    if (form.role === 'STORE_ADMIN' && !form.storeId) return 'Debes asignar una tienda al Admin de Tienda'
+    if (form.role === 'STORE_ADMIN' && !form.storeId) return 'Debes asignar una tienda'
     return null
   }
 
@@ -101,7 +97,7 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
     const data = await res.json()
     if (!data.ok) { setError(data.error); setSaving(false); return }
     setUsers(prev => [...prev, data.data]); setModal(null); setSaving(false)
-    showSuccess(`Usuario ${form.name} creado correctamente`)
+    showSuccess(`Usuario ${form.name} creado`)
   }
 
   async function handleEdit() {
@@ -113,9 +109,9 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
     const res  = await fetch(`/api/users/${selected.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
     const data = await res.json()
     if (!data.ok) { setError(data.error); setSaving(false); return }
-    setUsers(prev => prev.map(u => u.id === selected.id ? { ...u, ...body, store: stores.find(s => s.id === body.storeId) || null } : u))
+    setUsers(prev => prev.map(u => u.id === selected.id ? { ...u, ...body, store:stores.find(s => s.id === body.storeId)||null } : u))
     setModal(null); setSaving(false)
-    showSuccess('Cambios guardados correctamente')
+    showSuccess('Cambios guardados')
   }
 
   async function handlePassword() {
@@ -127,7 +123,7 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
       if (form.password !== form.confirmPassword) { setError('Las contraseñas no coinciden'); return }
     }
     setSaving(true); setError('')
-    const body = selected.role === 'DRIVER' ? { pin: form.pin } : { password: form.password }
+    const body = selected.role === 'DRIVER' ? { pin:form.pin } : { password:form.password }
     const res  = await fetch(`/api/users/${selected.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
     const data = await res.json()
     if (!data.ok) { setError(data.error); setSaving(false); return }
@@ -157,29 +153,30 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
 
   function showSuccess(msg: string) { setSuccess(msg); setTimeout(() => setSuccess(''), 3000) }
 
-  const inp: React.CSSProperties = { width:'100%', padding:'10px 12px', border:'1.5px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit' }
-  const lbl: React.CSSProperties = { fontSize:12, fontWeight:500, color:'#4B5563', display:'block', marginBottom:5 }
+  const inp: React.CSSProperties = { width:'100%', padding:'10px 12px', border:'1px solid var(--border)', borderRadius:8, fontSize:13, outline:'none', fontFamily:'inherit', background:'var(--bg-input)', color:'var(--text-primary)' }
+  const lbl: React.CSSProperties = { fontSize:12, fontWeight:500, color:'var(--text-secondary)', display:'block', marginBottom:5 }
 
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:10 }}>
         <div>
-          <h1 style={{ fontSize:20, fontWeight:500 }}>Usuarios</h1>
-          <p style={{ fontSize:13, color:'#6B7280', marginTop:3 }}>Gestiona todos los accesos al sistema y la app del conductor</p>
+          <h1 style={{ fontSize:20, fontWeight:600, color:'var(--text-primary)', margin:0 }}>Usuarios</h1>
+          <p style={{ fontSize:13, color:'var(--text-muted)', marginTop:4 }}>Gestiona todos los accesos al sistema y la app del conductor</p>
         </div>
         <button onClick={openCreate}
-          style={{ padding:'9px 20px', background:'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:'pointer' }}>
+          style={{ padding:'9px 20px', background:'var(--accent)', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:'pointer' }}>
           + Nuevo usuario
         </button>
       </div>
 
       {success && (
-        <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:8, padding:'10px 16px', fontSize:13, color:'#166534', fontWeight:500, marginBottom:14 }}>
+        <div style={{ background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:8, padding:'10px 16px', fontSize:13, color:'#6EE7B7', fontWeight:500, marginBottom:14 }}>
           ✓ {success}
         </div>
       )}
 
-      <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }}>
+      {/* Filtros */}
+      <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
         {([
           { key:'ALL',         label:`Todos (${counts.ALL})` },
           { key:'SUPER_ADMIN', label:`Super Admin (${counts.SUPER_ADMIN})` },
@@ -188,35 +185,36 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
           { key:'VIEWER',      label:`Visualizadores (${counts.VIEWER})` },
         ] as {key:Role|'ALL';label:string}[]).map(t => (
           <button key={t.key} onClick={() => setFilter(t.key)}
-            style={{ padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:500, cursor:'pointer',
-              border: filter===t.key ? 'none' : '1px solid #E2E8F0',
-              background: filter===t.key ? '#0B1628' : 'white',
-              color:       filter===t.key ? 'white'   : '#6B7280',
+            style={{ padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:500, cursor:'pointer', transition:'all .15s',
+              border:      filter===t.key ? 'none' : '1px solid var(--border)',
+              background:  filter===t.key ? 'var(--accent)' : 'var(--bg-card)',
+              color:       filter===t.key ? 'white' : 'var(--text-muted)',
             }}>
             {t.label}
           </button>
         ))}
-        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8, background:'white', border:'1px solid #E2E8F0', borderRadius:8, padding:'6px 12px', minWidth:220 }}>
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="#9CA3AF"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.868-3.834zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/></svg>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8, background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 12px', minWidth:220 }}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="var(--text-muted)"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.868-3.834zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/></svg>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o email..."
-            style={{ border:'none', outline:'none', fontSize:12, flex:1, fontFamily:'inherit' }}/>
+            style={{ border:'none', outline:'none', fontSize:12, flex:1, fontFamily:'inherit', background:'transparent', color:'var(--text-primary)' }}/>
         </div>
       </div>
 
-      <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
+      {/* Tabla */}
+      <div style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:12, overflow:'hidden' }}>
         {filtered.length === 0 ? (
-          <div style={{ padding:48, textAlign:'center', color:'#9CA3AF' }}>
+          <div style={{ padding:48, textAlign:'center', color:'var(--text-muted)' }}>
             <div style={{ fontSize:36, marginBottom:10 }}>👤</div>
-            <div style={{ fontSize:15, fontWeight:500, color:'#374151', marginBottom:6 }}>
+            <div style={{ fontSize:15, fontWeight:500, color:'var(--text-primary)', marginBottom:6 }}>
               {users.length === 0 ? 'Sin usuarios aún' : 'No hay resultados'}
             </div>
           </div>
         ) : (
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
-              <tr style={{ background:'#F8FAFC' }}>
+              <tr style={{ background:'var(--bg-base)' }}>
                 {['Usuario','Email','Rol','Tienda','Estado','Último acceso','Acciones'].map(h => (
-                  <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:600, color:'var(--text-muted)', borderBottom:'1px solid var(--border)', textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -225,59 +223,65 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
                 const rc   = ROLE_COLOR[u.role]
                 const isMe = u.id === currentUserId
                 return (
-                  <tr key={u.id}>
-                    <td style={{ padding:'12px 14px', borderBottom:'1px solid #F1F5F9' }}>
+                  <tr key={u.id} style={{ transition:'background .1s' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <td style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)' }}>
                       <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                        <div style={{ width:34, height:34, borderRadius:'50%', background:rc.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:rc.color, flexShrink:0 }}>
+                        <div style={{ width:34, height:34, borderRadius:10, background:rc.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:rc.color, flexShrink:0 }}>
                           {u.name.slice(0,2).toUpperCase()}
                         </div>
-                        <div style={{ fontSize:13, fontWeight:500 }}>
+                        <div style={{ fontSize:13, fontWeight:500, color:'var(--text-primary)' }}>
                           {u.name}
-                          {isMe && <span style={{ marginLeft:6, fontSize:10, background:'#EFF6FF', color:'#1D4ED8', padding:'1px 6px', borderRadius:20 }}>Tú</span>}
+                          {isMe && <span style={{ marginLeft:6, fontSize:10, background:'rgba(99,102,241,0.15)', color:'#A5B4FC', padding:'1px 6px', borderRadius:20 }}>Tú</span>}
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding:'12px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13, color:'#6B7280' }}>{u.email}</td>
-                    <td style={{ padding:'12px 14px', borderBottom:'1px solid #F1F5F9' }}>
+                    <td style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)', fontSize:13, color:'var(--text-muted)' }}>{u.email}</td>
+                    <td style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)' }}>
                       <span style={{ fontSize:11, padding:'3px 10px', borderRadius:20, fontWeight:500, background:rc.bg, color:rc.color }}>
                         {ROLE_LABEL[u.role]}
                       </span>
                     </td>
-                    <td style={{ padding:'12px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>
-                      {u.store ? u.store.name : u.role === 'SUPER_ADMIN' ? <span style={{ color:'#9CA3AF' }}>Todas</span> : '—'}
+                    <td style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>
+                      {u.store ? u.store.name : u.role === 'SUPER_ADMIN' ? <span style={{ color:'var(--text-muted)' }}>Todas</span> : '—'}
                     </td>
-                    <td style={{ padding:'12px 14px', borderBottom:'1px solid #F1F5F9' }}>
+                    <td style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)' }}>
                       <span style={{ fontSize:11, padding:'3px 10px', borderRadius:20, fontWeight:500,
-                        background: u.isActive ? '#F0FDF4' : '#F1F5F9',
-                        color:      u.isActive ? '#166534' : '#6B7280',
+                        background: u.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(107,114,128,0.1)',
+                        color:      u.isActive ? '#6EE7B7' : '#9CA3AF',
                       }}>
                         {u.isActive ? 'Activo' : 'Inactivo'}
                       </span>
                     </td>
-                    <td style={{ padding:'12px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
+                    <td style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)', whiteSpace:'nowrap' }}>
                       {u.lastLoginAt
                         ? new Date(u.lastLoginAt).toLocaleString('es-CL', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'America/Santiago' })
                         : 'Nunca'}
                     </td>
-                    <td style={{ padding:'12px 14px', borderBottom:'1px solid #F1F5F9' }}>
+                    <td style={{ padding:'12px 14px', borderBottom:'1px solid var(--border)' }}>
                       <div style={{ display:'flex', gap:5 }}>
                         <button onClick={() => openEdit(u)}
-                          style={{ padding:'5px 10px', border:'1px solid #E2E8F0', borderRadius:6, fontSize:11, background:'white', cursor:'pointer', color:'#374151' }}>
+                          style={{ padding:'5px 10px', border:'1px solid var(--border)', borderRadius:6, fontSize:11, background:'var(--bg-input)', cursor:'pointer', color:'var(--text-secondary)' }}>
                           Editar
                         </button>
                         <button onClick={() => openPassword(u)}
-                          style={{ padding:'5px 10px', border:'1px solid #E2E8F0', borderRadius:6, fontSize:11, background:'white', cursor:'pointer', color:'#374151' }}>
+                          style={{ padding:'5px 10px', border:'1px solid var(--border)', borderRadius:6, fontSize:11, background:'var(--bg-input)', cursor:'pointer', color:'var(--text-secondary)' }}>
                           {u.role === 'DRIVER' ? 'PIN' : 'Clave'}
                         </button>
                         {!isMe && (
                           <button onClick={() => toggleActive(u)}
-                            style={{ padding:'5px 10px', border:`1px solid ${u.isActive?'#FECDD3':'#BBF7D0'}`, borderRadius:6, fontSize:11, background:u.isActive?'#FFF1F2':'#F0FDF4', cursor:'pointer', color:u.isActive?'#9F1239':'#166534' }}>
+                            style={{ padding:'5px 10px', borderRadius:6, fontSize:11, cursor:'pointer', fontWeight:500,
+                              border:      u.isActive ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(16,185,129,0.3)',
+                              background:  u.isActive ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
+                              color:       u.isActive ? '#FCA5A5' : '#6EE7B7',
+                            }}>
                             {u.isActive ? 'Desactivar' : 'Activar'}
                           </button>
                         )}
                         {!isMe && (
                           <button onClick={() => openDelete(u)}
-                            style={{ padding:'5px 10px', border:'1px solid #FECDD3', borderRadius:6, fontSize:11, background:'#FFF1F2', cursor:'pointer', color:'#9F1239' }}>
+                            style={{ padding:'5px 10px', border:'1px solid rgba(239,68,68,0.3)', borderRadius:6, fontSize:11, background:'rgba(239,68,68,0.1)', cursor:'pointer', color:'#FCA5A5' }}>
                             Eliminar
                           </button>
                         )}
@@ -291,10 +295,10 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
         )}
       </div>
 
-      {/* Modal Crear / Editar */}
+      {/* Modal Crear/Editar */}
       {(modal === 'create' || modal === 'edit') && (
-        <Modal title={modal==='create' ? 'Nuevo usuario' : `Editar: ${selected?.name}`} onClose={() => setModal(null)}>
-          {error && <ErrorBox msg={error}/>}
+        <DarkModal title={modal==='create' ? 'Nuevo usuario' : `Editar: ${selected?.name}`} onClose={() => setModal(null)}>
+          {error && <ErrBox msg={error}/>}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <div style={{ gridColumn:'1/-1' }}>
               <label style={lbl}>Nombre completo *</label>
@@ -312,9 +316,11 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
                     const rc = ROLE_COLOR[r]
                     return (
                       <div key={r} onClick={()=>set('role',r)}
-                        style={{ padding:'10px 12px', borderRadius:10, cursor:'pointer', border:`1.5px solid ${form.role===r ? rc.color : '#E2E8F0'}`, background:form.role===r ? rc.bg : 'white' }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:form.role===r?rc.color:'#374151', marginBottom:3 }}>{ROLE_LABEL[r]}</div>
-                        <div style={{ fontSize:10, color:'#9CA3AF', lineHeight:1.4 }}>{ROLE_DESC[r]}</div>
+                        style={{ padding:'10px 12px', borderRadius:10, cursor:'pointer', transition:'all .15s',
+                          border:`1.5px solid ${form.role===r ? rc.color : 'var(--border)'}`,
+                          background: form.role===r ? rc.bg : 'var(--bg-input)' }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:form.role===r?rc.color:'var(--text-secondary)', marginBottom:3 }}>{ROLE_LABEL[r]}</div>
+                        <div style={{ fontSize:10, color:'var(--text-muted)', lineHeight:1.4 }}>{ROLE_DESC[r]}</div>
                       </div>
                     )
                   })}
@@ -325,7 +331,7 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
               <div style={{ gridColumn:'1/-1' }}>
                 <label style={lbl}>Tienda asignada {form.role==='STORE_ADMIN'?'*':''}</label>
                 <select style={inp} value={form.storeId} onChange={e=>set('storeId',e.target.value)}>
-                  <option value="">— Sin tienda asignada —</option>
+                  <option value="">— Sin tienda —</option>
                   {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
@@ -334,21 +340,19 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
               <label style={lbl}>Teléfono</label>
               <input style={inp} placeholder="+56 9 xxxx xxxx" value={form.phone} onChange={e=>set('phone',e.target.value)}/>
             </div>
-            {form.role !== 'DRIVER' && modal === 'create' && (
-              <>
-                <div>
-                  <label style={lbl}>Contraseña *</label>
-                  <input type="password" style={inp} placeholder="••••••••" value={form.password} onChange={e=>set('password',e.target.value)}/>
-                </div>
-                <div>
-                  <label style={lbl}>Confirmar contraseña *</label>
-                  <input type="password" style={inp} placeholder="••••••••" value={form.confirmPassword} onChange={e=>set('confirmPassword',e.target.value)}/>
-                </div>
-              </>
-            )}
+            {form.role !== 'DRIVER' && modal === 'create' && (<>
+              <div>
+                <label style={lbl}>Contraseña *</label>
+                <input type="password" style={inp} placeholder="••••••••" value={form.password} onChange={e=>set('password',e.target.value)}/>
+              </div>
+              <div>
+                <label style={lbl}>Confirmar *</label>
+                <input type="password" style={inp} placeholder="••••••••" value={form.confirmPassword} onChange={e=>set('confirmPassword',e.target.value)}/>
+              </div>
+            </>)}
             {form.role === 'DRIVER' && (
               <div style={{ gridColumn:'1/-1' }}>
-                <label style={lbl}>PIN del conductor * <span style={{ fontSize:10, color:'#9CA3AF', fontWeight:400 }}>4 dígitos</span></label>
+                <label style={lbl}>PIN * <span style={{ fontSize:10, color:'var(--text-muted)', fontWeight:400 }}>4 dígitos</span></label>
                 <input style={{ ...inp, letterSpacing:'0.3em', fontSize:18, textAlign:'center', maxWidth:140 }}
                   type="password" inputMode="numeric" maxLength={4} placeholder="••••"
                   value={form.pin} onChange={e=>set('pin',e.target.value.replace(/\D/g,''))}/>
@@ -357,24 +361,24 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
           </div>
           <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:20 }}>
             <button onClick={() => setModal(null)}
-              style={{ padding:'10px 18px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer' }}>
+              style={{ padding:'10px 18px', border:'1px solid var(--border)', borderRadius:8, fontSize:13, background:'var(--bg-input)', cursor:'pointer', color:'var(--text-secondary)' }}>
               Cancelar
             </button>
             <button onClick={modal==='create'?handleCreate:handleEdit} disabled={saving}
-              style={{ padding:'10px 24px', background:saving?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
+              style={{ padding:'10px 24px', background:saving?'var(--bg-input)':'var(--accent)', color:saving?'var(--text-muted)':'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
               {saving ? 'Guardando...' : modal==='create' ? 'Crear usuario' : 'Guardar cambios'}
             </button>
           </div>
-        </Modal>
+        </DarkModal>
       )}
 
-      {/* Modal Cambiar contraseña / PIN */}
+      {/* Modal PIN/Contraseña */}
       {modal === 'password' && selected && (
-        <Modal title={selected.role==='DRIVER' ? `Cambiar PIN — ${selected.name}` : `Cambiar contraseña — ${selected.name}`} onClose={() => setModal(null)}>
-          {error && <ErrorBox msg={error}/>}
+        <DarkModal title={selected.role==='DRIVER' ? `PIN — ${selected.name}` : `Contraseña — ${selected.name}`} onClose={() => setModal(null)}>
+          {error && <ErrBox msg={error}/>}
           {selected.role === 'DRIVER' ? (
             <div>
-              <label style={lbl}>Nuevo PIN <span style={{ fontSize:10, color:'#9CA3AF', fontWeight:400 }}>(4 dígitos)</span></label>
+              <label style={lbl}>Nuevo PIN <span style={{ fontSize:10, color:'var(--text-muted)' }}>(4 dígitos)</span></label>
               <input style={{ ...inp, letterSpacing:'0.3em', fontSize:18, textAlign:'center', maxWidth:140 }}
                 type="password" inputMode="numeric" maxLength={4} placeholder="••••"
                 value={form.pin} onChange={e=>set('pin',e.target.value.replace(/\D/g,''))}/>
@@ -386,63 +390,57 @@ export default function UsuariosClient({ users: initial, stores, currentUserId }
                 <input type="password" style={inp} placeholder="••••••••" value={form.password} onChange={e=>set('password',e.target.value)}/>
               </div>
               <div>
-                <label style={lbl}>Confirmar nueva contraseña</label>
+                <label style={lbl}>Confirmar</label>
                 <input type="password" style={inp} placeholder="••••••••" value={form.confirmPassword} onChange={e=>set('confirmPassword',e.target.value)}/>
               </div>
             </div>
           )}
           <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:20 }}>
             <button onClick={() => setModal(null)}
-              style={{ padding:'10px 18px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer' }}>
+              style={{ padding:'10px 18px', border:'1px solid var(--border)', borderRadius:8, fontSize:13, background:'var(--bg-input)', cursor:'pointer', color:'var(--text-secondary)' }}>
               Cancelar
             </button>
             <button onClick={handlePassword} disabled={saving}
-              style={{ padding:'10px 24px', background:saving?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
-              {saving ? 'Guardando...' : selected.role==='DRIVER' ? 'Cambiar PIN' : 'Cambiar contraseña'}
+              style={{ padding:'10px 24px', background:saving?'var(--bg-input)':'var(--accent)', color:saving?'var(--text-muted)':'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
+              {saving ? 'Guardando...' : 'Guardar'}
             </button>
           </div>
-        </Modal>
+        </DarkModal>
       )}
 
-      {/* Modal Confirmar eliminación */}
+      {/* Modal Eliminar */}
       {modal === 'delete' && selected && (
-        <Modal title="Eliminar usuario" onClose={() => setModal(null)}>
+        <DarkModal title="Eliminar usuario" onClose={() => setModal(null)}>
           <div style={{ textAlign:'center', padding:'10px 0 20px' }}>
             <div style={{ fontSize:48, marginBottom:12 }}>🗑️</div>
-            <div style={{ fontSize:15, fontWeight:500, marginBottom:8 }}>
-              ¿Eliminar a {selected.name}?
-            </div>
-            <div style={{ fontSize:13, color:'#6B7280', marginBottom:6 }}>
-              Esta acción es <strong>permanente</strong> y no se puede deshacer.
-            </div>
-            <div style={{ fontSize:12, color:'#9CA3AF' }}>
-              {selected.email} · {ROLE_LABEL[selected.role]}
-            </div>
+            <div style={{ fontSize:15, fontWeight:500, color:'var(--text-primary)', marginBottom:8 }}>¿Eliminar a {selected.name}?</div>
+            <div style={{ fontSize:13, color:'var(--text-muted)', marginBottom:6 }}>Esta acción es <strong style={{ color:'#FCA5A5' }}>permanente</strong> y no se puede deshacer.</div>
+            <div style={{ fontSize:12, color:'var(--text-muted)' }}>{selected.email} · {ROLE_LABEL[selected.role]}</div>
           </div>
           <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
             <button onClick={() => setModal(null)}
-              style={{ flex:1, padding:'10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer' }}>
+              style={{ flex:1, padding:'10px', border:'1px solid var(--border)', borderRadius:8, fontSize:13, background:'var(--bg-input)', cursor:'pointer', color:'var(--text-secondary)' }}>
               Cancelar
             </button>
             <button onClick={handleDelete} disabled={saving}
-              style={{ flex:1, padding:'10px', background:saving?'#FCA5A5':'#DC2626', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
+              style={{ flex:1, padding:'10px', background:saving?'var(--bg-input)':'rgba(239,68,68,0.2)', color:saving?'var(--text-muted)':'#FCA5A5', border:'1px solid rgba(239,68,68,0.3)', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
               {saving ? 'Eliminando...' : 'Sí, eliminar'}
             </button>
           </div>
-        </Modal>
+        </DarkModal>
       )}
     </div>
   )
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function DarkModal({ title, onClose, children }: { title:string; onClose:()=>void; children:React.ReactNode }) {
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:16 }}
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', backdropFilter:'blur(2px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:16 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:520, maxHeight:'90vh', overflowY:'auto' }}>
+      <div style={{ background:'var(--bg-card)', borderRadius:16, padding:28, width:'100%', maxWidth:520, maxHeight:'90vh', overflowY:'auto', border:'1px solid var(--border)' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
-          <div style={{ fontSize:17, fontWeight:600 }}>{title}</div>
-          <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#9CA3AF', lineHeight:1, padding:4 }}>×</button>
+          <div style={{ fontSize:17, fontWeight:600, color:'var(--text-primary)' }}>{title}</div>
+          <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'var(--text-muted)', lineHeight:1, padding:4 }}>×</button>
         </div>
         {children}
       </div>
@@ -450,9 +448,9 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   )
 }
 
-function ErrorBox({ msg }: { msg: string }) {
+function ErrBox({ msg }: { msg:string }) {
   return (
-    <div style={{ background:'#FFF1F2', border:'1px solid #FECDD3', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#9F1239', marginBottom:16 }}>
+    <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#FCA5A5', marginBottom:16 }}>
       ⚠ {msg}
     </div>
   )
