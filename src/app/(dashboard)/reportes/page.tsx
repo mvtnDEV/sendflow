@@ -107,7 +107,7 @@ export default function ReportesPage() {
     URL.revokeObjectURL(url)
   }
 
-  async function exportTienda() {
+async function exportTienda() {
     setLoadingExport2(true)
     try {
       const params = new URLSearchParams()
@@ -127,10 +127,11 @@ export default function ReportesPage() {
         'Comuna':            o.comuna,
         'Estado':            o.estado,
         'Motivo no entrega': o.motivoNoEntrega || '—',
+        'Salida a ruta':     o.salidaRuta  || '—',
         'Entregado en':      o.entregadoEn || '—',
       }))
       const ws = XLSX.utils.json_to_sheet(rows)
-      ws['!cols'] = [{wch:14},{wch:16},{wch:20},{wch:16},{wch:24},{wch:28},{wch:16},{wch:14},{wch:28},{wch:20}]
+      ws['!cols'] = [{wch:14},{wch:16},{wch:20},{wch:16},{wch:24},{wch:28},{wch:16},{wch:14},{wch:28},{wch:20},{wch:20}]
       const wb = XLSX.utils.book_new()
       const nombreTienda = stores.find(s => s.id === storeExport)?.name ?? 'todas'
       XLSX.utils.book_append_sheet(wb, ws, 'Pedidos')
