@@ -14,14 +14,16 @@ const STATUS_LABEL: Record<string, string> = {
   INCIDENT:   'No entregado',
   CANCELLED:  'Cancelado',
 }
-const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
-  PENDING:    { bg:'#FFFBEB', color:'#92400E' },
-  RECEIVED:   { bg:'#EFF6FF', color:'#1D4ED8' },
-  IN_TRANSIT: { bg:'#F5F3FF', color:'#5B21B6' },
-  DELIVERED:  { bg:'#F0FDF4', color:'#166534' },
-  INCIDENT:   { bg:'#FFF1F2', color:'#9F1239' },
-  CANCELLED:  { bg:'#F1F5F9', color:'#475569' },
+
+const STATUS_COLOR: Record<string, { bg: string; color: string; dot: string }> = {
+  PENDING:    { bg:'rgba(245,158,11,0.1)',  color:'#FCD34D', dot:'#F59E0B' },
+  RECEIVED:   { bg:'rgba(59,130,246,0.1)',  color:'#93C5FD', dot:'#3B82F6' },
+  IN_TRANSIT: { bg:'rgba(99,102,241,0.1)',  color:'#A5B4FC', dot:'#6366F1' },
+  DELIVERED:  { bg:'rgba(16,185,129,0.1)',  color:'#6EE7B7', dot:'#10B981' },
+  INCIDENT:   { bg:'rgba(239,68,68,0.1)',   color:'#FCA5A5', dot:'#EF4444' },
+  CANCELLED:  { bg:'rgba(107,114,128,0.1)', color:'#9CA3AF', dot:'#6B7280' },
 }
+
 const PLATFORM_LABEL: Record<string, string> = {
   SHOPIFY:      'Shopify',
   MERCADOLIBRE: 'ML Flex',
@@ -30,12 +32,19 @@ const PLATFORM_LABEL: Record<string, string> = {
   MANUAL:       'Manual',
 }
 
+const PLATFORM_COLOR: Record<string, string> = {
+  SHOPIFY:      '#6366F1',
+  MERCADOLIBRE: '#F59E0B',
+  WOOCOMMERCE:  '#8B5CF6',
+  JUMPSELLER:   '#10B981',
+  MANUAL:       '#6B7280',
+}
+
 function fmtDate(d: Date) {
-  const now     = new Date()
-  const today   = new Date(now.toLocaleDateString('en-CA', { timeZone: TZ }))
-  const orderDay= new Date(new Date(d).toLocaleDateString('en-CA', { timeZone: TZ }))
-  const diffMs  = today.getTime() - orderDay.getTime()
-  const diffDays= Math.round(diffMs / (1000 * 60 * 60 * 24))
+  const now      = new Date()
+  const today    = new Date(now.toLocaleDateString('en-CA', { timeZone: TZ }))
+  const orderDay = new Date(new Date(d).toLocaleDateString('en-CA', { timeZone: TZ }))
+  const diffDays = Math.round((today.getTime() - orderDay.getTime()) / (1000*60*60*24))
   if (diffDays === 0) return new Date(d).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit', timeZone: TZ })
   if (diffDays === 1) return 'ayer'
   return `hace ${diffDays} días`
@@ -56,79 +65,103 @@ export default async function DashboardPage() {
   ])
 
   const pct = (n: number) => statsHoy.total > 0 ? Math.round((n / statsHoy.total) * 100) : 0
-
   const today = new Date().toLocaleDateString('es-CL', {
     weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone: TZ,
   })
 
-  // Pedidos de hoy excluyendo PENDING (ya se muestran en panel separado)
   const recientesActivos = recientes.items.filter(o => o.status !== 'PENDING')
 
   return (
-    <div>
-      <div style={{ marginBottom:20 }}>
-        <h1 style={{ fontSize:22, fontWeight:500 }}>
-          Buenos días, {user?.name?.split(' ')[0]}
+    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+
+      {/* ── Header ── */}
+      <div>
+        <h1 style={{ fontSize:22, fontWeight:600, color:'var(--text-primary)', margin:0 }}>
+          Buenos días, {user?.name?.split(' ')[0]} 👋
         </h1>
-        <p style={{ fontSize:13, color:'#6B7280', marginTop:3, textTransform:'capitalize' }}>
-          {today} · <strong>{statsHoy.total}</strong> pedido{statsHoy.total!==1?'s':''} hoy
-          {statsTotal.total > 0 && (
-            <span style={{ color:'#9CA3AF' }}> ({statsTotal.total} en total)</span>
-          )}
+        <p style={{ fontSize:13, color:'var(--text-muted)', marginTop:4, textTransform:'capitalize' }}>
+          {today} · <strong style={{ color:'var(--text-secondary)' }}>{statsHoy.total}</strong> pedido{statsHoy.total!==1?'s':''} hoy
+          {statsTotal.total > 0 && <span style={{ color:'var(--text-muted)' }}> · {statsTotal.total} en total</span>}
         </p>
       </div>
 
-      {/* Métricas del día */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:12, marginBottom:20 }}>
+      {/* ── KPIs ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:12 }}>
         {[
-          { label:'Pedidos hoy',    value:statsHoy.total,     accent:'#2563EB', sub:null },
-          { label:'En camino',      value:statsHoy.inTransit, accent:'#7C3AED', sub:`${pct(statsHoy.inTransit)}%` },
-          { label:'Entregados hoy', value:statsHoy.delivered, accent:'#16A34A', sub:`${pct(statsHoy.delivered)}%` },
-          { label:'Recepcionados',  value:statsHoy.received,  accent:'#D97706',
-            sub: statsHoy.incident > 0 ? `${statsHoy.incident} no entregado${statsHoy.incident!==1?'s':''}` : null },
+          { label:'Pedidos hoy',    value:statsHoy.total,     accent:'#6366F1', sub:null,                                icon:'📦' },
+          { label:'En camino',      value:statsHoy.inTransit, accent:'#818CF8', sub:`${pct(statsHoy.inTransit)}% del total`, icon:'🚚' },
+          { label:'Entregados hoy', value:statsHoy.delivered, accent:'#10B981', sub:`${pct(statsHoy.delivered)}% NS`,   icon:'✅' },
+          { label:'Incidencias',    value:statsHoy.incident,  accent:'#EF4444',
+            sub: statsHoy.incident > 0 ? `${pct(statsHoy.incident)}% del total` : 'Sin incidencias', icon:'⚠️' },
         ].map(m => (
-          <div key={m.label} style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:'18px 20px', borderLeft:`3px solid ${m.accent}` }}>
-            <div style={{ fontSize:12, color:'#6B7280', marginBottom:6 }}>{m.label}</div>
-            <div style={{ fontSize:28, fontWeight:500, lineHeight:1 }}>{m.value}</div>
-            {m.sub && <div style={{ fontSize:12, color:'#9CA3AF', marginTop:4 }}>{m.sub}</div>}
+          <div key={m.label} style={{
+            background:'var(--bg-card)',
+            border:'1px solid var(--border)',
+            borderRadius:12, padding:'18px 20px',
+            borderLeft:`3px solid ${m.accent}`,
+            transition:'transform 0.15s',
+          }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
+              <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>{m.label}</div>
+              <span style={{ fontSize:16 }}>{m.icon}</span>
+            </div>
+            <div style={{ fontSize:30, fontWeight:600, color:'var(--text-primary)', lineHeight:1 }}>{m.value}</div>
+            {m.sub && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:6 }}>{m.sub}</div>}
           </div>
         ))}
       </div>
 
-      {/* Panel Por recepcionar — solo Super Admin y Store Admin */}
+      {/* ── Por recepcionar ── */}
       {canSeePending && statsHoy.pending > 0 && (
-        <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:12, padding:16, marginBottom:16 }}>
+        <div style={{
+          background:'rgba(245,158,11,0.06)',
+          border:'1px solid rgba(245,158,11,0.2)',
+          borderRadius:12, padding:16,
+        }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
               <span style={{ fontSize:16 }}>🕐</span>
-              <span style={{ fontSize:14, fontWeight:500, color:'#92400E' }}>Por recepcionar</span>
-              <span style={{ fontSize:11, fontWeight:500, background:'#FEF3C7', color:'#92400E', padding:'2px 8px', borderRadius:20, border:'1px solid #FDE68A' }}>
+              <span style={{ fontSize:14, fontWeight:500, color:'#FCD34D' }}>Por recepcionar</span>
+              <span style={{
+                fontSize:11, fontWeight:600,
+                background:'rgba(245,158,11,0.15)', color:'#FCD34D',
+                padding:'2px 8px', borderRadius:20,
+                border:'1px solid rgba(245,158,11,0.3)',
+              }}>
                 {statsHoy.pending} pedido{statsHoy.pending!==1?'s':''}
               </span>
             </div>
-            <Link href="/recepciones?status=PENDING" style={{ fontSize:12, color:'#2563EB', textDecoration:'none' }}>
+            <Link href="/recepciones?status=PENDING" style={{ fontSize:12, color:'var(--accent)', textDecoration:'none' }}>
               Ver todos →
             </Link>
           </div>
 
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
             {pendientes.items.map(o => {
-              const now     = new Date()
-              const today   = new Date(now.toLocaleDateString('en-CA', { timeZone: TZ }))
-              const orderDay= new Date(new Date(o.createdAt).toLocaleDateString('en-CA', { timeZone: TZ }))
-              const isYesterday = today.getTime() - orderDay.getTime() > 0
+              const now      = new Date()
+              const today2   = new Date(now.toLocaleDateString('en-CA', { timeZone: TZ }))
+              const orderDay = new Date(new Date(o.createdAt).toLocaleDateString('en-CA', { timeZone: TZ }))
+              const isYesterday = today2.getTime() - orderDay.getTime() > 0
               return (
-                <Link key={o.id} href={`/recepciones/${o.id}`}
-                  style={{ background:'white', border:'1px solid #FDE68A', borderRadius:8, padding:'10px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', textDecoration:'none' }}>
+                <Link key={o.id} href={`/recepciones/${o.id}`} style={{
+                  background:'var(--bg-card)',
+                  border:'1px solid rgba(245,158,11,0.2)',
+                  borderRadius:8, padding:'10px 14px',
+                  display:'flex', alignItems:'center', justifyContent:'space-between',
+                  textDecoration:'none', transition:'background 0.15s',
+                }}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <span style={{ fontSize:13, fontWeight:500, color:'#1D4ED8', fontFamily:'monospace' }}>{o.orderNumber}</span>
-                    <span style={{ fontSize:13, color:'#374151' }}>{o.customerName}</span>
-                    <span style={{ fontSize:11, color:'#6B7280' }}>{o.addressComuna}</span>
+                    <span style={{ fontSize:13, fontWeight:600, color:'var(--accent)', fontFamily:'monospace' }}>{o.orderNumber}</span>
+                    <span style={{ fontSize:13, color:'var(--text-primary)' }}>{o.customerName}</span>
+                    <span style={{ fontSize:11, color:'var(--text-muted)' }}>{o.addressComuna}</span>
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:11, color:'#6B7280' }}>{PLATFORM_LABEL[o.platform] ?? o.platform}</span>
-                    <span style={{ fontSize:11, background:'#FFFBEB', color:'#92400E', padding:'2px 8px', borderRadius:20, border:'1px solid #FDE68A', fontWeight:500 }}>
-                      Pendiente{isYesterday ? ' · ' + fmtDate(o.createdAt) : ''}
+                    <span style={{ fontSize:11, color:'var(--text-muted)' }}>{PLATFORM_LABEL[o.platform] ?? o.platform}</span>
+                    <span style={{
+                      fontSize:11, background:'rgba(245,158,11,0.15)', color:'#FCD34D',
+                      padding:'2px 8px', borderRadius:20, fontWeight:500,
+                    }}>
+                      {isYesterday ? fmtDate(o.createdAt) : 'Pendiente'}
                     </span>
                   </div>
                 </Link>
@@ -136,7 +169,7 @@ export default async function DashboardPage() {
             })}
             {pendientes.total > 5 && (
               <Link href="/recepciones?status=PENDING"
-                style={{ textAlign:'center', fontSize:12, color:'#92400E', padding:'6px', textDecoration:'none' }}>
+                style={{ textAlign:'center', fontSize:12, color:'#FCD34D', padding:'6px', textDecoration:'none' }}>
                 + {pendientes.total - 5} pedidos más →
               </Link>
             )}
@@ -144,73 +177,79 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      {/* ── Contenido principal ── */}
       {recientesActivos.length === 0 && statsHoy.pending === 0 ? (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-          <div style={{ background:'white', border:'2px dashed #E2E8F0', borderRadius:12, padding:36, textAlign:'center' }}>
-            <div style={{ fontSize:36, marginBottom:10 }}>📦</div>
-            <div style={{ fontSize:15, fontWeight:500, marginBottom:6 }}>Sin pedidos hoy</div>
-            <div style={{ fontSize:13, color:'#6B7280', marginBottom:18 }}>
-              Los pedidos de tus integraciones aparecerán aquí automáticamente
+          {[
+            { icon:'📦', title:'Sin pedidos hoy', desc:'Los pedidos de tus integraciones aparecerán aquí automáticamente',
+              actions:[
+                { href:'/pedidos/nuevo',       label:'+ Crear pedido',   bg:'var(--accent)', color:'white' },
+                { href:'/pedidos/carga-masiva', label:'⬆ Carga Excel',   bg:'var(--bg-input)', color:'var(--text-secondary)' },
+              ]},
+            { icon:'⚡', title:'Conecta tus tiendas', desc:'Shopify, WooCommerce, Jumpseller y ML Flex se sincronizan automáticamente',
+              actions:[
+                { href:'/integraciones', label:'Configurar integraciones →', bg:'var(--accent)', color:'white' },
+              ]},
+          ].map(card => (
+            <div key={card.title} style={{ background:'var(--bg-card)', border:'1px dashed var(--border-light)', borderRadius:12, padding:36, textAlign:'center' }}>
+              <div style={{ fontSize:36, marginBottom:10 }}>{card.icon}</div>
+              <div style={{ fontSize:15, fontWeight:500, color:'var(--text-primary)', marginBottom:6 }}>{card.title}</div>
+              <div style={{ fontSize:13, color:'var(--text-muted)', marginBottom:18 }}>{card.desc}</div>
+              <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
+                {card.actions.map(a => (
+                  <Link key={a.href} href={a.href} style={{ padding:'8px 16px', background:a.bg, color:a.color, borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none' }}>
+                    {a.label}
+                  </Link>
+                ))}
+              </div>
             </div>
-            <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
-              <Link href="/pedidos/nuevo" style={{ padding:'8px 16px', background:'#2563EB', color:'white', borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none' }}>
-                + Crear pedido
-              </Link>
-              <Link href="/pedidos/carga-masiva" style={{ padding:'8px 16px', background:'#0B1628', color:'white', borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none' }}>
-                ⬆ Carga Excel
-              </Link>
-            </div>
-          </div>
-          <div style={{ background:'white', border:'2px dashed #E2E8F0', borderRadius:12, padding:36, textAlign:'center' }}>
-            <div style={{ fontSize:36, marginBottom:10 }}>⚡</div>
-            <div style={{ fontSize:15, fontWeight:500, marginBottom:6 }}>Conecta tus tiendas</div>
-            <div style={{ fontSize:13, color:'#6B7280', marginBottom:18 }}>
-              Shopify, WooCommerce, Jumpseller y ML Flex se sincronizan automáticamente
-            </div>
-            <Link href="/integraciones" style={{ padding:'8px 16px', background:'#0B1628', color:'white', borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none' }}>
-              Configurar integraciones →
-            </Link>
-          </div>
+          ))}
         </div>
       ) : recientesActivos.length > 0 ? (
         <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:14 }}>
-          {/* Pedidos de hoy en curso */}
-          <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
-            <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #F1F5F9' }}>
-              <span style={{ fontSize:13, fontWeight:500 }}>Pedidos de hoy en curso</span>
-              <Link href="/recepciones" style={{ fontSize:12, color:'#2563EB', textDecoration:'none' }}>
-                Ver todos →
-              </Link>
+
+          {/* Tabla pedidos activos */}
+          <div style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:12, overflow:'hidden' }}>
+            <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid var(--border)' }}>
+              <span style={{ fontSize:13, fontWeight:500, color:'var(--text-primary)' }}>Pedidos de hoy en curso</span>
+              <Link href="/recepciones" style={{ fontSize:12, color:'var(--accent)', textDecoration:'none' }}>Ver todos →</Link>
             </div>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
-                <tr style={{ background:'#F8FAFC' }}>
+                <tr style={{ background:'var(--bg-base)' }}>
                   {['Pedido','Cliente','Plataforma','Estado','Hora'].map(h => (
-                    <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em' }}>{h}</th>
+                    <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:10, fontWeight:600, color:'var(--text-muted)', borderBottom:'1px solid var(--border)', textTransform:'uppercase', letterSpacing:'.06em' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {recientesActivos.map(o => {
                   const sc = STATUS_COLOR[o.status] ?? STATUS_COLOR.PENDING
+                  const isInTransit = o.status === 'IN_TRANSIT'
                   return (
-                    <tr key={o.id}>
-                      <td style={{ padding:'11px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
-                        <Link href={`/recepciones/${o.id}`} style={{ color:'#1D4ED8', textDecoration:'none' }}>
+                    <tr key={o.id} style={{ transition:'background 0.1s' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>
+                        <Link href={`/recepciones/${o.id}`} style={{ color:'var(--accent)', textDecoration:'none' }}>
                           {o.orderNumber}
                         </Link>
                       </td>
-                      <td style={{ padding:'11px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{o.customerName}</td>
-                      <td style={{ padding:'11px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>
+                      <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:13, color:'var(--text-primary)' }}>{o.customerName}</td>
+                      <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>
                         {PLATFORM_LABEL[o.platform] ?? o.platform}
                       </td>
-                      <td style={{ padding:'11px 14px', borderBottom:'1px solid #F1F5F9' }}>
-                        <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
-                          <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
+                      <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)' }}>
+                        <span style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
+                          {isInTransit ? (
+                            <span className="pulse-dot" style={{ background:sc.dot }}/>
+                          ) : (
+                            <span style={{ width:5, height:5, borderRadius:'50%', background:sc.dot, display:'inline-block' }}/>
+                          )}
                           {STATUS_LABEL[o.status]}
                         </span>
                       </td>
-                      <td style={{ padding:'11px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF' }}>
+                      <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>
                         {new Date(o.createdAt).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit', timeZone: TZ })}
                       </td>
                     </tr>
@@ -222,36 +261,45 @@ export default async function DashboardPage() {
 
           {/* Panel lateral */}
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-            <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
-              <div style={{ fontSize:13, fontWeight:500, marginBottom:14 }}>Por plataforma hoy</div>
+
+            {/* Por plataforma */}
+            <div style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:12, padding:20 }}>
+              <div style={{ fontSize:13, fontWeight:500, color:'var(--text-primary)', marginBottom:14 }}>Por plataforma hoy</div>
               {statsHoy.byPlatform.length === 0 ? (
-                <div style={{ fontSize:13, color:'#9CA3AF' }}>Sin datos</div>
+                <div style={{ fontSize:13, color:'var(--text-muted)' }}>Sin datos</div>
               ) : statsHoy.byPlatform.map(p => {
                 const pctV = statsHoy.total > 0 ? Math.round((p.count / statsHoy.total) * 100) : 0
+                const color = PLATFORM_COLOR[p.platform] ?? '#6B7280'
                 return (
                   <div key={p.platform} style={{ marginBottom:12 }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
-                      <span style={{ color:'#4B5563' }}>{PLATFORM_LABEL[p.platform] ?? p.platform}</span>
-                      <span style={{ fontWeight:500 }}>{p.count}</span>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:5 }}>
+                      <span style={{ color:'var(--text-secondary)' }}>{PLATFORM_LABEL[p.platform] ?? p.platform}</span>
+                      <span style={{ fontWeight:600, color:'var(--text-primary)' }}>{p.count}</span>
                     </div>
-                    <div style={{ height:5, background:'#F1F5F9', borderRadius:3, overflow:'hidden' }}>
-                      <div style={{ width:`${pctV}%`, height:'100%', background:'#2563EB', borderRadius:3 }}/>
+                    <div style={{ height:4, background:'var(--bg-input)', borderRadius:3, overflow:'hidden' }}>
+                      <div style={{ width:`${pctV}%`, height:'100%', background:color, borderRadius:3, transition:'width 0.4s' }}/>
                     </div>
                   </div>
                 )
               })}
             </div>
 
-            <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
-              <div style={{ fontSize:13, fontWeight:500, marginBottom:12 }}>Acciones rápidas</div>
+            {/* Acciones rápidas */}
+            <div style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:12, padding:20 }}>
+              <div style={{ fontSize:13, fontWeight:500, color:'var(--text-primary)', marginBottom:12 }}>Acciones rápidas</div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {[
-                  { href:'/pedidos/nuevo',          label:'+ Nuevo pedido',            bg:'#2563EB', color:'white',    border:'none' },
-                  { href:'/pedidos/carga-masiva',    label:'⬆ Carga masiva Excel',     bg:'#0B1628', color:'white',    border:'none' },
-                  { href:'/recepciones?historial=1', label:'📋 Ver historial completo', bg:'white',   color:'#374151', border:'1px solid #E2E8F0' },
+                  { href:'/pedidos/nuevo',          label:'+ Nuevo pedido',            bg:'var(--accent)',    color:'white' },
+                  { href:'/pedidos/carga-masiva',    label:'⬆ Carga masiva Excel',     bg:'var(--bg-input)', color:'var(--text-secondary)' },
+                  { href:'/recepciones?historial=1', label:'📋 Ver historial completo', bg:'var(--bg-input)', color:'var(--text-secondary)' },
                 ].map(a => (
-                  <Link key={a.href} href={a.href}
-                    style={{ padding:'9px 14px', background:a.bg, color:a.color, borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none', textAlign:'center', border:a.border }}>
+                  <Link key={a.href} href={a.href} style={{
+                    padding:'9px 14px', background:a.bg, color:a.color,
+                    borderRadius:8, fontSize:13, fontWeight:500,
+                    textDecoration:'none', textAlign:'center',
+                    border:'1px solid var(--border)',
+                    transition:'opacity 0.15s',
+                  }}>
                     {a.label}
                   </Link>
                 ))}
