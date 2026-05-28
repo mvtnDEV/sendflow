@@ -17,14 +17,19 @@ export async function GET(req: NextRequest) {
   const end   = new Date(`${fecha}T23:59:59-03:00`)
 
   const where: any = {
-    createdAt: { gte: start, lte: end },
     status: { in: ['IN_TRANSIT', 'DELIVERED', 'INCIDENT'] },
+    // Toma pedidos que salieron a ruta O fueron entregados ese día
+    // sin importar cuándo fueron creados
+    OR: [
+      { inTransitAt: { gte: start, lte: end } },
+      { deliveredAt: { gte: start, lte: end } },
+    ],
   }
   if (storeId) where.storeId = storeId
 
   const orders = await prisma.order.findMany({
     where,
-    orderBy: { createdAt: 'asc' },
+    orderBy: { inTransitAt: 'asc' },
     include: {
       store:  { select: { name: true } },
       events: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -45,6 +50,9 @@ export async function GET(req: NextRequest) {
                  : o.status === 'INCIDENT'   ? 'No entregado' : o.status,
     motivoNoEntrega: o.status === 'INCIDENT'
       ? (o.events[0]?.note ?? '')
+      : '',
+    salidaRuta: o.inTransitAt
+      ? new Date(o.inTransitAt).toLocaleString('es-CL', { timeZone: 'America/Santiago' })
       : '',
     entregadoEn: o.deliveredAt
       ? new Date(o.deliveredAt).toLocaleString('es-CL', { timeZone: 'America/Santiago' })
