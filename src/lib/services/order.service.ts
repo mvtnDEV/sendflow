@@ -17,6 +17,8 @@ let _todayCache: { range: { gte: Date; lte: Date }; day: string } | null = null
 
 function todayRange() {
   const now = new Date()
+
+  // Obtener la fecha actual en zona horaria de Chile (maneja -03 y -04 automáticamente)
   const santiagoParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -29,9 +31,19 @@ function todayRange() {
 
   if (_todayCache?.day === key) return _todayCache.range
 
+  // Calcular el offset real de Chile en este momento (maneja DST automáticamente)
+  // Comparamos la hora UTC con la hora de Santiago para obtener el offset exacto
+  const utcDate      = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
+  const santiagoDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Santiago' }))
+  const offsetMs     = santiagoDate.getTime() - utcDate.getTime()
+  const offsetHours  = offsetMs / (1000 * 60 * 60)
+  const sign         = offsetHours >= 0 ? '+' : '-'
+  const absHours     = Math.abs(offsetHours)
+  const offsetStr    = `${sign}${String(Math.floor(absHours)).padStart(2, '0')}:00`
+
   const range = {
-    gte: new Date(`${year}-${month}-${day}T00:00:00-03:00`),
-    lte: new Date(`${year}-${month}-${day}T23:59:59-03:00`),
+    gte: new Date(`${year}-${month}-${day}T00:00:00${offsetStr}`),
+    lte: new Date(`${year}-${month}-${day}T23:59:59${offsetStr}`),
   }
   _todayCache = { range, day: key }
   return range
