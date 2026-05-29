@@ -32,7 +32,7 @@ export async function anonymizeOrder(orderId: string, processedBy: string) {
       evidenceNote:   null,
       evidencePhoto1: null,
       evidencePhoto2: null,
-      rawPayload:     null,
+      rawPayload:     null as any,
       anonymizedAt:   new Date(),
     },
   })
