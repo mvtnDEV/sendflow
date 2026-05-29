@@ -13,17 +13,15 @@ export async function GET(req: NextRequest) {
   const storeId = searchParams.get('storeId') || undefined
   const fecha   = searchParams.get('fecha') || new Date().toISOString().split('T')[0]
 
-  const start = new Date(`${fecha}T00:00:00-03:00`)
-  const end   = new Date(`${fecha}T23:59:59-03:00`)
+  // Chile usa UTC-4 en invierno (abril-septiembre) y UTC-3 en verano
+  // Usamos -04:00 como base conservadora — ajusta a -03:00 en verano si es necesario
+  const start = new Date(`${fecha}T00:00:00-04:00`)
+  const end   = new Date(`${fecha}T23:59:59-04:00`)
 
   const where: any = {
     status: { in: ['IN_TRANSIT', 'DELIVERED', 'INCIDENT'] },
-    // Toma pedidos que salieron a ruta O fueron entregados ese día
-    // sin importar cuándo fueron creados
-    OR: [
-      { inTransitAt: { gte: start, lte: end } },
-      { deliveredAt: { gte: start, lte: end } },
-    ],
+    // Solo pedidos que salieron a ruta ESE día — no importa cuándo se entregaron
+    inTransitAt: { gte: start, lte: end },
   }
   if (storeId) where.storeId = storeId
 
@@ -37,21 +35,19 @@ export async function GET(req: NextRequest) {
   })
 
   const data = orders.map(o => ({
-    id:            o.id,
-    orderNumber:   o.orderNumber,
-    sourceId:      o.platform === 'WOOCOMMERCE' ? (o.sourceId ?? '') : '',
-    tienda:        o.store?.name ?? '',
-    subTienda:     o.subStoreName ?? '',
-    cliente:       o.customerName,
-    direccion:     o.addressStreet,
-    comuna:        o.addressComuna,
-    estado:        o.status === 'IN_TRANSIT' ? 'En camino'
-                 : o.status === 'DELIVERED'  ? 'Entregado'
-                 : o.status === 'INCIDENT'   ? 'No entregado' : o.status,
-    motivoNoEntrega: o.status === 'INCIDENT'
-      ? (o.events[0]?.note ?? '')
-      : '',
-    salidaRuta: o.inTransitAt
+    id:          o.id,
+    orderNumber: o.orderNumber,
+    sourceId:    o.platform === 'WOOCOMMERCE' ? (o.sourceId ?? '') : '',
+    tienda:      o.store?.name ?? '',
+    subTienda:   o.subStoreName ?? '',
+    cliente:     o.customerName,
+    direccion:   o.addressStreet,
+    comuna:      o.addressComuna,
+    estado:      o.status === 'IN_TRANSIT' ? 'En camino'
+               : o.status === 'DELIVERED'  ? 'Entregado'
+               : o.status === 'INCIDENT'   ? 'No entregado' : o.status,
+    motivoNoEntrega: o.status === 'INCIDENT' ? (o.events[0]?.note ?? '') : '',
+    salidaRuta:  o.inTransitAt
       ? new Date(o.inTransitAt).toLocaleString('es-CL', { timeZone: 'America/Santiago' })
       : '',
     entregadoEn: o.deliveredAt
