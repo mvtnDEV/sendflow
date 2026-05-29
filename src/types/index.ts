@@ -7,7 +7,7 @@ export interface SessionUser {
   id:      string
   email:   string
   name:    string
-  role:    'SUPER_ADMIN' | 'STORE_ADMIN' | 'DRIVER'
+  role:    'SUPER_ADMIN' | 'STORE_ADMIN' | 'DRIVER' | 'VIEWER'
   storeId: string | null
 }
 
