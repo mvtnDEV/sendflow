@@ -292,8 +292,8 @@ async function exportTienda() {
             })}
             <div style={{ marginTop:16, padding:'12px 14px', background:'#F8FAFC', borderRadius:8 }}>
               <div style={{ fontSize:11, color:'#6B7280', marginBottom:2 }}>NS del período</div>
-              <div style={{ fontSize:22, fontWeight:700, color: nsColor(s.successRate) }}>{s.successRate}%</div>
-              <div style={{ fontSize:11, color:'#9CA3AF' }}>{s.delivered} entregados de {s.total} totales</div>
+              <div style={{ fontSize:22, fontWeight:700, color: nsColor(s?.successRate ?? null) }}>{s?.successRate ?? 0}%</div>
+              <div style={{ fontSize:11, color:'#9CA3AF' }}>{s?.delivered ?? 0} entregados de {s?.total ?? 0} totales</div>
             </div>
           </div>
         </div>
