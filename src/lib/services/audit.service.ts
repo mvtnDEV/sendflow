@@ -16,6 +16,7 @@ export type AuditAction =
   | 'WEBHOOK_RECEIVED'
   | 'DATA_DELETION_REQUEST'
   | 'DATA_ANONYMIZED'
+  | 'CREATE_USER'
 
 interface AuditParams {
   userId?:   string
