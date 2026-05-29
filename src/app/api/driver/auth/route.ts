@@ -48,13 +48,11 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Token JWT firmado ──
- const token = Buffer.from(JSON.stringify({
-    id:      driver.id,
-    name:    driver.name,
-    role:    'DRIVER',
-    storeId: driver.storeId,
-    exp:     Date.now() + 8 * 60 * 60 * 1000,
-  })).toString('base64')
+const token = jwt.sign(
+    { id: driver.id, name: driver.name, role: 'DRIVER', storeId: driver.storeId },
+    process.env.NEXTAUTH_SECRET!,
+    { expiresIn: '8h' }
+  )
 
   await prisma.user.update({
     where: { id: driver.id },

@@ -11,14 +11,13 @@ interface DriverPayload {
   storeId: string | null
 }
 
-function verifyDriverToken(req: NextRequest) {
+function verifyDriverToken(req: NextRequest): DriverPayload | null {
   const auth = req.headers.get('authorization')
   if (!auth?.startsWith('Bearer ')) return null
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString())
-    if (payload.exp < Date.now()) return null
+    const payload = jwt.verify(auth.slice(7), process.env.NEXTAUTH_SECRET!) as DriverPayload
     if (payload.role !== 'DRIVER') return null
-    return payload as { id: string; name: string; storeId: string | null }
+    return payload
   } catch { return null }
 }
 
