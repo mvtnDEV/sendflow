@@ -17,8 +17,8 @@ export async function POST(
 ) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-  if (user.role === 'VIEWER') return NextResponse.json({ ok:false, error:'Sin permisos — modo solo lectura' }, { status:403 })
-
+  if ((user.role as string) === 'VIEWER') return NextResponse.json({ ok:false, error:'Sin permisos — modo solo lectura' }, { status:403 })
+  
   // Verificar acceso al pedido
   const order = await prisma.order.findUnique({
     where:  { id: params.id },
