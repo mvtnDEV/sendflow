@@ -10,7 +10,7 @@ const VALID: OrderStatus[] = ['PENDING','RECEIVED','IN_TRANSIT','DELIVERED','INC
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ ok:false, error:'No autorizado' }, { status:401 })
-  if (user.role === 'VIEWER') return NextResponse.json({ ok:false, error:'Sin permisos — modo solo lectura' }, { status:403 })
+  if ((user.role as string) === 'VIEWER') return NextResponse.json({ ok:false, error:'Sin permisos — modo solo lectura' }, { status:403 })
 
   const body   = await req.json().catch(() => null)
   const status: OrderStatus = body?.status
