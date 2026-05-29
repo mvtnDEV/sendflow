@@ -234,3 +234,24 @@ model ApiKey {
   @@index([key])
   @@map("api_keys")
 }
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
+
+model ApiRateLimit {
+  id        String   @id @default(cuid())
+  apiKeyId  String
+  createdAt DateTime @default(now())
+
+  @@index([apiKeyId, createdAt])
+  @@map("api_rate_limits")
+}
