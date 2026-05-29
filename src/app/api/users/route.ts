@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
 
   await audit({
     userId:   me.id,
-    action:   'CREATE_ORDER',
+    action:   'CREATE_USER',
     resource: `user:${newUser.id}`,
     metadata: { role: body.role, name: body.name } as any,
   })
