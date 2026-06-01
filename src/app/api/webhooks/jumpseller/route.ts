@@ -37,12 +37,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Payload inválido' }, { status: 400 })
   }
 
-  console.log('[Jumpseller webhook] Pedido recibido:', {
-    id:      body.order.id,
-    status:  body.order.status,
-    total:   body.order.total,
-    cliente: body.order.customer?.name,
-  })
+  console.log('[Jumpseller webhook] Pedido recibido COMPLETO:', JSON.stringify(body.order, null, 2))
 
   // Solo procesar pedidos pagados
   const validStatuses = ['paid', 'pending_payment', 'processing']
