@@ -27,10 +27,11 @@ const NAV = [
   {
     label: 'Configuración',
     items: [
-      { href: '/usuarios',     label: 'Usuarios',      icon: 'users', roles: ['SUPER_ADMIN'] },
-      { href: '/tiendas',      label: 'Tiendas',       icon: 'store', roles: ['SUPER_ADMIN'] },
-      { href: '/conductores',  label: 'Conductores',   icon: 'truck', roles: ['SUPER_ADMIN'] },
-      { href: '/integraciones',label: 'Integraciones', icon: 'plug',  roles: ['SUPER_ADMIN','STORE_ADMIN'] },
+      { href: '/usuarios',     label: 'Usuarios',      icon: 'users',    roles: ['SUPER_ADMIN'] },
+      { href: '/tiendas',      label: 'Tiendas',       icon: 'store',    roles: ['SUPER_ADMIN'] },
+      { href: '/conductores',  label: 'Conductores',   icon: 'truck',    roles: ['SUPER_ADMIN'] },
+      { href: '/integraciones',label: 'Integraciones', icon: 'plug',     roles: ['SUPER_ADMIN','STORE_ADMIN'] },
+      { href: '/facturacion',  label: 'Facturación',   icon: 'invoice',  roles: ['SUPER_ADMIN'] },
     ],
   },
 ]
@@ -47,6 +48,7 @@ const ICONS: Record<string, React.ReactNode> = {
   users:  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="5.5" cy="4" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5S10 10.5 10 13H1z"/><circle cx="11.5" cy="5" r="2"/><path d="M10 13.5c0-1.8.9-3.4 2.2-4.3A3.9 3.9 0 0 1 15 13.5h-5z"/></svg>,
   truck:  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 3h10v7H0V3zm10 2h2l3 3v2h-5V5zm-8 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm9 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>,
   plug:   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6 1v3H4V1H3v3H1v2h2v1a4 4 0 0 0 3 3.87V14h2v-3.13A4 4 0 0 0 11 7V6h2V4h-1V1h-1v3H7V1H6z"/></svg>,
+  invoice: <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3 1h10a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm1 3v1h8V4H4zm0 3v1h8V7H4zm0 3v1h5v-1H4z"/></svg>,
 }
 
 export default function Sidebar({ user, open, onClose }: {
