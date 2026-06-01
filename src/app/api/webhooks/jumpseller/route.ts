@@ -4,6 +4,13 @@ import { prisma } from '@/lib/db/prisma'
 import { normalizeJSOrder } from '@/lib/integrations/jumpseller'
 import { upsertOrderFromWebhook } from '@/lib/services/order.service'
 
+
+
+// GET — verificación de URL por Jumpseller
+export async function GET(req: NextRequest) {
+  return NextResponse.json({ ok: true, status: 'webhook activo' })
+}
+
 export async function POST(req: NextRequest) {
   const { searchParams } = req.nextUrl
   const storeToken = searchParams.get('token')
