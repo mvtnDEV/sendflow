@@ -21,11 +21,12 @@ interface JSOrder {
       country?: string
     }
     products: {
-      id:       number
-      name:     string
-      quantity: number
-      price:    number
-      sku?:     string
+      id:        number
+      name:      string
+      quantity?: number
+      qty?:      number
+      price:     number
+      sku?:      string
     }[]
   }
 }
@@ -46,7 +47,7 @@ export function normalizeJSOrder(raw: JSOrder['order']): NormalizedOrder {
     addressStreet: addr.address,
     addressComuna: addr.city,
     addressRegion: 'Región Metropolitana',
-    bultos: raw.products?.reduce((acc, p) => acc + (p.qty ?? p.quantity ?? 1), 0) || 1,
+    bultos: raw.products?.reduce((acc, p) => acc + (p.qty ?? p.quantity ?? 1), 0) || 1),
     rawPayload:    raw as unknown as Record<string, unknown>,
   }
 }
