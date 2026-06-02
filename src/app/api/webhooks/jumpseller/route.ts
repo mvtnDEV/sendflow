@@ -37,9 +37,11 @@ export async function POST(req: NextRequest) {
   }
 
   console.log('[Jumpseller webhook] Pedido recibido:', {
-    id:     body.order.id,
-    status: body.order.status,
+    id:      body.order.id,
+    status:  body.order.status,
     cliente: body.order.customer?.name ?? body.order.shipping_address?.name,
+    region:  body.order.shipping_address?.region,
+    comuna:  body.order.shipping_address?.municipality ?? body.order.shipping_address?.city,
   })
 
   // ── status case-insensitive ──
@@ -51,6 +53,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const normalized = normalizeJSOrder(body.order)
+
+    // ── Filtro de región — solo Región Metropolitana ──
+    const regionNorm = normalized.addressRegion?.toLowerCase().trim() ?? ''
+    const esRM = regionNorm.includes('metropolitana') || regionNorm === 'rm'
+    if (!esRM) {
+      console.log(`[Jumpseller webhook] Pedido ${normalized.externalId} fuera de zona — región: ${normalized.addressRegion}`)
+      return NextResponse.json({ ok: true, skipped: true, reason: 'fuera_de_zona' })
+    }
+
     await upsertOrderFromWebhook(integration.storeId, integration.id, normalized)
     await prisma.storeIntegration.update({
       where: { id: integration.id },
