@@ -14,11 +14,13 @@ interface JSOrder {
       phone?: string
     }
     shipping_address: {
-      name?:    string
-      address:  string
-      city:     string
-      region?:  string
-      country?: string
+      name?:         string
+      surname?:      string
+      address:       string
+      city:          string
+      municipality?: string
+      region?:       string
+      country?:      string
     }
     products: {
       id:        number
@@ -40,12 +42,12 @@ export function normalizeJSOrder(raw: JSOrder['order']): NormalizedOrder {
     externalId:    String(raw.id),
     platform:      'JUMPSELLER',
     customerName:  (raw.customer?.name
-      ?? `${raw.shipping_address?.name ?? ''} ${(raw as any).shipping_address?.surname ?? ''}`.trim())
+      ?? `${raw.shipping_address?.name ?? ''} ${raw.shipping_address?.surname ?? ''}`.trim())
       || 'Sin nombre',
     customerPhone: raw.customer?.phone ?? undefined,
     customerEmail: raw.customer?.email ?? undefined,
     addressStreet: addr.address,
-    addressComuna: addr.city,
+    addressComuna: (addr as any).municipality ?? addr.city,
     addressRegion: 'Región Metropolitana',
     bultos: raw.products?.reduce((acc, p) => acc + (p.qty ?? p.quantity ?? 1), 0) || 1,
     rawPayload:    raw as unknown as Record<string, unknown>,
