@@ -48,7 +48,7 @@ export function normalizeJSOrder(raw: JSOrder['order']): NormalizedOrder {
     customerEmail: raw.customer?.email ?? undefined,
     addressStreet: addr.address,
     addressComuna: (addr as any).municipality ?? addr.city,
-    addressRegion: 'Región Metropolitana',
+    addressRegion: addr.region ?? 'Región Metropolitana',
     bultos: raw.products?.reduce((acc, p) => acc + (p.qty ?? p.quantity ?? 1), 0) || 1,
     rawPayload:    raw as unknown as Record<string, unknown>,
   }
