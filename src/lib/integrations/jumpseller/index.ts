@@ -38,9 +38,11 @@ export function normalizeJSOrder(raw: JSOrder['order']): NormalizedOrder {
   return {
     externalId:    String(raw.id),
     platform:      'JUMPSELLER',
-    customerName:  raw.customer.name,
-    customerPhone: raw.customer.phone,
-    customerEmail: raw.customer.email,
+    customerName:  raw.customer?.name
+      ?? `${raw.shipping_address?.name ?? ''} ${(raw as any).shipping_address?.surname ?? ''}`.trim()
+      || 'Sin nombre',
+    customerPhone: raw.customer?.phone ?? null,
+    customerEmail: raw.customer?.email ?? null,
     addressStreet: addr.address,
     addressComuna: addr.city,
     addressRegion: 'Región Metropolitana',
