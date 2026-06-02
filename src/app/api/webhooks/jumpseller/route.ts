@@ -4,9 +4,6 @@ import { prisma } from '@/lib/db/prisma'
 import { normalizeJSOrder } from '@/lib/integrations/jumpseller'
 import { upsertOrderFromWebhook } from '@/lib/services/order.service'
 
-
-
-// GET — verificación de URL por Jumpseller
 export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, status: 'webhook activo' })
 }
@@ -20,12 +17,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Token requerido' }, { status: 400 })
   }
 
-  // Buscar integración por token de webhook (guardado en webhookSecret)
   const integration = await prisma.storeIntegration.findFirst({
-    where: {
-      platform:  'JUMPSELLER',
-      isActive:  true,
-    },
+    where: { platform: 'JUMPSELLER', isActive: true },
   })
 
   if (!integration) {
@@ -33,7 +26,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Integración no encontrada' }, { status: 404 })
   }
 
-  // Verificar token — modo debug: solo warn, no bloquea
   if (integration.webhookSecret && integration.webhookSecret !== storeToken) {
     console.warn('[Jumpseller webhook] Token inválido — continuando en modo debug')
   }
@@ -44,11 +36,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Payload inválido' }, { status: 400 })
   }
 
-  console.log('[Jumpseller webhook] Pedido recibido COMPLETO:', JSON.stringify(body.order, null, 2))
+  console.log('[Jumpseller webhook] Pedido recibido:', {
+    id:     body.order.id,
+    status: body.order.status,
+    cliente: body.order.customer?.name ?? body.order.shipping_address?.name,
+  })
 
-  // Solo procesar pedidos pagados
+  // ── status case-insensitive ──
   const validStatuses = ['paid', 'pending_payment', 'processing']
-  if (!validStatuses.includes(body.order.status)) {
+  if (!validStatuses.includes(body.order.status?.toLowerCase())) {
     console.log(`[Jumpseller webhook] Estado ignorado: ${body.order.status}`)
     return NextResponse.json({ ok: true, skipped: true })
   }
