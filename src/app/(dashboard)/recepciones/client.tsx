@@ -265,7 +265,10 @@ export default function RecepcionesClient({
                     <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor:'pointer', width:15, height:15 }}/>
                   </th>
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>N° pedido</th>
-                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Sub-tienda</th>
+                  {/* Sub-tienda — oculta para STORE_ADMIN */}
+                  {!isStoreAdmin && (
+                    <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Sub-tienda</th>
+                  )}
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Tienda</th>
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Cliente</th>
                   <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Teléfono</th>
@@ -301,13 +304,16 @@ export default function RecepcionesClient({
                         )}
                       </td>
 
-                      <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
-                        {order.subStoreName ? (
-                          <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFF7ED', color:'#C2410C', fontWeight:500, whiteSpace:'nowrap', border:'1px solid #FED7AA' }}>{order.subStoreName}</span>
-                        ) : (
-                          <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
-                        )}
-                      </td>
+                      {/* Sub-tienda — oculta para STORE_ADMIN */}
+                      {!isStoreAdmin && (
+                        <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
+                          {order.subStoreName ? (
+                            <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFF7ED', color:'#C2410C', fontWeight:500, whiteSpace:'nowrap', border:'1px solid #FED7AA' }}>{order.subStoreName}</span>
+                          ) : (
+                            <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
+                          )}
+                        </td>
+                      )}
 
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
                         <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>{order.store?.name ?? '—'}</span>
@@ -340,6 +346,10 @@ export default function RecepcionesClient({
                           {STATUS_LABEL[order.status]}
                         </span>
                         {order.evidencePhoto1 && <span style={{ marginLeft:4, fontSize:11 }}>📷</span>}
+                        {/* Badge etiqueta impresa — solo para STORE_ADMIN */}
+                        {order.labelUrl && isStoreAdmin && (
+                          <span title="Etiqueta impresa" style={{ marginLeft:4, fontSize:11, padding:'1px 6px', borderRadius:10, background:'#F0FDF4', color:'#166534', fontWeight:500, border:'1px solid #BBF7D0' }}>🖨 Impresa</span>
+                        )}
                       </td>
 
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
@@ -347,7 +357,6 @@ export default function RecepcionesClient({
                         {!todayOnly && <div style={{ fontSize:11 }}>{fmtDate(order.createdAt)}</div>}
                       </td>
 
-                      {/* Flecha fija a la derecha */}
                       <td className="sticky-arrow" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', background: isSelected ? '#F0F7FF' : 'white', boxShadow:'-3px 0 8px rgba(0,0,0,0.06)' }}>
                         <Link href={`/recepciones/${order.id}`} style={{ color:'#2563EB', fontSize:18, textDecoration:'none', fontWeight:700, padding:'4px 8px', background:'#EFF6FF', borderRadius:6, display:'inline-block' }}>→</Link>
                       </td>
@@ -379,7 +388,8 @@ export default function RecepcionesClient({
                         ) : (
                           <div style={{ fontSize:14, fontWeight:600, color:'#0B1628' }}>{order.orderNumber}</div>
                         )}
-                        {order.subStoreName && (
+                        {/* Sub-tienda en mobile — oculta para STORE_ADMIN */}
+                        {!isStoreAdmin && order.subStoreName && (
                           <span style={{ fontSize:10, padding:'1px 6px', borderRadius:10, background:'#FFF7ED', color:'#C2410C', fontWeight:500, border:'1px solid #FED7AA' }}>{order.subStoreName}</span>
                         )}
                       </div>
@@ -403,6 +413,10 @@ export default function RecepcionesClient({
                       <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500 }}>{platformStatus}</span>
                     )}
                     {order.evidencePhoto1 && <span style={{ fontSize:11 }}>📷</span>}
+                    {/* Badge etiqueta impresa en mobile — solo para STORE_ADMIN */}
+                    {order.labelUrl && isStoreAdmin && (
+                      <span style={{ fontSize:10, padding:'1px 6px', borderRadius:10, background:'#F0FDF4', color:'#166534', fontWeight:500, border:'1px solid #BBF7D0' }}>🖨 Impresa</span>
+                    )}
                   </div>
                 </div>
               )
