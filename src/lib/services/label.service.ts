@@ -296,3 +296,9 @@ export async function generateBulkLabels(orderIds: string[]): Promise<string> {
 
   return buildHTMLWrapper(labelsHTML)
 }
+export async function markLabelsAsPrinted(orderIds: string[]): Promise<void> {
+  await prisma.order.updateMany({
+    where: { id: { in: orderIds } },
+    data:  { labelUrl: 'printed' }, // marca que se imprimió
+  })
+}
