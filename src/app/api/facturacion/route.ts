@@ -23,20 +23,18 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = req.nextUrl
   const storeId = searchParams.get('storeId') || undefined
-  const mes     = searchParams.get('mes') // formato YYYY-MM
+  const mes     = searchParams.get('mes')
 
   if (!mes) {
     return NextResponse.json({ ok: false, error: 'Parámetro mes requerido (YYYY-MM)' }, { status: 400 })
   }
 
   const [year, month] = mes.split('-').map(Number)
-  const off   = getChileOffsetStr()
-  const start = new Date(`${year}-${String(month).padStart(2,'0')}-01T00:00:00${off}`)
-  const end   = new Date(year, month, 0) // último día del mes
-  const endStr = `${year}-${String(month).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}T23:59:59${off}`
-  const endDate = new Date(endStr)
+  const off     = getChileOffsetStr()
+  const start   = new Date(`${year}-${String(month).padStart(2,'0')}-01T00:00:00${off}`)
+  const lastDay = new Date(year, month, 0).getDate()
+  const endDate = new Date(`${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}T23:59:59${off}`)
 
-  // Obtener tiendas con tarifas
   const storeWhere: any = { isActive: true }
   if (storeId) storeWhere.id = storeId
 
@@ -55,25 +53,28 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  // Para cada tienda obtener pedidos entregados del mes
   const result = await Promise.all(stores.map(async store => {
     const orders = await prisma.order.findMany({
       where: {
-        storeId:     store.id,
-        status:      'DELIVERED',
-        deliveredAt: { gte: start, lte: endDate },
+        storeId: store.id,
+        // ── Solo pedidos que salieron a ruta con Moovex ese mes ──
+        // Si inTransitAt es null = la tienda lo despachó por su cuenta = no se cobra
+        inTransitAt: { gte: start, lte: endDate },
+        status: { in: ['DELIVERED', 'IN_TRANSIT', 'INCIDENT'] },
       },
       select: {
-        id:           true,
-        orderNumber:  true,
-        customerName: true,
+        id:            true,
+        orderNumber:   true,
+        customerName:  true,
         addressComuna: true,
         addressRegion: true,
-        deliveredAt:  true,
-        bultos:       true,
-        platform:     true,
+        inTransitAt:   true,
+        deliveredAt:   true,
+        status:        true,
+        bultos:        true,
+        platform:      true,
       },
-      orderBy: { deliveredAt: 'asc' },
+      orderBy: { inTransitAt: 'asc' },
     })
 
     return {
