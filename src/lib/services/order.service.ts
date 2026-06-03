@@ -13,12 +13,9 @@ function isRegionPermitida(region: string): boolean {
   return REGIONES_PERMITIDAS.some(allowed => r.includes(allowed) || allowed.includes(r))
 }
 
-let _todayCache: { range: { gte: Date; lte: Date }; day: string } | null = null
-
 function todayRange() {
   const now = new Date()
 
-  // Obtener la fecha actual en zona horaria de Chile (maneja -03 y -04 automáticamente)
   const santiagoParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -27,12 +24,7 @@ function todayRange() {
   const year  = santiagoParts.find(p => p.type === 'year')!.value
   const month = santiagoParts.find(p => p.type === 'month')!.value
   const day   = santiagoParts.find(p => p.type === 'day')!.value
-  const key   = `${year}-${month}-${day}`
 
-  if (_todayCache?.day === key) return _todayCache.range
-
-  // Calcular el offset real de Chile en este momento (maneja DST automáticamente)
-  // Comparamos la hora UTC con la hora de Santiago para obtener el offset exacto
   const utcDate      = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
   const santiagoDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Santiago' }))
   const offsetMs     = santiagoDate.getTime() - utcDate.getTime()
@@ -41,12 +33,10 @@ function todayRange() {
   const absHours     = Math.abs(offsetHours)
   const offsetStr    = `${sign}${String(Math.floor(absHours)).padStart(2, '0')}:00`
 
-  const range = {
+  return {
     gte: new Date(`${year}-${month}-${day}T00:00:00${offsetStr}`),
     lte: new Date(`${year}-${month}-${day}T23:59:59${offsetStr}`),
   }
-  _todayCache = { range, day: key }
-  return range
 }
 
 interface CreateOrderInput {
@@ -252,13 +242,15 @@ export async function listOrders(filters: OrderFilters) {
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     if (filters.superAdminView) {
+      // SUPER_ADMIN: solo pedidos que salieron a ruta hoy o están activos
+      // Pendientes NO aparecen — deben filtrarlos explícitamente con status=PENDING
       where.AND = [
         {
           OR: [
-            { status: 'IN_TRANSIT' },
-            { status: 'INCIDENT' },
-            { deliveredAt: today },
-            { status: 'PENDING', platform: 'MANUAL' },
+            { inTransitAt: today },                              // salieron a ruta hoy
+            { status: 'IN_TRANSIT' },                           // siguen en camino de días anteriores
+            { deliveredAt: today },                             // entregados hoy
+            { status: 'INCIDENT', inTransitAt: today },         // incidencias de hoy
           ],
         },
         {
@@ -271,12 +263,12 @@ export async function listOrders(filters: OrderFilters) {
         },
       ]
     } else {
+      // STORE_ADMIN: pedidos que salieron a ruta hoy + sus pendientes
       where.OR = [
-        { createdAt:   today },
-        { status:      'PENDING' },
-        { receivedAt:  today },
-        { inTransitAt: today },
-        { deliveredAt: today },
+        { inTransitAt: today },                          // salieron a ruta hoy
+        { deliveredAt: today },                          // entregados hoy
+        { status: 'PENDING' },                           // pendientes para gestionar
+        { status: 'INCIDENT', inTransitAt: today },      // incidencias de hoy
       ]
     }
   } else if (filters.dateFrom || filters.dateTo) {
@@ -323,6 +315,7 @@ export async function listOrders(filters: OrderFilters) {
         subStoreName:  true,
         createdAt:     true,
         evidencePhoto1:true,
+        labelUrl:      true,
         rawPayload:    true,
         store: { select: { id: true, name: true } },
       },
@@ -338,7 +331,16 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
 
   const baseWhere: any = {}
   if (storeId) baseWhere.storeId = storeId
-  if (todayOnly) baseWhere.createdAt = today
+
+  if (todayOnly) {
+    // Stats basadas en pedidos activos del día — no por createdAt
+    baseWhere.OR = [
+      { inTransitAt: today },   // salieron a ruta hoy
+      { deliveredAt: today },   // entregados hoy
+      { status: 'IN_TRANSIT' },// en camino activos
+      { status: 'PENDING' },   // pendientes
+    ]
+  }
 
   const [byStatus, byPlatform, byStore] = await Promise.all([
     prisma.order.groupBy({
