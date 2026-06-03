@@ -243,14 +243,14 @@ export async function listOrders(filters: OrderFilters) {
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     if (filters.superAdminView) {
       // SUPER_ADMIN: solo pedidos que salieron a ruta hoy o están activos
-      // Pendientes NO aparecen — deben filtrarlos explícitamente con status=PENDING
+      // Pendientes NO aparecen — buscarlos con filtro status=PENDING explícito
       where.AND = [
         {
           OR: [
-            { inTransitAt: today },                              // salieron a ruta hoy
-            { status: 'IN_TRANSIT' },                           // siguen en camino de días anteriores
-            { deliveredAt: today },                             // entregados hoy
-            { status: 'INCIDENT', inTransitAt: today },         // incidencias de hoy
+            { inTransitAt: today },                          // salieron a ruta hoy
+            { status: 'IN_TRANSIT' },                        // en camino de días anteriores
+            { deliveredAt: today },                          // entregados hoy
+            { status: 'INCIDENT', inTransitAt: today },      // incidencias de hoy
           ],
         },
         {
@@ -263,11 +263,11 @@ export async function listOrders(filters: OrderFilters) {
         },
       ]
     } else {
-      // STORE_ADMIN: pedidos que salieron a ruta hoy + sus pendientes
+      // STORE_ADMIN: pedidos que salieron a ruta hoy + pendientes creados hoy
       where.OR = [
         { inTransitAt: today },                          // salieron a ruta hoy
         { deliveredAt: today },                          // entregados hoy
-        { status: 'PENDING' },                           // pendientes para gestionar
+        { status: 'PENDING', createdAt: today },         // pendientes de hoy
         { status: 'INCIDENT', inTransitAt: today },      // incidencias de hoy
       ]
     }
@@ -302,21 +302,21 @@ export async function listOrders(filters: OrderFilters) {
       take:    pageSize,
       orderBy: { createdAt: 'desc' },
       select: {
-        id:            true,
-        orderNumber:   true,
-        platform:      true,
-        status:        true,
-        customerName:  true,
-        customerPhone: true,
-        addressStreet: true,
-        addressComuna: true,
-        bultos:        true,
-        sourceId:      true,
-        subStoreName:  true,
-        createdAt:     true,
-        evidencePhoto1:true,
-        labelUrl:      true,
-        rawPayload:    true,
+        id:             true,
+        orderNumber:    true,
+        platform:       true,
+        status:         true,
+        customerName:   true,
+        customerPhone:  true,
+        addressStreet:  true,
+        addressComuna:  true,
+        bultos:         true,
+        sourceId:       true,
+        subStoreName:   true,
+        createdAt:      true,
+        evidencePhoto1: true,
+        labelUrl:       true,
+        rawPayload:     true,
         store: { select: { id: true, name: true } },
       },
     }),
@@ -333,12 +333,11 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
   if (storeId) baseWhere.storeId = storeId
 
   if (todayOnly) {
-    // Stats basadas en pedidos activos del día — no por createdAt
+    // Stats basadas en pedidos activos del día — sin PENDING
     baseWhere.OR = [
       { inTransitAt: today },   // salieron a ruta hoy
       { deliveredAt: today },   // entregados hoy
-      { status: 'IN_TRANSIT' },// en camino activos
-      { status: 'PENDING' },   // pendientes
+      { status: 'IN_TRANSIT' }, // en camino activos de días anteriores
     ]
   }
 
