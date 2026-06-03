@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/utils/auth'
-import { generateBulkLabels } from '@/lib/services/label.service'
+import { generateBulkLabels, markLabelsAsPrinted } from '@/lib/services/label.service'
 
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
@@ -12,6 +12,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const html = await generateBulkLabels(orderIds)
+
+    // ── Marcar pedidos como etiqueta impresa ──
+    await markLabelsAsPrinted(orderIds)
+
     return new NextResponse(html, {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
