@@ -23,11 +23,17 @@ export async function GET(
   const format = req.nextUrl.searchParams.get('format') ?? 'html'
 
   try {
-    const { html, order: labelData } = await generateLabelForOrder(params.id)
+  const { html, order: labelData } = await generateLabelForOrder(params.id)
 
     if (format === 'json') {
       return NextResponse.json({ ok: true, data: labelData })
     }
+
+    // ── Marcar etiqueta como impresa ──
+    await prisma.order.update({
+      where: { id: params.id },
+      data:  { labelUrl: 'printed' },
+    })
 
     return new NextResponse(html, {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
