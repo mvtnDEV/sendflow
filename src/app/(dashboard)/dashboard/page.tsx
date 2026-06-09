@@ -7,7 +7,7 @@ import Link from 'next/link'
 const TZ = 'America/Santiago'
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING:    'Pendiente',
+  PENDING:    'Creado',
   RECEIVED:   'Recepcionado',
   IN_TRANSIT: 'En camino',
   DELIVERED:  'Entregado',
@@ -61,7 +61,6 @@ export default async function DashboardPage() {
     weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone: TZ,
   })
 
-  // Pedidos de hoy excluyendo PENDING (ya se muestran en panel separado)
   const recientesActivos = recientes.items.filter(o => o.status !== 'PENDING')
 
   return (
@@ -95,7 +94,7 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* Panel Por recepcionar — solo Super Admin y Store Admin */}
+      {/* Panel Por recepcionar */}
       {canSeePending && statsHoy.pending > 0 && (
         <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:12, padding:16, marginBottom:16 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
@@ -110,7 +109,6 @@ export default async function DashboardPage() {
               Ver todos →
             </Link>
           </div>
-
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
             {pendientes.items.map(o => {
               const now     = new Date()
@@ -128,7 +126,7 @@ export default async function DashboardPage() {
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <span style={{ fontSize:11, color:'#6B7280' }}>{PLATFORM_LABEL[o.platform] ?? o.platform}</span>
                     <span style={{ fontSize:11, background:'#FFFBEB', color:'#92400E', padding:'2px 8px', borderRadius:20, border:'1px solid #FDE68A', fontWeight:500 }}>
-                      Pendiente{isYesterday ? ' · ' + fmtDate(o.createdAt) : ''}
+                      Creado{isYesterday ? ' · ' + fmtDate(o.createdAt) : ''}
                     </span>
                   </div>
                 </Link>
@@ -174,7 +172,6 @@ export default async function DashboardPage() {
         </div>
       ) : recientesActivos.length > 0 ? (
         <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:14 }}>
-          {/* Pedidos de hoy en curso */}
           <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
             <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #F1F5F9' }}>
               <span style={{ fontSize:13, fontWeight:500 }}>Pedidos de hoy en curso</span>
@@ -219,8 +216,6 @@ export default async function DashboardPage() {
               </tbody>
             </table>
           </div>
-
-          {/* Panel lateral */}
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
             <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
               <div style={{ fontSize:13, fontWeight:500, marginBottom:14 }}>Por plataforma hoy</div>
@@ -241,7 +236,6 @@ export default async function DashboardPage() {
                 )
               })}
             </div>
-
             <div style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, padding:20 }}>
               <div style={{ fontSize:13, fontWeight:500, marginBottom:12 }}>Acciones rápidas</div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
