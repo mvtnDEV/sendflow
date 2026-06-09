@@ -6,7 +6,7 @@ import Link from 'next/link'
 import RecepcionesClient from './client'
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING:    'Pendiente',
+  PENDING:    'Creado',
   RECEIVED:   'Recepcionado',
   IN_TRANSIT: 'En camino',
   DELIVERED:  'Entregado',
@@ -95,7 +95,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
           { label:'Envíos',        value:stats.total,     ring:null,                 color:'' },
           { label:'En camino',     value:stats.inTransit, ring:pct(stats.inTransit), color:'#3B82F6' },
           { label:'Entregados',    value:stats.delivered, ring:pct(stats.delivered), color:'#38BDF8' },
-          { label:'Pendientes',    value:stats.pending,   ring:null,                 color:'' },
+          { label:'Creados',       value:stats.pending,   ring:null,                 color:'' },
           { label:'No entregados', value:stats.incident,  ring:null,                 color:'' },
         ].map((s, i, arr) => (
           <div key={s.label} style={{ flex:1, padding:'0 14px', borderRight:i<arr.length-1?'1px solid rgba(255,255,255,.08)':'none', minWidth:80 }}>
@@ -187,6 +187,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
         page={page}
         totalPages={result.totalPages}
         userRole={user?.role ?? ''}
+        userStoreId={user?.storeId ?? undefined}
         searchParams={{
           historial: searchParams.historial,
           storeId:   searchParams.storeId,
