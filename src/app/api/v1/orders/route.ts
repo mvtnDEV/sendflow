@@ -4,8 +4,41 @@ import { prisma } from '@/lib/db/prisma'
 import { verifyApiKey } from '@/lib/utils/api-auth'
 import { createOrder } from '@/lib/services/order.service'
 
-// ID fijo de la tienda Envíame en SendFlow
 const ENVIAME_STORE_ID = 'cmovuegdk000051ctcljm2ort'
+
+// ── Parsear dirección en una línea: "Calle 123, Comuna, Región, Chile" ──
+function parsearDireccion(addressLine: string): {
+  addressStreet: string
+  addressComuna: string
+  addressRegion: string
+} {
+  if (!addressLine) return { addressStreet: '', addressComuna: '', addressRegion: '' }
+
+  const partes = addressLine.split(',').map(p => p.trim())
+
+  // Quitar "Chile" del final si está
+  const filtradas = partes.filter(p => p.toLowerCase() !== 'chile')
+
+  if (filtradas.length >= 3) {
+    return {
+      addressStreet: filtradas[0],
+      addressComuna: filtradas[1],
+      addressRegion: filtradas[2],
+    }
+  } else if (filtradas.length === 2) {
+    return {
+      addressStreet: filtradas[0],
+      addressComuna: filtradas[1],
+      addressRegion: 'Región Metropolitana',
+    }
+  } else {
+    return {
+      addressStreet: filtradas[0] ?? addressLine,
+      addressComuna: '',
+      addressRegion: 'Región Metropolitana',
+    }
+  }
+}
 
 // POST /api/v1/orders — crear pedido
 export async function POST(req: NextRequest) {
@@ -18,16 +51,34 @@ export async function POST(req: NextRequest) {
   const {
     customerName, customerPhone, customerEmail,
     addressStreet, addressComuna, addressRegion, addressNotes,
+    address,        // ← dirección en una línea (formato Senby)
+    notes,          // ← referencia externa de Senby
     bultos, externalId, storeId, subStoreName,
   } = body
 
-  if (!customerName)  return NextResponse.json({ ok: false, error: 'customerName es requerido' }, { status: 400 })
-  if (!addressStreet) return NextResponse.json({ ok: false, error: 'addressStreet es requerido' }, { status: 400 })
-  if (!addressComuna) return NextResponse.json({ ok: false, error: 'addressComuna es requerido' }, { status: 400 })
-  if (!addressRegion) return NextResponse.json({ ok: false, error: 'addressRegion es requerido' }, { status: 400 })
+  if (!customerName) return NextResponse.json({ ok: false, error: 'customerName es requerido' }, { status: 400 })
 
-  // Todos los pedidos que vienen por API van a Envíame
-  // a menos que se especifique un storeId distinto
+  // ── Resolver dirección — soporta formato clásico y formato Senby (una línea) ──
+  let resolvedStreet  = addressStreet
+  let resolvedComuna  = addressComuna
+  let resolvedRegion  = addressRegion
+
+  if (address && !addressStreet) {
+    // Formato Senby — dirección en una sola línea
+    const parsed    = parsearDireccion(address)
+    resolvedStreet  = parsed.addressStreet
+    resolvedComuna  = parsed.addressComuna
+    resolvedRegion  = parsed.addressRegion
+  }
+
+  if (!resolvedStreet) return NextResponse.json({ ok: false, error: 'addressStreet o address es requerido' }, { status: 400 })
+  if (!resolvedComuna) return NextResponse.json({ ok: false, error: 'addressComuna requerido' }, { status: 400 })
+  if (!resolvedRegion) resolvedRegion = 'Región Metropolitana'
+
+  // ── Referencia — soporta externalId clásico y notes de Senby ──
+  const resolvedExternalId = externalId || notes || undefined
+
+  // ── Resolver tienda ──
   let resolvedStoreId = storeId || apiKey.storeId || ENVIAME_STORE_ID
   if (!resolvedStoreId) {
     const firstStore = await prisma.store.findFirst({ where: { isActive: true }, select: { id: true } })
@@ -42,12 +93,12 @@ export async function POST(req: NextRequest) {
       customerName,
       customerPhone,
       customerEmail,
-      addressStreet,
-      addressComuna,
-      addressRegion,
-      addressNotes,
+      addressStreet: resolvedStreet,
+      addressComuna: resolvedComuna,
+      addressRegion: resolvedRegion,
+      addressNotes:  addressNotes || undefined,
       bultos:        bultos ?? 1,
-      sourceId:      externalId,
+      sourceId:      resolvedExternalId,
       subStoreName:  subStoreName ?? undefined,
       createdBy:     'api',
     })
@@ -87,9 +138,9 @@ export async function GET(req: NextRequest) {
   const skip         = (page - 1) * pageSize
 
   const where: any = {}
-  if (apiKey.storeId) where.storeId    = apiKey.storeId
-  if (status)         where.status      = status
-  if (externalId)     where.sourceId    = externalId
+  if (apiKey.storeId) where.storeId     = apiKey.storeId
+  if (status)         where.status       = status
+  if (externalId)     where.sourceId     = externalId
   if (subStoreName)   where.subStoreName = subStoreName
   if (date) {
     const d = new Date(date)
