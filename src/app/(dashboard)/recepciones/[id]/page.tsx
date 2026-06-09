@@ -10,7 +10,7 @@ const TZ = 'America/Santiago'
 const fmt = (d: Date | string) => new Date(d).toLocaleString('es-CL', { timeZone: TZ, day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING:    'Pedido creado',
+  PENDING:    'Creado',
   RECEIVED:   'Recepcionado en bodega',
   IN_TRANSIT: 'En camino',
   DELIVERED:  'Entregado',
@@ -67,7 +67,6 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     ? getPlatformStatus(order.platform, order.rawPayload)
     : null
 
-  // Filtrar eventos internos para STORE_ADMIN
   const visibleEvents = order.events.filter(ev => {
     if (!isStoreAdmin) return true
     if (ev.note && NOTAS_INTERNAS.some(n => ev.note!.toLowerCase().includes(n))) return false
@@ -253,6 +252,13 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               <div style={{ background:'#F1F5F9', border:'1px solid #E2E8F0', borderRadius:12, padding:16, textAlign:'center' }}>
                 <div style={{ fontSize:20, marginBottom:4 }}>🚫</div>
                 <div style={{ fontSize:14, fontWeight:500, color:'#475569' }}>Pedido anulado</div>
+              </div>
+            )}
+            {order.status === 'PENDING' && (
+              <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:12, padding:16, textAlign:'center' }}>
+                <div style={{ fontSize:20, marginBottom:4 }}>🕐</div>
+                <div style={{ fontSize:14, fontWeight:500, color:'#92400E' }}>Pedido creado</div>
+                <div style={{ fontSize:12, color:'#92400E', marginTop:4 }}>Pendiente de recepción en bodega</div>
               </div>
             )}
             <OrderActions orderId={order.id} currentStatus={order.status} userRole={user?.role ?? ''} />
