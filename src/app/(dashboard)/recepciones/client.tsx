@@ -10,7 +10,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
 }
 const STATUS_LABEL: Record<string, string> = {
-  PENDING:    'Pendiente',
+  PENDING:    'Creado',
   RECEIVED:   'Recepcionado',
   IN_TRANSIT: 'En camino',
   DELIVERED:  'Entregado',
@@ -58,7 +58,7 @@ function fmtDate(date: Date | string) {
 }
 
 export default function RecepcionesClient({
-  storeName, todayOnly, orders = [], total, page, totalPages, userRole, searchParams,
+  storeName, todayOnly, orders = [], total, page, totalPages, userRole, userStoreId, searchParams,
 }: {
   storeName:    string
   todayOnly:    boolean
@@ -67,6 +67,7 @@ export default function RecepcionesClient({
   page:         number
   totalPages:   number
   userRole:     string
+  userStoreId?: string
   searchParams: Record<string, string | undefined>
 }) {
   const [loadingExport,      setLoadingExport]      = useState(false)
@@ -139,7 +140,7 @@ export default function RecepcionesClient({
 
   async function recepcionarTodos() {
     if (pendientes.length === 0) return
-    if (!confirm(`¿Recepcionar ${pendientes.length} pedido${pendientes.length !== 1 ? 's' : ''} pendiente${pendientes.length !== 1 ? 's' : ''}?\n\nEsto los enviará automáticamente a Envios Now.`)) return
+    if (!confirm(`¿Recepcionar ${pendientes.length} pedido${pendientes.length !== 1 ? 's' : ''} creado${pendientes.length !== 1 ? 's' : ''}?\n\nEsto los enviará automáticamente a Envios Now.`)) return
     setLoadingRecepcionar(true)
     setResultado(null)
     try {
@@ -187,20 +188,9 @@ export default function RecepcionesClient({
           .mobile-card { display: none !important; }
           .desktop-table { display: block !important; }
         }
-        .sticky-arrow {
-          position: sticky;
-          right: 0;
-          z-index: 2;
-        }
-        .sticky-arrow-header {
-          position: sticky;
-          right: 0;
-          z-index: 3;
-          background: #F8FAFC;
-        }
-        tbody tr:hover .sticky-arrow {
-          background: #F0F7FF !important;
-        }
+        .sticky-arrow { position: sticky; right: 0; z-index: 2; }
+        .sticky-arrow-header { position: sticky; right: 0; z-index: 3; background: #F8FAFC; }
+        tbody tr:hover .sticky-arrow { background: #F0F7FF !important; }
       `}</style>
 
       <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
@@ -265,7 +255,6 @@ export default function RecepcionesClient({
                     <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor:'pointer', width:15, height:15 }}/>
                   </th>
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>N° pedido</th>
-                  {/* Sub-tienda — oculta para STORE_ADMIN */}
                   {!isStoreAdmin && (
                     <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Sub-tienda</th>
                   )}
@@ -275,7 +264,7 @@ export default function RecepcionesClient({
                   <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Dirección</th>
                   <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Plataforma</th>
                   {!isStoreAdmin && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Bultos</th>}
-                  {isStoreAdmin && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado WOO</th>}
+                  {isStoreAdmin && userStoreId === 'cmouw44ej0004thpecq6bct35' && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado WOO</th>}
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado</th>
                   <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Hora</th>
                   <th className="sticky-arrow-header" style={{ padding:'10px 12px', borderBottom:'1px solid #E2E8F0', width:48 }}></th>
@@ -283,16 +272,15 @@ export default function RecepcionesClient({
               </thead>
               <tbody>
                 {orders.map(order => {
-                  const sc             = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-                  const isSelected     = selected.has(order.id)
-                  const sourceLabel    = formatSourceId(order.sourceId, order.platform)
+                  const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+                  const isSelected  = selected.has(order.id)
+                  const sourceLabel = formatSourceId(order.sourceId, order.platform)
                   const platformStatus = getPlatformStatus(order.rawPayload)
                   return (
                     <tr key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white' }}>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelected(order.id)} style={{ cursor:'pointer', width:15, height:15 }}/>
                       </td>
-
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500 }}>
                         {isStoreAdmin && sourceLabel ? (
                           <div>
@@ -303,8 +291,6 @@ export default function RecepcionesClient({
                           <Link href={`/recepciones/${order.id}`} style={{ color:'#1D4ED8', textDecoration:'none' }}>{order.orderNumber}</Link>
                         )}
                       </td>
-
-                      {/* Sub-tienda — oculta para STORE_ADMIN */}
                       {!isStoreAdmin && (
                         <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9' }}>
                           {order.subStoreName ? (
@@ -314,23 +300,19 @@ export default function RecepcionesClient({
                           )}
                         </td>
                       )}
-
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12 }}>
                         <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500, whiteSpace:'nowrap' }}>{order.store?.name ?? '—'}</span>
                       </td>
-
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{order.customerName}</td>
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{order.customerPhone || '—'}</td>
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                         {order.addressStreet}, {order.addressComuna}
                       </td>
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{PLATFORM_LABEL[order.platform] ?? order.platform}</td>
-
                       {!isStoreAdmin && (
                         <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:13, textAlign:'center' }}>{order.bultos}</td>
                       )}
-
-                      {isStoreAdmin && (
+                      {isStoreAdmin && userStoreId === 'cmouw44ej0004thpecq6bct35' && (
                         <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                           {platformStatus ? (
                             <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500 }}>{platformStatus}</span>
@@ -339,24 +321,20 @@ export default function RecepcionesClient({
                           )}
                         </td>
                       )}
-
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                         <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
                           <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
                           {STATUS_LABEL[order.status]}
                         </span>
                         {order.evidencePhoto1 && <span style={{ marginLeft:4, fontSize:11 }}>📷</span>}
-                        {/* Badge etiqueta impresa — solo para STORE_ADMIN */}
                         {order.labelUrl && isStoreAdmin && (
                           <span title="Etiqueta impresa" style={{ marginLeft:4, fontSize:11, padding:'1px 6px', borderRadius:10, background:'#F0FDF4', color:'#166534', fontWeight:500, border:'1px solid #BBF7D0' }}>🖨 Impresa</span>
                         )}
                       </td>
-
                       <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF', whiteSpace:'nowrap' }}>
                         {fmtTime(order.createdAt)}
                         {!todayOnly && <div style={{ fontSize:11 }}>{fmtDate(order.createdAt)}</div>}
                       </td>
-
                       <td className="sticky-arrow" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', background: isSelected ? '#F0F7FF' : 'white', boxShadow:'-3px 0 8px rgba(0,0,0,0.06)' }}>
                         <Link href={`/recepciones/${order.id}`} style={{ color:'#2563EB', fontSize:18, textDecoration:'none', fontWeight:700, padding:'4px 8px', background:'#EFF6FF', borderRadius:6, display:'inline-block' }}>→</Link>
                       </td>
@@ -370,9 +348,9 @@ export default function RecepcionesClient({
           {/* CARDS MOBILE */}
           <div className="mobile-card" style={{ flexDirection:'column', gap:8 }}>
             {orders.map(order => {
-              const sc             = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-              const isSelected     = selected.has(order.id)
-              const sourceLabel    = formatSourceId(order.sourceId, order.platform)
+              const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+              const isSelected  = selected.has(order.id)
+              const sourceLabel = formatSourceId(order.sourceId, order.platform)
               const platformStatus = getPlatformStatus(order.rawPayload)
               return (
                 <div key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white', border:'1px solid #E2E8F0', borderRadius:12, padding:14, position:'relative' }}>
@@ -388,7 +366,6 @@ export default function RecepcionesClient({
                         ) : (
                           <div style={{ fontSize:14, fontWeight:600, color:'#0B1628' }}>{order.orderNumber}</div>
                         )}
-                        {/* Sub-tienda en mobile — oculta para STORE_ADMIN */}
                         {!isStoreAdmin && order.subStoreName && (
                           <span style={{ fontSize:10, padding:'1px 6px', borderRadius:10, background:'#FFF7ED', color:'#C2410C', fontWeight:500, border:'1px solid #FED7AA' }}>{order.subStoreName}</span>
                         )}
@@ -409,11 +386,10 @@ export default function RecepcionesClient({
                     <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:'#F1F5F9', color:'#374151', fontWeight:500 }}>{order.store?.name ?? '—'}</span>
                     <span style={{ fontSize:10, color:'#9CA3AF' }}>{PLATFORM_LABEL[order.platform] ?? order.platform}</span>
                     <span style={{ fontSize:10, color:'#9CA3AF' }}>{fmtTime(order.createdAt)}</span>
-                    {isStoreAdmin && platformStatus && (
+                    {isStoreAdmin && userStoreId === 'cmouw44ej0004thpecq6bct35' && platformStatus && (
                       <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500 }}>{platformStatus}</span>
                     )}
                     {order.evidencePhoto1 && <span style={{ fontSize:11 }}>📷</span>}
-                    {/* Badge etiqueta impresa en mobile — solo para STORE_ADMIN */}
                     {order.labelUrl && isStoreAdmin && (
                       <span style={{ fontSize:10, padding:'1px 6px', borderRadius:10, background:'#F0FDF4', color:'#166534', fontWeight:500, border:'1px solid #BBF7D0' }}>🖨 Impresa</span>
                     )}
