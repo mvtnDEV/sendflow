@@ -255,3 +255,22 @@ model ApiRateLimit {
   @@index([apiKeyId, createdAt])
   @@map("api_rate_limits")
 }
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  apiKeyId    String
+  orderId     String
+  event       String
+  url         String
+  payload     Json
+  statusCode  Int?
+  responseBody String?
+  success     Boolean  @default(false)
+  attempt     Int      @default(1)
+  errorMessage String?
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+  @@index([apiKeyId, createdAt])
+  @@index([success, createdAt])
+  @@map("webhook_events")
+}
