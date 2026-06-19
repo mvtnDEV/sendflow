@@ -15,6 +15,28 @@ function getChileOffsetStr(): string {
   return `${sign}${String(Math.abs(offsetHours)).padStart(2, '0')}:00`
 }
 
+// ── Clasificación de comunas por zona ──
+const COMUNAS_EXTRA_URBANO = ['colina', 'padre hurtado']
+const COMUNAS_RURAL = [
+  'paine', 'pirque', 'til til', 'tiltil', 'melipilla',
+  'peñaflor', 'penaflor', 'isla de maipo', 'lampa',
+]
+
+function normalizarComuna(comuna: string): string {
+  return comuna
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // quita tildes
+}
+
+function clasificarZona(comuna: string): 'URBANA' | 'EXTRA_URBANA' | 'RURAL' {
+  const c = normalizarComuna(comuna)
+  if (COMUNAS_RURAL.some(r => c.includes(r) || r.includes(c))) return 'RURAL'
+  if (COMUNAS_EXTRA_URBANO.some(e => c.includes(e) || e.includes(c))) return 'EXTRA_URBANA'
+  return 'URBANA'
+}
+
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user || user.role !== 'SUPER_ADMIN') {
@@ -57,8 +79,6 @@ export async function GET(req: NextRequest) {
     const orders = await prisma.order.findMany({
       where: {
         storeId: store.id,
-        // ── Solo pedidos que salieron a ruta con Moovex ese mes ──
-        // Si inTransitAt es null = la tienda lo despachó por su cuenta = no se cobra
         inTransitAt: { gte: start, lte: endDate },
         status: { in: ['DELIVERED', 'IN_TRANSIT', 'INCIDENT'] },
       },
@@ -77,6 +97,40 @@ export async function GET(req: NextRequest) {
       orderBy: { inTransitAt: 'asc' },
     })
 
+    const tarifaUrbana      = store.tarifaUrbana      ? Number(store.tarifaUrbana)      : 0
+    const tarifaExtraUrbana = store.tarifaExtraUrbana ? Number(store.tarifaExtraUrbana) : 0
+    const tarifaRural       = store.tarifaRural       ? Number(store.tarifaRural)       : 0
+
+    // ── Clasificar cada pedido por zona y calcular su tarifa ──
+    const ordersConZona = orders.map(o => {
+      const zona = clasificarZona(o.addressComuna)
+      const tarifa = zona === 'RURAL'        ? tarifaRural
+                    : zona === 'EXTRA_URBANA' ? tarifaExtraUrbana
+                    : tarifaUrbana
+      return { ...o, zona, tarifa }
+    })
+
+    // ── Resumen por zona ──
+    const resumenZonas = {
+      URBANA: {
+        cantidad: ordersConZona.filter(o => o.zona === 'URBANA').length,
+        tarifa:   tarifaUrbana,
+        subtotal: ordersConZona.filter(o => o.zona === 'URBANA').length * tarifaUrbana,
+      },
+      EXTRA_URBANA: {
+        cantidad: ordersConZona.filter(o => o.zona === 'EXTRA_URBANA').length,
+        tarifa:   tarifaExtraUrbana,
+        subtotal: ordersConZona.filter(o => o.zona === 'EXTRA_URBANA').length * tarifaExtraUrbana,
+      },
+      RURAL: {
+        cantidad: ordersConZona.filter(o => o.zona === 'RURAL').length,
+        tarifa:   tarifaRural,
+        subtotal: ordersConZona.filter(o => o.zona === 'RURAL').length * tarifaRural,
+      },
+    }
+
+    const totalGeneral = resumenZonas.URBANA.subtotal + resumenZonas.EXTRA_URBANA.subtotal + resumenZonas.RURAL.subtotal
+
     return {
       store: {
         id:                store.id,
@@ -89,8 +143,10 @@ export async function GET(req: NextRequest) {
         tarifaRetiro:      store.tarifaRetiro      ? Number(store.tarifaRetiro)      : null,
         fechaTarifa:       store.fechaTarifa,
       },
-      orders,
-      total: orders.length,
+      orders: ordersConZona,
+      total: ordersConZona.length,
+      resumenZonas,
+      totalGeneral,
     }
   }))
 
