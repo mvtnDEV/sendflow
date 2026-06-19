@@ -27,15 +27,21 @@ export async function GET(req: NextRequest) {
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
 
   const orders = await prisma.order.findMany({
     where: {
-      createdAt: { gte: today },
-      status:    { notIn: ['CANCELLED', 'PENDING'] },
+      // ── Pedidos activos del conductor hoy ──
+      // Antes filtraba por createdAt (fecha de creación del pedido),
+      // pero un pedido puede haber sido creado días antes y recién hoy
+      // pasar por bodega/ruta. Lo correcto es traer:
+      //   a) lo que está en camino o con incidencia AHORA (sin importar cuándo se creó)
+      //   b) lo que salió a ruta o se entregó/tuvo incidencia HOY
       OR: [
-        { evidenceTakenBy: null },
-        { evidenceTakenBy: driver.id },
-        { status: { in: ['PENDING', 'RECEIVED', 'IN_TRANSIT', 'INCIDENT'] } },
+        { status: { in: ['IN_TRANSIT', 'INCIDENT'] } },
+        { inTransitAt: { gte: today, lt: tomorrow } },
+        { deliveredAt: { gte: today, lt: tomorrow } },
       ],
     },
     include: {
