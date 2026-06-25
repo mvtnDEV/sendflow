@@ -11,13 +11,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
   }
 
-  const orderNumber = req.nextUrl.searchParams.get('orderNumber')
-  if (!orderNumber) {
-    return NextResponse.json({ ok: false, error: 'Falta orderNumber' }, { status: 400 })
+  const orderNumberParam = req.nextUrl.searchParams.get('orderNumber')
+  const idParam          = req.nextUrl.searchParams.get('id')
+
+  if (!orderNumberParam && !idParam) {
+    return NextResponse.json({ ok: false, error: 'Falta orderNumber o id' }, { status: 400 })
   }
 
+  // Acepta el número con o sin "#" — intenta ambas variantes
+  const candidates = orderNumberParam
+    ? [orderNumberParam, `#${orderNumberParam.replace(/^#/, '')}`, orderNumberParam.replace(/^#/, '')]
+    : []
+
   const order = await prisma.order.findFirst({
-    where:  { orderNumber },
+    where: idParam
+      ? { id: idParam }
+      : { orderNumber: { in: candidates } },
     select: { id: true, orderNumber: true, status: true, integrationId: true, rawPayload: true },
   })
 
@@ -75,6 +84,6 @@ export async function GET(req: NextRequest) {
     shippingId,
     mlStatus:    shipment?.status ?? null,
     mlSubstatus: shipment?.substatus ?? null,
-    mlFull:      shipment, // todo el JSON crudo del shipment, para revisar otros campos también
+    mlFull:      shipment,
   })
 }
