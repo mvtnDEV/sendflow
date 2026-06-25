@@ -242,15 +242,13 @@ export async function listOrders(filters: OrderFilters) {
 
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     if (filters.superAdminView) {
-      // SUPER_ADMIN: solo pedidos que salieron a ruta hoy o están activos
-      // Pendientes NO aparecen — buscarlos con filtro status=PENDING explícito
       where.AND = [
         {
           OR: [
-            { inTransitAt: today },                          // salieron a ruta hoy
-            { status: 'IN_TRANSIT' },                        // en camino de días anteriores
-            { deliveredAt: today },                          // entregados hoy
-            { status: 'INCIDENT', inTransitAt: today },      // incidencias de hoy
+            { inTransitAt: today },
+            { status: 'IN_TRANSIT' },
+            { deliveredAt: today },
+            { status: 'INCIDENT', inTransitAt: today },
           ],
         },
         {
@@ -263,12 +261,11 @@ export async function listOrders(filters: OrderFilters) {
         },
       ]
     } else {
-      // STORE_ADMIN: pedidos que salieron a ruta hoy + pendientes creados hoy
       where.OR = [
-        { inTransitAt: today },                          // salieron a ruta hoy
-        { deliveredAt: today },                          // entregados hoy
-        { status: 'PENDING', createdAt: today },         // pendientes de hoy
-        { status: 'INCIDENT', inTransitAt: today },      // incidencias de hoy
+        { inTransitAt: today },
+        { deliveredAt: today },
+        { status: 'PENDING', createdAt: today },
+        { status: 'INCIDENT', inTransitAt: today },
       ]
     }
   } else if (filters.dateFrom || filters.dateTo) {
@@ -316,6 +313,7 @@ export async function listOrders(filters: OrderFilters) {
         createdAt:      true,
         evidencePhoto1: true,
         labelUrl:       true,
+        mlShippedAt:    true,
         rawPayload:     true,
         store: { select: { id: true, name: true } },
       },
@@ -333,11 +331,10 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
   if (storeId) baseWhere.storeId = storeId
 
   if (todayOnly) {
-    // Stats basadas en pedidos activos del día — sin PENDING
     baseWhere.OR = [
-      { inTransitAt: today },   // salieron a ruta hoy
-      { deliveredAt: today },   // entregados hoy
-      { status: 'IN_TRANSIT' }, // en camino activos de días anteriores
+      { inTransitAt: today },
+      { deliveredAt: today },
+      { status: 'IN_TRANSIT' },
     ]
   }
 
