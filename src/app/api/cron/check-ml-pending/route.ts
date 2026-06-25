@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { Prisma } from '@prisma/client'
 import { checkMLShipmentStatus } from '@/lib/integrations/mercadolibre-status'
 
 export async function GET(req: NextRequest) {
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
   const pendientes = await prisma.order.findMany({
     where: {
       platform: 'MERCADOLIBRE',
-      pendingNowEvidence: { not: null },
+      pendingNowEvidence: { not: Prisma.JsonNull },
       status: { notIn: ['DELIVERED', 'CANCELLED'] },
     },
     select: { id: true, orderNumber: true, pendingNowEvidence: true },
