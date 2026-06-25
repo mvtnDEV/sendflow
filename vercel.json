@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/check-ml-pending",
-      "schedule": "*/10 * * * *"
+      "schedule": "*/3 * * * *"
     }
   ],
   "headers": [
