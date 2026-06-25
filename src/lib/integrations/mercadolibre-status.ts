@@ -3,9 +3,10 @@ import { decrypt, encrypt } from '@/lib/utils/crypto'
 import { refreshMLToken } from '@/lib/integrations/mercadolibre'
 
 interface MLShipmentCheck {
-  isDelivered:    boolean
-  isCancelled:    boolean
-  shipmentStatus: string | null
+  isDelivered:       boolean
+  isCancelled:       boolean
+  shipmentStatus:    string | null
+  shipmentSubstatus: string | null
 }
 
 // ── Consulta el estado real del envío en ML Flex usando el shipping.id guardado en rawPayload ──
@@ -64,12 +65,17 @@ export async function checkMLShipmentStatus(orderId: string): Promise<MLShipment
     return null
   }
 
-  const shipment = await res.json()
-  const status   = shipment?.status ?? null
+  const shipment  = await res.json()
+  const status    = shipment?.status ?? null
+  const substatus = shipment?.substatus ?? null
+
+  // Log temporal para ver qué valores reales devuelve ML — bórralo después de revisar
+  console.log('[ML check] shipping_id:', shippingId, '| status:', status, '| substatus:', substatus)
 
   return {
-    isDelivered:    status === 'delivered',
-    isCancelled:    status === 'cancelled',
-    shipmentStatus: status,
+    isDelivered:       status === 'delivered',
+    isCancelled:       status === 'cancelled',
+    shipmentStatus:    status,
+    shipmentSubstatus: substatus,
   }
 }
