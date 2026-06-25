@@ -77,8 +77,9 @@ export default function RecepcionesClient({
   const [selected,           setSelected]           = useState<Set<string>>(new Set())
 
   const isStoreAdmin = userRole === 'STORE_ADMIN'
-  const pendientes   = orders.filter(o => o.status === 'PENDING')
-  const allSelected  = selected.size === orders.length && orders.length > 0
+  const isSuperAdmin = userRole === 'SUPER_ADMIN'
+  const pendientes    = orders.filter(o => o.status === 'PENDING')
+  const allSelected   = selected.size === orders.length && orders.length > 0
 
   function buildPageUrl(p: number) {
     const params = new URLSearchParams()
@@ -265,6 +266,10 @@ export default function RecepcionesClient({
                   <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Plataforma</th>
                   {!isStoreAdmin && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Bultos</th>}
                   {isStoreAdmin && userStoreId === 'cmouw44ej0004thpecq6bct35' && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado WOO</th>}
+                  {/* Columna Flex — solo SUPER_ADMIN */}
+                  {isSuperAdmin && (
+                    <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Flex</th>
+                  )}
                   <th style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado</th>
                   <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Hora</th>
                   <th className="sticky-arrow-header" style={{ padding:'10px 12px', borderBottom:'1px solid #E2E8F0', width:48 }}></th>
@@ -276,6 +281,7 @@ export default function RecepcionesClient({
                   const isSelected  = selected.has(order.id)
                   const sourceLabel = formatSourceId(order.sourceId, order.platform)
                   const platformStatus = getPlatformStatus(order.rawPayload)
+                  const esFlex = order.platform === 'MERCADOLIBRE'
                   return (
                     <tr key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white' }}>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
@@ -321,6 +327,24 @@ export default function RecepcionesClient({
                           )}
                         </td>
                       )}
+                      {/* Celda Flex — solo SUPER_ADMIN */}
+                      {isSuperAdmin && (
+                        <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
+                          {!esFlex ? (
+                            <span style={{ fontSize:11, color:'#D1D5DB' }}>—</span>
+                          ) : order.mlShippedAt ? (
+                            <span title={`Escaneado por Flex: ${new Date(order.mlShippedAt).toLocaleString('es-CL', { timeZone: TZ })}`}
+                              style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500, border:'1px solid #BBF7D0' }}>
+                              📦 Escaneado
+                            </span>
+                          ) : (
+                            <span title="Aún no escaneado por el repartidor de Flex"
+                              style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFFBEB', color:'#92400E', fontWeight:500, border:'1px solid #FDE68A' }}>
+                              ⏳ Esperando
+                            </span>
+                          )}
+                        </td>
+                      )}
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                         <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
                           <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
@@ -352,6 +376,7 @@ export default function RecepcionesClient({
               const isSelected  = selected.has(order.id)
               const sourceLabel = formatSourceId(order.sourceId, order.platform)
               const platformStatus = getPlatformStatus(order.rawPayload)
+              const esFlex = order.platform === 'MERCADOLIBRE'
               return (
                 <div key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white', border:'1px solid #E2E8F0', borderRadius:12, padding:14, position:'relative' }}>
                   <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10 }}>
@@ -388,6 +413,18 @@ export default function RecepcionesClient({
                     <span style={{ fontSize:10, color:'#9CA3AF' }}>{fmtTime(order.createdAt)}</span>
                     {isStoreAdmin && userStoreId === 'cmouw44ej0004thpecq6bct35' && platformStatus && (
                       <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500 }}>{platformStatus}</span>
+                    )}
+                    {/* Badge Flex en mobile — solo SUPER_ADMIN */}
+                    {isSuperAdmin && esFlex && (
+                      order.mlShippedAt ? (
+                        <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500, border:'1px solid #BBF7D0' }}>
+                          📦 Flex escaneado
+                        </span>
+                      ) : (
+                        <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:'#FFFBEB', color:'#92400E', fontWeight:500, border:'1px solid #FDE68A' }}>
+                          ⏳ Esperando Flex
+                        </span>
+                      )
                     )}
                     {order.evidencePhoto1 && <span style={{ fontSize:11 }}>📷</span>}
                     {order.labelUrl && isStoreAdmin && (
