@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { Prisma } from '@prisma/client'
 import { checkMLShipmentStatus } from '@/lib/integrations/mercadolibre-status'
 
 const STATE_MAP: Record<string, string> = {
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
           ...(images?.[0] && { evidencePhoto1: images[0] }),
           ...(images?.[1] && { evidencePhoto2: images[1] }),
           evidenceNote,
-          pendingNowEvidence:  null,
+          pendingNowEvidence:  Prisma.JsonNull,
           pendingNowCheckedAt: null,
           events: {
             create: {
