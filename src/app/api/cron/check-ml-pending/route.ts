@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
           ...(pending?.images?.[0] && { evidencePhoto1: pending.images[0] }),
           ...(pending?.images?.[1] && { evidencePhoto2: pending.images[1] }),
           evidenceNote: pending?.evidenceNote ?? null,
-          pendingNowEvidence:  null,
+          pendingNowEvidence:  Prisma.JsonNull,
           pendingNowCheckedAt: now,
           events: {
             create: {
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
         where: { id: order.id },
         data: {
           status: 'CANCELLED',
-          pendingNowEvidence:  null,
+          pendingNowEvidence:  Prisma.JsonNull,
           pendingNowCheckedAt: now,
           events: {
             create: {
