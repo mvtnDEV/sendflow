@@ -138,6 +138,8 @@ model Order {
   dataRetentionDate DateTime?
   anonymizedAt      DateTime?
   rawPayload        Json?
+  pendingNowEvidence  Json?
+  pendingNowCheckedAt DateTime?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
