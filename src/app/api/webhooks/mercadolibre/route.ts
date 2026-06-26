@@ -9,12 +9,10 @@ import { upsertOrderFromWebhook } from '@/lib/services/order.service'
 function getMLStatus(order: any, shipment?: any): string | null {
   const shipStatus = shipment?.status ?? null
   const orderStatus = order?.status ?? null
-
   if (shipStatus === 'delivered') return 'DELIVERED'
   if (shipStatus === 'not_delivered') return 'INCIDENT'
   if (shipStatus === 'shipped') return 'IN_TRANSIT'
   if (orderStatus === 'cancelled') return 'CANCELLED'
-
   return null
 }
 
@@ -40,6 +38,7 @@ export async function POST(req: NextRequest) {
       isActive:        true,
     },
   })
+
   if (!integration) {
     return NextResponse.json({ error: 'Integración no encontrada' }, { status: 404 })
   }
@@ -48,6 +47,7 @@ export async function POST(req: NextRequest) {
     const creds = decrypt(integration.apiKeyEnc)
     let accessToken: string
     let refreshToken: string
+
     if (creds.startsWith('{')) {
       const parsed = JSON.parse(creds)
       accessToken  = parsed.accessToken
@@ -87,7 +87,6 @@ export async function POST(req: NextRequest) {
       }
 
       normalized = await fetchMLOrder(orderId, token)
-
     } catch (err: any) {
       if (err.message?.includes('sin despacho')) {
         console.log('[ML webhook] Pedido sin despacho, ignorando:', orderId)
@@ -121,11 +120,18 @@ export async function POST(req: NextRequest) {
 
       if (existing && existing.status !== newStatus && existing.status !== 'DELIVERED') {
         const now = new Date()
+
+        // Si el shipment confirma date_shipped, lo guardamos como mlShippedAt
+        // (esto evita que quede en null cuando el pedido se cierra muy rápido,
+        // antes de que el cron de check-ml-shipped llegue a registrarlo)
+        const dateShipped = rawShipment?.status_history?.date_shipped ?? null
+
         await prisma.order.update({
           where: { id: existing.id },
           data: {
             status: newStatus as any,
             ...(newStatus === 'DELIVERED' && { deliveredAt: now }),
+            ...(dateShipped && { mlShippedAt: new Date(dateShipped) }),
             events: {
               create: {
                 status:    newStatus as any,
@@ -135,7 +141,7 @@ export async function POST(req: NextRequest) {
             },
           },
         })
-        console.log('[ML webhook] Estado actualizado:', orderId, '->', newStatus)
+        console.log('[ML webhook] Estado actualizado:', orderId, '->', newStatus, '| mlShippedAt:', dateShipped)
       }
     }
 
@@ -145,7 +151,6 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ ok: true })
-
   } catch (err: any) {
     if (err.message?.includes('sin despacho')) {
       console.log('[ML webhook] Pedido sin despacho (post-refresh), ignorando:', orderId)
