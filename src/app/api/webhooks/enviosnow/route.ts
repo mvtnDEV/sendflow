@@ -121,6 +121,11 @@ export async function POST(req: NextRequest) {
         console.log('[EnviosNow] ML Flex confirma entrega, cerrando pedido:', order.orderNumber)
       }
 
+      // Si es ML Flex y se está confirmando DELIVERED, ya pasó la validación contra ML
+      // (mlCheck.isDelivered === true), así que sabemos con certeza que Flex ya escaneó.
+      // Si por algún motivo mlShippedAt sigue null, lo rellenamos aquí mismo.
+      const esFlexEntregado = order.platform === 'MERCADOLIBRE' && newStatus === 'DELIVERED'
+
       await prisma.order.update({
         where: { id: order.id },
         data: {
@@ -142,6 +147,20 @@ export async function POST(req: NextRequest) {
           },
         },
       })
+
+      // Asegurar mlShippedAt si era un Flex recién confirmado entregado
+      if (esFlexEntregado) {
+        const current = await prisma.order.findUnique({
+          where:  { id: order.id },
+          select: { mlShippedAt: true, inTransitAt: true },
+        })
+        if (!current?.mlShippedAt) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data:  { mlShippedAt: current?.inTransitAt ?? now },
+          })
+        }
+      }
 
       console.log('[EnviosNow] Actualizado:', extId, '->', newStatus)
       results.push({ externalId, nowId, status: 'updated', newStatus })
