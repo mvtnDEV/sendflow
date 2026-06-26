@@ -67,7 +67,8 @@ export async function GET(req: NextRequest) {
       try {
         res = await fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
-          signal: AbortSignal.timeout(8000), // ── timeout explícito, evita colgar todo el batch ──
+          signal: AbortSignal.timeout(8000),
+          cache: 'no-store', // ── crítico: evita que Next.js cachee la respuesta de ML ──
         })
       } catch (fetchErr: any) {
         console.error('[Cron ML Shipped] Fetch falló (timeout/red):', order.orderNumber, fetchErr.message)
@@ -88,6 +89,7 @@ export async function GET(req: NextRequest) {
           res = await fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, {
             headers: { Authorization: `Bearer ${refreshed.accessToken}` },
             signal: AbortSignal.timeout(8000),
+            cache: 'no-store',
           })
           console.log('[Cron ML Shipped] Respuesta tras refresh:', order.orderNumber, 'status:', res.status)
         } catch (refreshErr: any) {
