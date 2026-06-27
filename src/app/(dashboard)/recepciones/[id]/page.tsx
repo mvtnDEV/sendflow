@@ -52,8 +52,6 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   if (!canAccessStore(user!, order.storeId)) redirect('/recepciones')
 
   const isStoreAdmin = user?.role === 'STORE_ADMIN'
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN'
-  const esFlex        = order.platform === 'MERCADOLIBRE'
 
   const statusBadge: Record<string, { bg: string; color: string }> = {
     PENDING:    { bg: '#FFFBEB', color: '#92400E' },
@@ -116,17 +114,8 @@ export default async function OrderDetailPage({ params }: { params: { id: string
             {subStoreName}
           </span>
         )}
-
-        {/* Etiqueta Flex — solo SUPER_ADMIN en pedidos ML Flex */}
-        {isSuperAdmin && esFlex && (
-          <a href={`/api/orders/${order.id}/ml-label`} target="_blank" className="print-btn"
-            style={{ marginLeft: isSuperAdmin && esFlex ? 0 : 'auto', padding:'7px 14px', background:'#FFE600', color:'#333', borderRadius:8, fontSize:12, fontWeight:600, textDecoration:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
-            🏷️ Etiqueta Flex
-          </a>
-        )}
-
         <a href={`/api/labels/${order.id}`} target="_blank" className="print-btn"
-          style={{ marginLeft: isSuperAdmin && esFlex ? 0 : 'auto', padding:'7px 14px', background:'#0B1628', color:'white', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
+          style={{ marginLeft:'auto', padding:'7px 14px', background:'#0B1628', color:'white', borderRadius:8, fontSize:12, fontWeight:500, textDecoration:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
           🖨 Imprimir etiqueta
         </a>
       </div>
@@ -238,14 +227,6 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'9px', background:'#2563EB', color:'white', borderRadius:8, textDecoration:'none', fontSize:13, fontWeight:500 }}>
               🖨 Imprimir etiqueta
             </a>
-
-            {/* Botón Etiqueta Flex — solo SUPER_ADMIN en pedidos ML Flex */}
-            {isSuperAdmin && esFlex && (
-              <a href={`/api/orders/${order.id}/ml-label`} target="_blank"
-                style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'9px', background:'#FFE600', color:'#333', borderRadius:8, textDecoration:'none', fontSize:13, fontWeight:600, marginTop:8 }}>
-                🏷️ Etiqueta Flex
-              </a>
-            )}
           </div>
 
           {/* Estado + Acciones */}
