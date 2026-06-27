@@ -72,6 +72,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!res.ok) {
     const errText = await res.text().catch(() => '')
     console.error('[ML label] Error descargando etiqueta:', shippingId, res.status, errText.slice(0, 300))
+
+    // ── Caso específico: envíos gestionados por Fulfillment de ML ──
+    // Estos no tienen etiqueta descargable por la vía pública de shipment_labels.
+    if (errText.includes('INVALID_SHIPMENT_FF_PUBLIC') || errText.includes('is FF and call is public')) {
+      return NextResponse.json({
+        ok: false,
+        error: 'Este envío es gestionado por Fulfillment de Mercado Libre (FF). La etiqueta no está disponible para descarga por esta vía — ML gestiona el despacho directamente desde su centro logístico.',
+        code: 'FULFILLMENT_NOT_SUPPORTED',
+      }, { status: 200 })
+    }
+
     return NextResponse.json({ ok: false, error: `ML API ${res.status}`, detail: errText }, { status: 502 })
   }
 
