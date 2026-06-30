@@ -39,6 +39,19 @@ function todayRange() {
   }
 }
 
+// ── Solo cuentan como "escaneado por la app" los eventos RECEIVED hechos por un conductor real ──
+const CREADORES_AUTOMATICOS = ['system', 'webhook', 'ml-webhook', 'enviosnow-webhook', 'api', 'ml-cron-check']
+
+// Filtro reutilizable: el pedido debe tener un evento RECEIVED con createdBy fuera de la lista automática
+const ESCANEADO_POR_APP = {
+  events: {
+    some: {
+      status: 'RECEIVED' as const,
+      createdBy: { notIn: CREADORES_AUTOMATICOS },
+    },
+  },
+}
+
 interface CreateOrderInput {
   storeId:        string
   integrationId?: string
@@ -240,6 +253,18 @@ export async function listOrders(filters: OrderFilters) {
     ]
   }
 
+  // ── Filtro global: solo pedidos escaneados por la app del conductor ──
+  // Excluye PENDING/CREADO de esta exigencia, ya que esos legítimamente
+  // aún no han pasado por bodega — solo aplica desde RECEIVED en adelante.
+  const condicionesAdicionales: any[] = [
+    {
+      OR: [
+        { status: 'PENDING' },
+        ESCANEADO_POR_APP,
+      ],
+    },
+  ]
+
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     if (filters.superAdminView) {
       where.AND = [
@@ -259,13 +284,19 @@ export async function listOrders(filters: OrderFilters) {
             ],
           },
         },
+        ...condicionesAdicionales,
       ]
     } else {
-      where.OR = [
-        { inTransitAt: today },
-        { deliveredAt: today },
-        { status: 'PENDING', createdAt: today },
-        { status: 'INCIDENT', inTransitAt: today },
+      where.AND = [
+        {
+          OR: [
+            { inTransitAt: today },
+            { deliveredAt: today },
+            { status: 'PENDING', createdAt: today },
+            { status: 'INCIDENT', inTransitAt: today },
+          ],
+        },
+        ...condicionesAdicionales,
       ]
     }
   } else if (filters.dateFrom || filters.dateTo) {
@@ -278,18 +309,25 @@ export async function listOrders(filters: OrderFilters) {
         { NOT: { AND: [{ status: 'PENDING' }, { NOT: { platform: 'MANUAL' } }] } },
         { NOT: { status: 'RECEIVED' } },
         { NOT: { AND: [{ platform: 'WOOCOMMERCE' }, { NOT: { rawPayload: { path: ['status'], equals: 'enviado_intralog' } } }] } },
+        ...condicionesAdicionales,
       ]
+    } else {
+      where.AND = [...condicionesAdicionales]
     }
   } else if (filters.superAdminView && !filters.status) {
     where.AND = [
       { NOT: { AND: [{ status: 'PENDING' }, { NOT: { platform: 'MANUAL' } }] } },
       { NOT: { status: 'RECEIVED' } },
       { NOT: { AND: [{ platform: 'WOOCOMMERCE' }, { NOT: { rawPayload: { path: ['status'], equals: 'enviado_intralog' } } }] } },
+      ...condicionesAdicionales,
     ]
   } else if (filters.superAdminView) {
     where.AND = [
       { NOT: { AND: [{ platform: 'WOOCOMMERCE' }, { NOT: { rawPayload: { path: ['status'], equals: 'enviado_intralog' } } }] } },
+      ...condicionesAdicionales,
     ]
+  } else {
+    where.AND = [...condicionesAdicionales]
   }
 
   const [items, total] = await Promise.all([
@@ -331,10 +369,25 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
   if (storeId) baseWhere.storeId = storeId
 
   if (todayOnly) {
+    baseWhere.AND = [
+      {
+        OR: [
+          { inTransitAt: today },
+          { deliveredAt: today },
+          { status: 'IN_TRANSIT' },
+        ],
+      },
+      {
+        OR: [
+          { status: 'PENDING' },
+          ESCANEADO_POR_APP,
+        ],
+      },
+    ]
+  } else {
     baseWhere.OR = [
-      { inTransitAt: today },
-      { deliveredAt: today },
-      { status: 'IN_TRANSIT' },
+      { status: 'PENDING' },
+      ESCANEADO_POR_APP,
     ]
   }
 
