@@ -71,6 +71,7 @@ export default function RecepcionesClient({
   searchParams: Record<string, string | undefined>
 }) {
   const [loadingExport,      setLoadingExport]      = useState(false)
+  const [loadingExportFlex,  setLoadingExportFlex]  = useState(false)
   const [loadingRecepcionar, setLoadingRecepcionar] = useState(false)
   const [loadingEtiquetas,   setLoadingEtiquetas]   = useState(false)
   const [resultado,          setResultado]          = useState<{ ok: boolean; msg: string } | null>(null)
@@ -80,6 +81,9 @@ export default function RecepcionesClient({
   const isSuperAdmin = userRole === 'SUPER_ADMIN'
   const pendientes    = orders.filter(o => o.status === 'PENDING')
   const allSelected   = selected.size === orders.length && orders.length > 0
+
+  // ── Pedidos Flex en estado "Esperando" (aún no escaneados por el repartidor) ──
+  const flexEsperando = orders.filter(o => o.platform === 'MERCADOLIBRE' && !o.mlShippedAt)
 
   function buildPageUrl(p: number) {
     const params = new URLSearchParams()
@@ -137,6 +141,35 @@ export default function RecepcionesClient({
       XLSX.writeFile(wb, `sendflow_${storeName}_${periodo}_${fecha}.xlsx`)
     } catch { alert('Error exportando.') }
     finally { setLoadingExport(false) }
+  }
+
+  // ── Exportación separada: solo Flex aún no escaneados por el repartidor ──
+  async function exportExcelFlexEsperando() {
+    if (flexEsperando.length === 0) { alert('No hay pedidos Flex esperando escaneo en esta vista.'); return }
+    setLoadingExportFlex(true)
+    try {
+      const XLSX = await import('xlsx')
+      const rows = flexEsperando.map((o: any) => ({
+        'N° Pedido':   o.orderNumber,
+        'ID Origen':   formatSourceId(o.sourceId, o.platform) ?? '—',
+        'Tienda':      o.store?.name || '',
+        'Cliente':     o.customerName,
+        'Teléfono':    o.customerPhone || '',
+        'Dirección':   o.addressStreet,
+        'Comuna':      o.addressComuna,
+        'Bultos':      o.bultos,
+        'Estado':      STATUS_LABEL[o.status] ?? o.status,
+        'Creado':      new Date(o.createdAt).toLocaleString('es-CL'),
+      }))
+      const ws = XLSX.utils.json_to_sheet(rows)
+      ws['!cols'] = [{wch:12},{wch:14},{wch:20},{wch:22},{wch:14},{wch:28},{wch:16},{wch:8},{wch:14},{wch:18}]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Flex sin escanear')
+      const fecha   = new Date().toLocaleDateString('es-CL').replace(/\//g, '-')
+      const periodo = todayOnly ? 'hoy' : 'historial'
+      XLSX.writeFile(wb, `flex_esperando_${periodo}_${fecha}.xlsx`)
+    } catch { alert('Error exportando.') }
+    finally { setLoadingExportFlex(false) }
   }
 
   async function recepcionarTodos() {
@@ -211,6 +244,15 @@ export default function RecepcionesClient({
           style={{ padding:'7px 14px', background:loadingExport?'#86EFAC':'#16A34A', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingExport?'not-allowed':'pointer' }}>
           {loadingExport ? '⏳...' : '⬇ Excel'}
         </button>
+
+        {/* Exportación separada — solo SUPER_ADMIN, solo Flex esperando escaneo */}
+        {isSuperAdmin && flexEsperando.length > 0 && (
+          <button onClick={exportExcelFlexEsperando} disabled={loadingExportFlex}
+            style={{ padding:'7px 14px', background:loadingExportFlex?'#FDE68A':'#D97706', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingExportFlex?'not-allowed':'pointer' }}>
+            {loadingExportFlex ? '⏳...' : `⬇ Flex esperando (${flexEsperando.length})`}
+          </button>
+        )}
+
         {selected.size > 0 && (
           <button onClick={() => setSelected(new Set())}
             style={{ padding:'7px 12px', background:'white', color:'#6B7280', border:'1px solid #E2E8F0', borderRadius:8, fontSize:12, cursor:'pointer' }}>
@@ -266,7 +308,6 @@ export default function RecepcionesClient({
                   <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Plataforma</th>
                   {!isStoreAdmin && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Bultos</th>}
                   {isStoreAdmin && userStoreId === 'cmouw44ej0004thpecq6bct35' && <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Estado WOO</th>}
-                  {/* Columna Flex — solo SUPER_ADMIN */}
                   {isSuperAdmin && (
                     <th className="col-hide-mobile" style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Flex</th>
                   )}
@@ -327,7 +368,6 @@ export default function RecepcionesClient({
                           )}
                         </td>
                       )}
-                      {/* Celda Flex — solo SUPER_ADMIN */}
                       {isSuperAdmin && (
                         <td className="col-hide-mobile" style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                           {!esFlex ? (
@@ -414,7 +454,6 @@ export default function RecepcionesClient({
                     {isStoreAdmin && userStoreId === 'cmouw44ej0004thpecq6bct35' && platformStatus && (
                       <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500 }}>{platformStatus}</span>
                     )}
-                    {/* Badge Flex en mobile — solo SUPER_ADMIN */}
                     {isSuperAdmin && esFlex && (
                       order.mlShippedAt ? (
                         <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500, border:'1px solid #BBF7D0' }}>
