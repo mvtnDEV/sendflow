@@ -4,6 +4,7 @@ import { getSessionUser } from '@/lib/utils/auth'
 import { prisma } from '@/lib/db/prisma'
 
 const TZ = 'America/Santiago'
+const IVA_RATE = 0.19
 
 function getChileOffsetStr(): string {
   const now          = new Date()
@@ -15,7 +16,6 @@ function getChileOffsetStr(): string {
   return `${sign}${String(Math.abs(offsetHours)).padStart(2, '0')}:00`
 }
 
-// ── Clasificación de comunas por zona ──
 const COMUNAS_EXTRA_URBANO = ['colina', 'padre hurtado']
 const COMUNAS_RURAL = [
   'paine', 'pirque', 'til til', 'tiltil', 'melipilla',
@@ -23,11 +23,7 @@ const COMUNAS_RURAL = [
 ]
 
 function normalizarComuna(comuna: string): string {
-  return comuna
-    .toLowerCase()
-    .trim()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // quita tildes
+  return comuna.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
 
 function clasificarZona(comuna: string): 'URBANA' | 'EXTRA_URBANA' | 'RURAL' {
@@ -63,15 +59,9 @@ export async function GET(req: NextRequest) {
   const stores = await prisma.store.findMany({
     where: storeWhere,
     select: {
-      id:                true,
-      name:              true,
-      rut:               true,
-      encargado:         true,
-      tarifaUrbana:      true,
-      tarifaExtraUrbana: true,
-      tarifaRural:       true,
-      tarifaRetiro:      true,
-      fechaTarifa:       true,
+      id: true, name: true, rut: true, encargado: true,
+      tarifaUrbana: true, tarifaExtraUrbana: true, tarifaRural: true, tarifaRetiro: true,
+      fechaTarifa: true,
     },
   })
 
@@ -83,16 +73,9 @@ export async function GET(req: NextRequest) {
         status: { in: ['DELIVERED', 'IN_TRANSIT', 'INCIDENT'] },
       },
       select: {
-        id:            true,
-        orderNumber:   true,
-        customerName:  true,
-        addressComuna: true,
-        addressRegion: true,
-        inTransitAt:   true,
-        deliveredAt:   true,
-        status:        true,
-        bultos:        true,
-        platform:      true,
+        id: true, orderNumber: true, customerName: true,
+        addressStreet: true, addressComuna: true, addressRegion: true,
+        inTransitAt: true, deliveredAt: true, status: true, bultos: true, platform: true,
       },
       orderBy: { inTransitAt: 'asc' },
     })
@@ -101,52 +84,47 @@ export async function GET(req: NextRequest) {
     const tarifaExtraUrbana = store.tarifaExtraUrbana ? Number(store.tarifaExtraUrbana) : 0
     const tarifaRural       = store.tarifaRural       ? Number(store.tarifaRural)       : 0
 
-    // ── Clasificar cada pedido por zona y calcular su tarifa ──
     const ordersConZona = orders.map(o => {
       const zona = clasificarZona(o.addressComuna)
-      const tarifa = zona === 'RURAL'        ? tarifaRural
-                    : zona === 'EXTRA_URBANA' ? tarifaExtraUrbana
-                    : tarifaUrbana
-      return { ...o, zona, tarifa }
+      const tarifa = zona === 'RURAL' ? tarifaRural : zona === 'EXTRA_URBANA' ? tarifaExtraUrbana : tarifaUrbana
+      return { ...o, zona, tarifa, storeName: store.name }
     })
 
-    // ── Resumen por zona ──
-    const resumenZonas = {
-      URBANA: {
-        cantidad: ordersConZona.filter(o => o.zona === 'URBANA').length,
-        tarifa:   tarifaUrbana,
-        subtotal: ordersConZona.filter(o => o.zona === 'URBANA').length * tarifaUrbana,
-      },
-      EXTRA_URBANA: {
-        cantidad: ordersConZona.filter(o => o.zona === 'EXTRA_URBANA').length,
-        tarifa:   tarifaExtraUrbana,
-        subtotal: ordersConZona.filter(o => o.zona === 'EXTRA_URBANA').length * tarifaExtraUrbana,
-      },
-      RURAL: {
-        cantidad: ordersConZona.filter(o => o.zona === 'RURAL').length,
-        tarifa:   tarifaRural,
-        subtotal: ordersConZona.filter(o => o.zona === 'RURAL').length * tarifaRural,
-      },
+    function zonaResumen(zona: 'URBANA' | 'EXTRA_URBANA' | 'RURAL', tarifa: number) {
+      const cantidad     = ordersConZona.filter(o => o.zona === zona).length
+      const subtotalNeto = cantidad * tarifa
+      const iva          = Math.round(subtotalNeto * IVA_RATE)
+      const totalConIva  = subtotalNeto + iva
+      return { cantidad, tarifa, subtotalNeto, iva, totalConIva }
     }
 
-    const totalGeneral = resumenZonas.URBANA.subtotal + resumenZonas.EXTRA_URBANA.subtotal + resumenZonas.RURAL.subtotal
+    const resumenZonas = {
+      URBANA:       zonaResumen('URBANA', tarifaUrbana),
+      EXTRA_URBANA: zonaResumen('EXTRA_URBANA', tarifaExtraUrbana),
+      RURAL:        zonaResumen('RURAL', tarifaRural),
+    }
+
+    const netoGeneral = resumenZonas.URBANA.subtotalNeto + resumenZonas.EXTRA_URBANA.subtotalNeto + resumenZonas.RURAL.subtotalNeto
+    const ivaGeneral  = Math.round(netoGeneral * IVA_RATE)
+    const totalGeneralConIva = netoGeneral + ivaGeneral
 
     return {
       store: {
-        id:                store.id,
-        name:              store.name,
-        rut:               store.rut,
-        encargado:         store.encargado,
+        id: store.id, name: store.name, rut: store.rut, encargado: store.encargado,
         tarifaUrbana:      store.tarifaUrbana      ? Number(store.tarifaUrbana)      : null,
         tarifaExtraUrbana: store.tarifaExtraUrbana ? Number(store.tarifaExtraUrbana) : null,
         tarifaRural:       store.tarifaRural       ? Number(store.tarifaRural)       : null,
         tarifaRetiro:      store.tarifaRetiro      ? Number(store.tarifaRetiro)      : null,
-        fechaTarifa:       store.fechaTarifa,
+        fechaTarifa: store.fechaTarifa,
       },
       orders: ordersConZona,
       total: ordersConZona.length,
       resumenZonas,
-      totalGeneral,
+      netoGeneral,
+      ivaGeneral,
+      totalGeneralConIva,
+      // se mantiene por compatibilidad con código anterior que use totalGeneral
+      totalGeneral: netoGeneral,
     }
   }))
 
