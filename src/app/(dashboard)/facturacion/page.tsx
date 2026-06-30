@@ -1,28 +1,22 @@
 'use client'
 import { useEffect, useState } from 'react'
 
-// ── Clasificación de comunas por zona ──
 const COMUNAS_EXTRA_URBANAS = ['colina', 'padre hurtado']
 const COMUNAS_RURALES = [
   'paine', 'pirque', 'til til', 'tiltil', 'melipilla',
   'peñaflor', 'penaflor', 'isla de maipo', 'lampa',
 ]
+const IVA_RATE = 0.19
 
 function normalizarComuna(comuna: string): string {
-  return comuna
-    .toLowerCase()
-    .trim()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+  return comuna.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
-
 function getTipoTarifa(comuna: string): 'urbana' | 'extraUrbana' | 'rural' {
   const c = normalizarComuna(comuna)
   if (COMUNAS_RURALES.some(r => c.includes(r) || r.includes(c))) return 'rural'
   if (COMUNAS_EXTRA_URBANAS.some(e => c.includes(e) || e.includes(c))) return 'extraUrbana'
   return 'urbana'
 }
-
 function getMesActual(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -33,30 +27,20 @@ function getMesLabel(mes: string): string {
   return date.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
 }
 function fmt(n: number): string {
-  return `$${n.toLocaleString('es-CL')}`
+  return `$${Math.round(n).toLocaleString('es-CL')}`
 }
 
 interface StoreFactura {
   store: {
-    id:                string
-    name:              string
-    rut:               string | null
-    encargado:         string | null
-    tarifaUrbana:      number | null
-    tarifaExtraUrbana: number | null
-    tarifaRural:       number | null
-    tarifaRetiro:      number | null
-    fechaTarifa:       string | null
+    id: string; name: string; rut: string | null; encargado: string | null
+    tarifaUrbana: number | null; tarifaExtraUrbana: number | null
+    tarifaRural: number | null; tarifaRetiro: number | null
+    fechaTarifa: string | null
   }
   orders: {
-    id:            string
-    orderNumber:   string
-    customerName:  string
-    addressComuna: string
-    addressRegion: string
-    deliveredAt:   string
-    bultos:        number
-    platform:      string
+    id: string; orderNumber: string; customerName: string
+    addressStreet: string; addressComuna: string; addressRegion: string
+    deliveredAt: string; inTransitAt: string; bultos: number; platform: string
   }[]
   total: number
 }
@@ -84,23 +68,14 @@ export default function FacturacionPage() {
   function toggleRetiro(storeId: string, orderId: string) {
     setRetiroMap(prev => ({
       ...prev,
-      [storeId]: {
-        ...prev[storeId],
-        [orderId]: !prev[storeId]?.[orderId],
-      },
+      [storeId]: { ...prev[storeId], [orderId]: !prev[storeId]?.[orderId] },
     }))
   }
 
   function calcFactura(sf: StoreFactura) {
     const { store, orders } = sf
-    let totalUrbana      = 0
-    let totalExtraUrbana = 0
-    let totalRural       = 0
-    let totalRetiro      = 0
-    let countUrbana      = 0
-    let countExtraUrbana = 0
-    let countRural       = 0
-    let countRetiro      = 0
+    let totalUrbana = 0, totalExtraUrbana = 0, totalRural = 0, totalRetiro = 0
+    let countUrbana = 0, countExtraUrbana = 0, countRural = 0, countRetiro = 0
 
     orders.forEach(o => {
       const tipo     = getTipoTarifa(o.addressComuna)
@@ -120,99 +95,140 @@ export default function FacturacionPage() {
       }
     })
 
-    const total = totalUrbana + totalExtraUrbana + totalRural + totalRetiro
-    return { totalUrbana, totalExtraUrbana, totalRural, totalRetiro, countUrbana, countExtraUrbana, countRural, countRetiro, total }
+    const neto         = totalUrbana + totalExtraUrbana + totalRural + totalRetiro
+    const iva           = neto * IVA_RATE
+    const totalConIva   = neto + iva
+
+    return {
+      totalUrbana, totalExtraUrbana, totalRural, totalRetiro,
+      countUrbana, countExtraUrbana, countRural, countRetiro,
+      neto, iva, totalConIva,
+      total: neto, // alias para no romper la UI existente que usa calc.total
+    }
   }
 
-  async function exportarExcel(sf: StoreFactura) {
-    const XLSX  = await import('xlsx')
+  function getTarifaYTipo(sf: StoreFactura, o: StoreFactura['orders'][number]) {
+    const { store } = sf
+    const tipo     = getTipoTarifa(o.addressComuna)
+    const esRetiro = retiroMap[store.id]?.[o.id] ?? false
+    const tipoLabel = esRetiro ? 'Retiro' : tipo === 'urbana' ? 'Urbana' : tipo === 'extraUrbana' ? 'Extra Urbana' : 'Rural'
+    let tarifa = 0
+    if (esRetiro)                    tarifa = store.tarifaRetiro      ?? 0
+    else if (tipo === 'urbana')      tarifa = store.tarifaUrbana      ?? 0
+    else if (tipo === 'extraUrbana') tarifa = store.tarifaExtraUrbana ?? 0
+    else                             tarifa = store.tarifaRural       ?? 0
+    return { tipo, tipoLabel, tarifa, esRetiro }
+  }
+
+  // ── Construye las filas de detalle por tienda con todos los campos pedidos ──
+  function buildDetalle(sf: StoreFactura) {
+    return sf.orders.map(o => {
+      const { tipoLabel, tarifa } = getTarifaYTipo(sf, o)
+      const neto = tarifa
+      const iva  = neto * IVA_RATE
+      const totalConIva = neto + iva
+      return {
+        'ID Pedido':    o.orderNumber,
+        'Cliente':      o.customerName,
+        'Dirección':    o.addressStreet,
+        'Comuna':       o.addressComuna,
+        'Región':       o.addressRegion,
+        'Tienda':       sf.store.name,
+        'Fecha Entrega': o.deliveredAt
+          ? new Date(o.deliveredAt).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })
+          : (o.inTransitAt ? new Date(o.inTransitAt).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' }) : '—'),
+        'Tipo':         tipoLabel,
+        'Neto':         Math.round(neto),
+        'IVA (19%)':    Math.round(iva),
+        'Total c/IVA':  Math.round(totalConIva),
+        'Bultos':       o.bultos,
+      }
+    })
+  }
+
+  function buildResumen(sf: StoreFactura) {
     const calc  = calcFactura(sf)
     const { store, orders } = sf
 
-    const detalle = orders.map(o => {
-      const tipo     = getTipoTarifa(o.addressComuna)
-      const esRetiro = retiroMap[store.id]?.[o.id] ?? false
-      let tipoLabel  = esRetiro ? 'Retiro' : tipo === 'urbana' ? 'Urbana' : tipo === 'extraUrbana' ? 'Extra Urbana' : 'Rural'
-      let tarifa     = 0
-      if (esRetiro)                     tarifa = store.tarifaRetiro      ?? 0
-      else if (tipo === 'urbana')       tarifa = store.tarifaUrbana      ?? 0
-      else if (tipo === 'extraUrbana')  tarifa = store.tarifaExtraUrbana ?? 0
-      else                              tarifa = store.tarifaRural       ?? 0
-      return {
-        'N° Pedido':   o.orderNumber,
-        'Cliente':     o.customerName,
-        'Comuna':      o.addressComuna,
-        'Tipo':        tipoLabel,
-        'Entregado':   new Date(o.deliveredAt).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' }),
-        'Tarifa':      tarifa,
-        'Bultos':      o.bultos,
-      }
-    })
+    function fila(label: string, count: number, tarifa: number) {
+      const neto = count * tarifa
+      const iva  = neto * IVA_RATE
+      const totalConIva = neto + iva
+      return [`${label}:`, `${count} × ${fmt(tarifa)}`, fmt(neto), fmt(iva), fmt(totalConIva)]
+    }
 
-    const resumen = [
-      ['FACTURA DE SERVICIOS', ''],
-      ['', ''],
-      ['Tienda:', store.name],
-      ['RUT:', store.rut ?? 'Sin RUT'],
-      ['Encargado:', store.encargado ?? '—'],
-      ['Período:', getMesLabel(mes)],
-      ['Tarifa vigente:', store.fechaTarifa ?? '—'],
-      ['', ''],
-      ['RESUMEN', ''],
-      ['Pedidos Urbanos:', `${calc.countUrbana} × ${fmt(store.tarifaUrbana ?? 0)} = ${fmt(calc.totalUrbana)}`],
-      ['Pedidos Extra Urbanos:', `${calc.countExtraUrbana} × ${fmt(store.tarifaExtraUrbana ?? 0)} = ${fmt(calc.totalExtraUrbana)}`],
-      ['Pedidos Rurales:', `${calc.countRural} × ${fmt(store.tarifaRural ?? 0)} = ${fmt(calc.totalRural)}`],
-      ['Pedidos Retiro:', `${calc.countRetiro} × ${fmt(store.tarifaRetiro ?? 0)} = ${fmt(calc.totalRetiro)}`],
-      ['', ''],
-      ['TOTAL PEDIDOS:', orders.length],
-      ['TOTAL A COBRAR:', calc.total],
+    return [
+      ['FACTURA DE SERVICIOS', '', '', '', ''],
+      ['', '', '', '', ''],
+      ['Tienda:', store.name, '', '', ''],
+      ['RUT:', store.rut ?? 'Sin RUT', '', '', ''],
+      ['Encargado:', store.encargado ?? '—', '', '', ''],
+      ['Período:', getMesLabel(mes), '', '', ''],
+      ['Tarifa vigente:', store.fechaTarifa ?? '—', '', '', ''],
+      ['', '', '', '', ''],
+      ['RESUMEN', 'Cantidad × Tarifa', 'Neto', 'IVA (19%)', 'Total c/IVA'],
+      fila('Pedidos Urbanos', calc.countUrbana, store.tarifaUrbana ?? 0),
+      fila('Pedidos Extra Urbanos', calc.countExtraUrbana, store.tarifaExtraUrbana ?? 0),
+      fila('Pedidos Rurales', calc.countRural, store.tarifaRural ?? 0),
+      fila('Pedidos Retiro', calc.countRetiro, store.tarifaRetiro ?? 0),
+      ['', '', '', '', ''],
+      ['TOTAL PEDIDOS:', String(orders.length), '', '', ''],
+      ['TOTAL NETO:', '', fmt(calc.neto), '', ''],
+      ['TOTAL IVA (19%):', '', '', fmt(calc.iva), ''],
+      ['TOTAL A COBRAR (c/IVA):', '', '', '', fmt(calc.totalConIva)],
     ]
+  }
+
+  async function exportarExcel(sf: StoreFactura) {
+    const XLSX = await import('xlsx')
+    const detalle = buildDetalle(sf)
+    const resumen = buildResumen(sf)
 
     const wbDetalle = XLSX.utils.json_to_sheet(detalle)
-    wbDetalle['!cols'] = [{wch:14},{wch:24},{wch:16},{wch:14},{wch:14},{wch:12},{wch:8}]
+    wbDetalle['!cols'] = [
+      {wch:14},{wch:24},{wch:28},{wch:16},{wch:16},{wch:18},
+      {wch:14},{wch:14},{wch:12},{wch:12},{wch:13},{wch:8},
+    ]
     const wbResumen = XLSX.utils.aoa_to_sheet(resumen)
-    wbResumen['!cols'] = [{wch:24},{wch:40}]
+    wbResumen['!cols'] = [{wch:24},{wch:20},{wch:16},{wch:14},{wch:16}]
+
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, wbResumen, 'Resumen')
     XLSX.utils.book_append_sheet(wb, wbDetalle, 'Detalle')
     const nombreMes = getMesLabel(mes).replace(' ', '_')
-    XLSX.writeFile(wb, `factura_${store.name.replace(/\s+/g,'_')}_${nombreMes}.xlsx`)
+    XLSX.writeFile(wb, `factura_${sf.store.name.replace(/\s+/g,'_')}_${nombreMes}.xlsx`)
   }
 
   async function exportarTodas() {
     const XLSX = await import('xlsx')
     const wb   = XLSX.utils.book_new()
+
     data.filter(sf => sf.total > 0).forEach(sf => {
-      const calc  = calcFactura(sf)
-      const { store, orders } = sf
-      const resumen = [
-        ['FACTURA DE SERVICIOS', ''],
-        ['', ''],
-        ['Tienda:', store.name],
-        ['RUT:', store.rut ?? 'Sin RUT'],
-        ['Encargado:', store.encargado ?? '—'],
-        ['Período:', getMesLabel(mes)],
-        ['Tarifa vigente:', store.fechaTarifa ?? '—'],
-        ['', ''],
-        ['RESUMEN', ''],
-        ['Pedidos Urbanos:', `${calc.countUrbana} × ${fmt(store.tarifaUrbana ?? 0)} = ${fmt(calc.totalUrbana)}`],
-        ['Pedidos Extra Urbanos:', `${calc.countExtraUrbana} × ${fmt(store.tarifaExtraUrbana ?? 0)} = ${fmt(calc.totalExtraUrbana)}`],
-        ['Pedidos Rurales:', `${calc.countRural} × ${fmt(store.tarifaRural ?? 0)} = ${fmt(calc.totalRural)}`],
-        ['Pedidos Retiro:', `${calc.countRetiro} × ${fmt(store.tarifaRetiro ?? 0)} = ${fmt(calc.totalRetiro)}`],
-        ['', ''],
-        ['TOTAL PEDIDOS:', orders.length],
-        ['TOTAL A COBRAR:', calc.total],
-      ]
+      const resumen = buildResumen(sf)
       const ws = XLSX.utils.aoa_to_sheet(resumen)
-      ws['!cols'] = [{wch:24},{wch:40}]
-      const sheetName = store.name.slice(0, 31).replace(/[\\\/\?\*\[\]]/g, '')
+      ws['!cols'] = [{wch:24},{wch:20},{wch:16},{wch:14},{wch:16}]
+      const sheetName = `Resumen ${sf.store.name}`.slice(0, 31).replace(/[\\\/\?\*\[\]]/g, '')
       XLSX.utils.book_append_sheet(wb, ws, sheetName)
     })
+
+    // ── Hoja única con el listado completo de todas las tiendas ──
+    const detalleTotal = data.filter(sf => sf.total > 0).flatMap(sf => buildDetalle(sf))
+    if (detalleTotal.length > 0) {
+      const wsDetalle = XLSX.utils.json_to_sheet(detalleTotal)
+      wsDetalle['!cols'] = [
+        {wch:14},{wch:24},{wch:28},{wch:16},{wch:16},{wch:18},
+        {wch:14},{wch:14},{wch:12},{wch:12},{wch:13},{wch:8},
+      ]
+      XLSX.utils.book_append_sheet(wb, wsDetalle, 'Detalle Todos')
+    }
+
     const nombreMes = getMesLabel(mes).replace(' ', '_')
     XLSX.writeFile(wb, `facturas_todas_${nombreMes}.xlsx`)
   }
 
-  const totalGeneral = data.reduce((acc, sf) => acc + calcFactura(sf).total, 0)
+  const totalGeneralNeto      = data.reduce((acc, sf) => acc + calcFactura(sf).neto, 0)
+  const totalGeneralIva       = data.reduce((acc, sf) => acc + calcFactura(sf).iva, 0)
+  const totalGeneralConIva    = data.reduce((acc, sf) => acc + calcFactura(sf).totalConIva, 0)
 
   return (
     <div>
@@ -221,7 +237,7 @@ export default function FacturacionPage() {
         <div>
           <h1 style={{ fontSize:20, fontWeight:500 }}>Facturación</h1>
           <p style={{ fontSize:13, color:'#6B7280', marginTop:3 }}>
-            Pedidos despachados × tarifa por tipo de zona
+            Pedidos despachados × tarifa por tipo de zona — Neto + IVA (19%)
           </p>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
@@ -255,9 +271,12 @@ export default function FacturacionPage() {
         <div style={{ background:'#0B1628', borderRadius:12, padding:'16px 20px', marginBottom:20, display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
           <div>
             <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:4 }}>
-              Total a facturar — {getMesLabel(mes)}
+              Total a facturar (c/IVA) — {getMesLabel(mes)}
             </div>
-            <div style={{ fontSize:32, fontWeight:700, color:'white' }}>{fmt(totalGeneral)}</div>
+            <div style={{ fontSize:32, fontWeight:700, color:'white' }}>{fmt(totalGeneralConIva)}</div>
+            <div style={{ fontSize:12, color:'rgba(255,255,255,.5)', marginTop:4 }}>
+              Neto: {fmt(totalGeneralNeto)} · IVA: {fmt(totalGeneralIva)}
+            </div>
           </div>
           <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
             <div style={{ textAlign:'center' }}>
@@ -267,24 +286,6 @@ export default function FacturacionPage() {
             <div style={{ textAlign:'center' }}>
               <div style={{ fontSize:22, fontWeight:600, color:'#4ADE80' }}>{data.filter(sf => sf.total > 0).length}</div>
               <div style={{ fontSize:11, color:'rgba(255,255,255,.4)' }}>Tiendas activas</div>
-            </div>
-            <div style={{ textAlign:'center' }}>
-              <div style={{ fontSize:22, fontWeight:600, color:'#60A5FA' }}>
-                {data.reduce((a, sf) => a + calcFactura(sf).countUrbana, 0)}
-              </div>
-              <div style={{ fontSize:11, color:'rgba(255,255,255,.4)' }}>Urbana</div>
-            </div>
-            <div style={{ textAlign:'center' }}>
-              <div style={{ fontSize:22, fontWeight:600, color:'#A78BFA' }}>
-                {data.reduce((a, sf) => a + calcFactura(sf).countExtraUrbana, 0)}
-              </div>
-              <div style={{ fontSize:11, color:'rgba(255,255,255,.4)' }}>Extra Urbana</div>
-            </div>
-            <div style={{ textAlign:'center' }}>
-              <div style={{ fontSize:22, fontWeight:600, color:'#86EFAC' }}>
-                {data.reduce((a, sf) => a + calcFactura(sf).countRural, 0)}
-              </div>
-              <div style={{ fontSize:11, color:'rgba(255,255,255,.4)' }}>Rural</div>
             </div>
           </div>
         </div>
@@ -309,7 +310,6 @@ export default function FacturacionPage() {
             const expanded = expandedStore === sf.store.id
             return (
               <div key={sf.store.id} style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'hidden' }}>
-                {/* Header tienda */}
                 <div style={{ padding:'16px 20px', display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer', flexWrap:'wrap', gap:10 }}
                   onClick={() => setExpandedStore(expanded ? null : sf.store.id)}>
                   <div style={{ display:'flex', alignItems:'center', gap:12 }}>
@@ -332,8 +332,8 @@ export default function FacturacionPage() {
                       {calc.countRetiro > 0      && <span style={{ color:'#92400E' }}>{calc.countRetiro} retiro</span>}
                     </div>
                     <div style={{ textAlign:'right' }}>
-                      <div style={{ fontSize:18, fontWeight:700, color:'#16A34A' }}>{fmt(calc.total)}</div>
-                      <div style={{ fontSize:11, color:'#9CA3AF' }}>{sf.total} pedidos</div>
+                      <div style={{ fontSize:18, fontWeight:700, color:'#16A34A' }}>{fmt(calc.totalConIva)}</div>
+                      <div style={{ fontSize:11, color:'#9CA3AF' }}>{sf.total} pedidos · neto {fmt(calc.neto)}</div>
                     </div>
                     <div style={{ display:'flex', gap:6 }}>
                       <button
@@ -346,7 +346,6 @@ export default function FacturacionPage() {
                   </div>
                 </div>
 
-                {/* Resumen tarifas */}
                 {expanded && (
                   <div>
                     <div style={{ padding:'12px 20px', background:'#F8FAFC', borderTop:'1px solid #F1F5F9', borderBottom:'1px solid #F1F5F9', display:'flex', gap:20, flexWrap:'wrap' }}>
@@ -362,37 +361,36 @@ export default function FacturacionPage() {
                           <div style={{ fontSize:11, color:t.text, opacity:.7 }}>{fmt(t.tarifa ?? 0)} c/u = {fmt(t.total)}</div>
                         </div>
                       ))}
-                      <div style={{ padding:'8px 14px', borderRadius:8, background:'#0B1628', minWidth:140, display:'flex', flexDirection:'column', justifyContent:'center' }}>
-                        <div style={{ fontSize:11, color:'rgba(255,255,255,.5)', marginBottom:3 }}>TOTAL</div>
-                        <div style={{ fontSize:18, fontWeight:700, color:'white' }}>{fmt(calc.total)}</div>
+                      <div style={{ padding:'8px 14px', borderRadius:8, background:'#0B1628', minWidth:160, display:'flex', flexDirection:'column', justifyContent:'center' }}>
+                        <div style={{ fontSize:11, color:'rgba(255,255,255,.5)', marginBottom:3 }}>NETO / IVA / TOTAL</div>
+                        <div style={{ fontSize:12, color:'rgba(255,255,255,.8)' }}>{fmt(calc.neto)} + {fmt(calc.iva)}</div>
+                        <div style={{ fontSize:16, fontWeight:700, color:'white' }}>{fmt(calc.totalConIva)}</div>
                       </div>
                     </div>
 
-                    {/* Tabla de pedidos */}
                     <div style={{ overflowX:'auto' }}>
-                      <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
+                      <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>
                         <thead>
                           <tr style={{ background:'#F8FAFC' }}>
-                            {['N° Pedido','Cliente','Comuna','Tipo','Tarifa','Retiro','Entregado'].map(h => (
+                            {['ID Pedido','Cliente','Dirección','Comuna','Región','Tienda','Tipo','Neto','IVA','Total c/IVA','Retiro','Entregado'].map(h => (
                               <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:11, fontWeight:500, color:'#6B7280', borderBottom:'1px solid #E2E8F0', textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {sf.orders.map((o, i) => {
-                            const tipo     = getTipoTarifa(o.addressComuna)
-                            const esRetiro = retiroMap[sf.store.id]?.[o.id] ?? false
-                            let tipoLabel  = esRetiro ? 'Retiro' : tipo === 'urbana' ? 'Urbana' : tipo === 'extraUrbana' ? 'Extra Urbana' : 'Rural'
-                            let tarifa     = 0
-                            if (esRetiro)                     tarifa = sf.store.tarifaRetiro      ?? 0
-                            else if (tipo === 'urbana')       tarifa = sf.store.tarifaUrbana      ?? 0
-                            else if (tipo === 'extraUrbana')  tarifa = sf.store.tarifaExtraUrbana ?? 0
-                            else                               tarifa = sf.store.tarifaRural       ?? 0
+                            const { tipo, tipoLabel, tarifa, esRetiro } = getTarifaYTipo(sf, o)
+                            const neto = tarifa
+                            const iva  = neto * IVA_RATE
+                            const totalConIva = neto + iva
                             return (
                               <tr key={o.id} style={{ background: i%2===0?'white':'#FAFAFA' }}>
                                 <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:500, color:'#1D4ED8', fontFamily:'monospace' }}>{o.orderNumber}</td>
                                 <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13 }}>{o.customerName}</td>
+                                <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{o.addressStreet}</td>
                                 <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13, color:'#6B7280' }}>{o.addressComuna}</td>
+                                <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{o.addressRegion}</td>
+                                <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{sf.store.name}</td>
                                 <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9' }}>
                                   <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, fontWeight:500,
                                     background: esRetiro?'#FEF3C7':tipo==='urbana'?'#EFF6FF':tipo==='extraUrbana'?'#F5F3FF':'#F0FDF4',
@@ -401,9 +399,9 @@ export default function FacturacionPage() {
                                     {tipoLabel}
                                   </span>
                                 </td>
-                                <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:600, color:'#16A34A' }}>
-                                  {fmt(tarifa)}
-                                </td>
+                                <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13, color:'#374151' }}>{fmt(neto)}</td>
+                                <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13, color:'#6B7280' }}>{fmt(iva)}</td>
+                                <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:13, fontWeight:600, color:'#16A34A' }}>{fmt(totalConIva)}</td>
                                 <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
                                   <input
                                     type="checkbox"
@@ -413,7 +411,9 @@ export default function FacturacionPage() {
                                   />
                                 </td>
                                 <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#9CA3AF' }}>
-                                  {new Date(o.deliveredAt).toLocaleDateString('es-CL', { timeZone:'America/Santiago', day:'2-digit', month:'short' })}
+                                  {o.deliveredAt
+                                    ? new Date(o.deliveredAt).toLocaleDateString('es-CL', { timeZone:'America/Santiago', day:'2-digit', month:'short' })
+                                    : '—'}
                                 </td>
                               </tr>
                             )
