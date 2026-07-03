@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse }      from 'next/server'
 import { getSessionUser, canAccessStore } from '@/lib/utils/auth'
-import { updateOrderStatus }              from '@/lib/services/order.service'
 import { prisma }                         from '@/lib/db/prisma'
 import type { OrderStatus }               from '@prisma/client'
 
@@ -14,7 +13,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const body   = await req.json().catch(() => null)
   const status: OrderStatus = body?.status
-
   if (!status || !VALID.includes(status))
     return NextResponse.json({ ok:false, error:'Estado inválido' }, { status:400 })
 
@@ -26,7 +24,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!canAccessStore(user, order.storeId))
     return NextResponse.json({ ok:false, error:'Sin acceso' }, { status:403 })
 
-  const updated = await updateOrderStatus(params.id, status, body?.note, user.id)
+  // ── skipEnviosNow: true → no crear envío en EnviosNow desde el sistema web ──
+  // Evita que al recepcionar manualmente el pedido salte directo a IN_TRANSIT
+  const updated = await updateOrderStatus(params.id, status, body?.note, user.id, true)
 
   // Si es entrega manual con datos adicionales
   if (status === 'DELIVERED' && (body?.evidencePhoto1 || body?.receptorName || body?.receptorRut)) {
