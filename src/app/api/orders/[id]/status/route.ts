@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse }      from 'next/server'
 import { getSessionUser, canAccessStore } from '@/lib/utils/auth'
+import { updateOrderStatus }              from '@/lib/services/order.service'
 import { prisma }                         from '@/lib/db/prisma'
 import type { OrderStatus }               from '@prisma/client'
 
@@ -24,22 +25,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!canAccessStore(user, order.storeId))
     return NextResponse.json({ ok:false, error:'Sin acceso' }, { status:403 })
 
-  // ── skipEnviosNow: true → no crear envío en EnviosNow desde el sistema web ──
-  // Evita que al recepcionar manualmente el pedido salte directo a IN_TRANSIT
-  const updated = await updateOrderStatus(params.id, status, body?.note, user.id, true)
-
-  // Si es entrega manual con datos adicionales
+  // ── Guardar evidencia ANTES de llamar updateOrderStatus ──
+  // Así el webhook a Senby ya incluye foto, receptor y RUT en el payload
   if (status === 'DELIVERED' && (body?.evidencePhoto1 || body?.receptorName || body?.receptorRut)) {
     await prisma.order.update({
       where: { id: params.id },
       data: {
         ...(body.evidencePhoto1 && { evidencePhoto1: body.evidencePhoto1 }),
-        ...(body.receptorName   && { evidenceNote: `Recibió: ${body.receptorName}${body.receptorRut ? ` · RUT: ${body.receptorRut}` : ''}${body.note ? ` · ${body.note}` : ''}` }),
+        ...(body.receptorName   && {
+          evidenceNote: `Recibió: ${body.receptorName}${body.receptorRut ? ` · RUT: ${body.receptorRut}` : ''}${body.note ? ` · ${body.note}` : ''}`,
+        }),
         evidenceTakenAt: new Date(),
         evidenceTakenBy: user.id,
       },
     })
   }
+
+  // ── skipEnviosNow: true → no crear envío en EnviosNow desde el sistema web ──
+  const updated = await updateOrderStatus(params.id, status, body?.note, user.id, true)
 
   return NextResponse.json({ ok:true, data: updated })
 }
