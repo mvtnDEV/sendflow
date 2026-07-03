@@ -15,16 +15,13 @@ function isRegionPermitida(region: string): boolean {
 
 function todayRange() {
   const now = new Date()
-
   const santiagoParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
     year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(now)
-
   const year  = santiagoParts.find(p => p.type === 'year')!.value
   const month = santiagoParts.find(p => p.type === 'month')!.value
   const day   = santiagoParts.find(p => p.type === 'day')!.value
-
   const utcDate      = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
   const santiagoDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Santiago' }))
   const offsetMs     = santiagoDate.getTime() - utcDate.getTime()
@@ -32,17 +29,14 @@ function todayRange() {
   const sign         = offsetHours >= 0 ? '+' : '-'
   const absHours     = Math.abs(offsetHours)
   const offsetStr    = `${sign}${String(Math.floor(absHours)).padStart(2, '0')}:00`
-
   return {
     gte: new Date(`${year}-${month}-${day}T00:00:00${offsetStr}`),
     lte: new Date(`${year}-${month}-${day}T23:59:59${offsetStr}`),
   }
 }
 
-// ── Solo cuentan como "escaneado por la app" los eventos RECEIVED hechos por un conductor real ──
 const CREADORES_AUTOMATICOS = ['system', 'webhook', 'ml-webhook', 'enviosnow-webhook', 'api', 'ml-cron-check']
 
-// Filtro reutilizable: el pedido debe tener un evento RECEIVED con createdBy fuera de la lista automática
 const ESCANEADO_POR_APP = {
   events: {
     some: {
@@ -75,12 +69,10 @@ export async function createOrder(input: CreateOrderInput) {
   if (!isRegionPermitida(input.addressRegion)) {
     throw new Error(`Pedido fuera de zona de despacho: ${input.addressRegion}. Solo despachamos en la Región Metropolitana.`)
   }
-
   const [orderNumber, qrCode] = await Promise.all([
     generateOrderNumber(input.platform),
     ensureUniqueQrCode(input.platform),
   ])
-
   return prisma.order.create({
     data: {
       orderNumber,
@@ -122,7 +114,6 @@ export async function upsertOrderFromWebhook(
     where:  { integrationId, sourceId: data.externalId },
     select: { id: true },
   })
-
   if (existing) {
     return prisma.order.update({
       where: { id: existing.id },
@@ -137,7 +128,6 @@ export async function upsertOrderFromWebhook(
       },
     })
   }
-
   return createOrder({
     storeId,
     integrationId,
@@ -161,20 +151,20 @@ const STATUS_TIMESTAMP: Partial<Record<OrderStatus, string>> = {
   DELIVERED:  'deliveredAt',
 }
 
+// ── FIX 1: parámetro skipEnviosNow para evitar salto a IN_TRANSIT al recepcionar desde sistema ──
 export async function updateOrderStatus(
-  orderId:    string,
-  status:     OrderStatus,
-  note?:      string,
-  createdBy?: string,
+  orderId:        string,
+  status:         OrderStatus,
+  note?:          string,
+  createdBy?:     string,
+  skipEnviosNow?: boolean,
 ) {
   const timestampField = STATUS_TIMESTAMP[status]
-
   const previous = await prisma.order.findUnique({
     where:  { id: orderId },
     select: { status: true },
   })
   const previousStatus = previous?.status ?? 'PENDING'
-
   const order = await prisma.order.update({
     where: { id: orderId },
     data: {
@@ -191,7 +181,8 @@ export async function updateOrderStatus(
     include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
   })
 
-  if (status === 'RECEIVED') {
+  // ── Solo crear envío en EnviosNow si NO viene del sistema web ──
+  if (status === 'RECEIVED' && !skipEnviosNow) {
     try {
       const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
       const payload = toEnviosNowPayload(order)
@@ -234,14 +225,11 @@ export async function listOrders(filters: OrderFilters) {
   const pageSize = filters.pageSize ?? 10
   const skip     = (page - 1) * pageSize
   const today    = todayRange()
-
   const where: any = {}
-
   if (filters.storeId)  where.storeId  = filters.storeId
   if (filters.status)   where.status   = filters.status
   if (filters.platform) where.platform = filters.platform
   if (filters.comuna)   where.addressComuna = { contains: filters.comuna, mode: 'insensitive' }
-
   if (filters.search) {
     where.OR = [
       { customerName:  { contains: filters.search, mode: 'insensitive' } },
@@ -252,10 +240,6 @@ export async function listOrders(filters: OrderFilters) {
       { subStoreName:  { contains: filters.search, mode: 'insensitive' } },
     ]
   }
-
-  // ── Filtro global: solo pedidos escaneados por la app del conductor ──
-  // Excluye PENDING/CREADO de esta exigencia, ya que esos legítimamente
-  // aún no han pasado por bodega — solo aplica desde RECEIVED en adelante.
   const condicionesAdicionales: any[] = [
     {
       OR: [
@@ -264,7 +248,6 @@ export async function listOrders(filters: OrderFilters) {
       ],
     },
   ]
-
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     if (filters.superAdminView) {
       where.AND = [
@@ -329,7 +312,6 @@ export async function listOrders(filters: OrderFilters) {
   } else {
     where.AND = [...condicionesAdicionales]
   }
-
   const [items, total] = await Promise.all([
     prisma.order.findMany({
       where,
@@ -358,16 +340,13 @@ export async function listOrders(filters: OrderFilters) {
     }),
     prisma.order.count({ where }),
   ])
-
   return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
 }
 
 export async function getDashboardStats(storeId?: string, todayOnly = true): Promise<DashboardStats> {
   const today = todayRange()
-
   const baseWhere: any = {}
   if (storeId) baseWhere.storeId = storeId
-
   if (todayOnly) {
     baseWhere.AND = [
       {
@@ -390,7 +369,6 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
       ESCANEADO_POR_APP,
     ]
   }
-
   const [byStatus, byPlatform, byStore] = await Promise.all([
     prisma.order.groupBy({
       by:     ['status'],
@@ -410,12 +388,9 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
       take:    5,
     }),
   ])
-
   const countMap: Record<string, number> = {}
   byStatus.forEach(s => { countMap[s.status] = s._count._all })
-
   const total = Object.values(countMap).reduce((a, b) => a + b, 0)
-
   let byStoreWithNames: DashboardStats['byStore'] = []
   if (!storeId && byStore.length > 0) {
     const stores = await prisma.store.findMany({
@@ -429,7 +404,6 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
       count:     s._count._all,
     }))
   }
-
   return {
     total,
     pending:    countMap['PENDING']    ?? 0,
