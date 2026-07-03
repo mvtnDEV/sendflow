@@ -1,5 +1,4 @@
 export const dynamic = 'force-dynamic'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
@@ -22,8 +21,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'orderId y photo1 requeridos' }, { status: 400 })
   }
 
-  const now = new Date()
+  // ── Leer el estado anterior antes de actualizar ──
+  const previous = await prisma.order.findUnique({
+    where:  { id: body.orderId },
+    select: { status: true },
+  })
+  const previousStatus = previous?.status ?? 'IN_TRANSIT'
 
+  const now = new Date()
   const updated = await prisma.order.update({
     where: { id: body.orderId },
     data: {
@@ -43,6 +48,16 @@ export async function POST(req: NextRequest) {
       },
     },
   })
+
+  // ── Notificar webhooks con la evidencia real (foto + nota del conductor) ──
+  // Esto es lo que Senby recibe — debe ir DESPUÉS de guardar la evidencia
+  // para que el payload incluya evidencePhoto1 y evidenceNote correctos
+  try {
+    const { notifyWebhooks } = await import('@/lib/services/webhook.service')
+    await notifyWebhooks(body.orderId, 'DELIVERED', previousStatus)
+  } catch (err) {
+    console.error('[Evidence] Error notificando webhook:', err)
+  }
 
   return NextResponse.json({ ok: true, data: updated })
 }
