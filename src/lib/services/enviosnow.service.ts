@@ -23,6 +23,10 @@ export async function createEnviosNowDelivery(
   payload: EnviosNowPayload
 ): Promise<EnviosNowResult> {
   try {
+    // ── Log de diagnóstico — ver qué manda Moovex y qué responde Now ──
+    console.log('[EnviosNow] Intentando crear envío:', JSON.stringify(payload))
+    console.log('[EnviosNow] API Key presente:', !!getApiKey(), '| Key prefix:', getApiKey().slice(0, 8))
+
     const res = await fetch(`${API_BASE}/delivery`, {
       method:  'POST',
       headers: {
@@ -31,7 +35,11 @@ export async function createEnviosNowDelivery(
       },
       body: JSON.stringify(payload),
     })
+
     const data = await res.json()
+    // ── Log de respuesta completa ──
+    console.log('[EnviosNow] Status HTTP:', res.status, '| Respuesta:', JSON.stringify(data))
+
     if (res.status === 201 || res.ok) {
       return { ok: true, id: data.id }
     }
@@ -40,7 +48,7 @@ export async function createEnviosNowDelivery(
     }
     return { ok: false, error: data.message ?? 'Error creando envío' }
   } catch (err: any) {
-    console.error('[EnviosNow] Error:', err)
+    console.error('[EnviosNow] Error de conexión:', err)
     return { ok: false, error: err.message }
   }
 }
