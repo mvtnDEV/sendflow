@@ -131,6 +131,10 @@ model Order {
   evidenceTakenAt DateTime?
   evidenceTakenBy String?
 
+  receptorName    String?
+  receptorRut     String?
+  incidentReason  String?
+
   receivedAt      DateTime?
   inTransitAt     DateTime?
   deliveredAt     DateTime?
