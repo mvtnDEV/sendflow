@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { audit } from '@/lib/services/audit.service'
-import jwt from 'jsonwebtoken'
 
 interface DriverPayload {
   id:      string
@@ -11,13 +10,15 @@ interface DriverPayload {
   storeId: string | null
 }
 
+// ── Token base64 simple — igual que batch-receive, evidence y salir-ruta ──
 function verifyDriverToken(req: NextRequest): DriverPayload | null {
   const auth = req.headers.get('authorization')
   if (!auth?.startsWith('Bearer ')) return null
   try {
-    const payload = jwt.verify(auth.slice(7), process.env.NEXTAUTH_SECRET!) as DriverPayload
+    const payload = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString())
+    if (payload.exp < Date.now()) return null
     if (payload.role !== 'DRIVER') return null
-    return payload
+    return payload as DriverPayload
   } catch { return null }
 }
 
@@ -30,15 +31,9 @@ export async function GET(req: NextRequest) {
   const tomorrow = new Date(today)
   tomorrow.setDate(tomorrow.getDate() + 1)
 
-  // ── Traer pedidos activos del día ──
-  // El problema era que no filtraba por conductor — traía TODOS los IN_TRANSIT
-  // del sistema. La solución: filtrar por los pedidos donde el conductor
-  // tiene un evento RECEIVED o IN_TRANSIT creado por él mismo (su driver.id).
-  // Así cada conductor solo ve sus propios pedidos.
   const orders = await prisma.order.findMany({
     where: {
       AND: [
-        // Solo pedidos donde este conductor tiene un evento (los escaneó o salió a ruta)
         {
           events: {
             some: {
@@ -46,7 +41,6 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-        // Solo pedidos activos de hoy o en camino actualmente
         {
           OR: [
             { status: { in: ['IN_TRANSIT', 'INCIDENT'] } },
@@ -80,7 +74,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Estado inválido' }, { status: 400 })
   }
 
-  // Leer estado anterior para el webhook
   const previous = await prisma.order.findUnique({
     where:  { id: orderId },
     select: { status: true },
@@ -105,7 +98,6 @@ export async function PATCH(req: NextRequest) {
     },
   })
 
-  // ── Notificar webhooks (Senby y otros) cuando el conductor cambia estado ──
   try {
     const { notifyWebhooks } = await import('@/lib/services/webhook.service')
     await notifyWebhooks(orderId, status, String(previousStatus))
