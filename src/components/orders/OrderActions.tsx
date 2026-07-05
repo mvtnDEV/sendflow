@@ -134,32 +134,30 @@ export default function OrderActions({
 
   // ── Incidencia: envía el motivo como note para que llegue en el webhook ──
   async function confirmIncident() {
-    if (!incidentReason) { setError('Selecciona un motivo de incidencia'); return }
-    setLoading('INCIDENT'); setError('')
-    try {
-      const noteCompleta = incidentNote
-        ? `${incidentReason} · ${incidentNote}`
-        : incidentReason
-      const res = await fetch(`/api/orders/${orderId}/status`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          status: 'INCIDENT',
-          note:   noteCompleta,
-        }),
-      })
-      const data = await res.json()
-      if (!data.ok) throw new Error(data.error)
-      setShowIncident(false)
-      setIncidentReason('')
-      setIncidentNote('')
-      router.refresh()
-    } catch (e: any) {
-      setError(e.message ?? 'Error reportando incidencia')
-    } finally {
-      setLoading(null)
-    }
+  if (!incidentReason) { setError('Selecciona un motivo de incidencia'); return }
+  setLoading('INCIDENT'); setError('')
+  try {
+    const res = await fetch(`/api/orders/${orderId}/status`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        status:         'INCIDENT',
+        note:           incidentNote || incidentReason,
+        incidentReason: incidentReason,
+      }),
+    })
+    const data = await res.json()
+    if (!data.ok) throw new Error(data.error)
+    setShowIncident(false)
+    setIncidentReason('')
+    setIncidentNote('')
+    router.refresh()
+  } catch (e: any) {
+    setError(e.message ?? 'Error reportando incidencia')
+  } finally {
+    setLoading(null)
   }
+}
 
   return (
     <>
