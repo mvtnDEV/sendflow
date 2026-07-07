@@ -29,10 +29,10 @@ export async function POST(req: NextRequest) {
     try {
       const order = await prisma.order.findUnique({ where: { id: orderId } })
 
-      // ── Fix: permitir PENDING e INCIDENT ──
-      // Los Flex con not_delivered quedan en INCIDENT pero el conductor
-      // los tiene físicamente y debe poder recepcionarlos
-      if (!order || !['PENDING', 'INCIDENT'].includes(order.status)) continue
+      // ── Permitir PENDING, INCIDENT y DELIVERED ──
+      // Los Flex pueden llegar a DELIVERED antes de que el conductor
+      // los recepcione — el escaneo ocurre temprano en bodega
+      if (!order || !['PENDING', 'INCIDENT', 'DELIVERED'].includes(order.status)) continue
 
       await prisma.order.update({
         where: { id: orderId },
@@ -63,7 +63,6 @@ export async function POST(req: NextRequest) {
               where: { id: orderId },
               data: {
                 externalId: String(result.id),
-                // ── Grabar inTransitAt si no lo tiene para facturación ──
                 ...(!fullOrder.inTransitAt && { inTransitAt: now }),
               },
             })
