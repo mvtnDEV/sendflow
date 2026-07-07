@@ -151,7 +151,6 @@ const STATUS_TIMESTAMP: Partial<Record<OrderStatus, string>> = {
   DELIVERED:  'deliveredAt',
 }
 
-// ── FIX 1: parámetro skipEnviosNow para evitar salto a IN_TRANSIT al recepcionar desde sistema ──
 export async function updateOrderStatus(
   orderId:        string,
   status:         OrderStatus,
@@ -181,7 +180,6 @@ export async function updateOrderStatus(
     include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
   })
 
-  // ── Solo crear envío en EnviosNow si NO viene del sistema web ──
   if (status === 'RECEIVED' && !skipEnviosNow) {
     try {
       const { toEnviosNowPayload, createEnviosNowDelivery } = await import('./enviosnow.service')
@@ -226,10 +224,12 @@ export async function listOrders(filters: OrderFilters) {
   const skip     = (page - 1) * pageSize
   const today    = todayRange()
   const where: any = {}
+
   if (filters.storeId)  where.storeId  = filters.storeId
   if (filters.status)   where.status   = filters.status
   if (filters.platform) where.platform = filters.platform
   if (filters.comuna)   where.addressComuna = { contains: filters.comuna, mode: 'insensitive' }
+
   if (filters.search) {
     where.OR = [
       { customerName:  { contains: filters.search, mode: 'insensitive' } },
@@ -240,7 +240,11 @@ export async function listOrders(filters: OrderFilters) {
       { subStoreName:  { contains: filters.search, mode: 'insensitive' } },
     ]
   }
-  const condicionesAdicionales: any[] = [
+
+  // ── Si hay búsqueda activa, no aplicar filtro de escaneo ──
+  // Permite encontrar cualquier pedido al buscar por número, cliente o dirección
+  // En vista normal sigue mostrando solo pedidos escaneados por la app
+  const condicionesAdicionales: any[] = filters.search ? [] : [
     {
       OR: [
         { status: 'PENDING' },
@@ -248,6 +252,7 @@ export async function listOrders(filters: OrderFilters) {
       ],
     },
   ]
+
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     if (filters.superAdminView) {
       where.AND = [
@@ -312,6 +317,7 @@ export async function listOrders(filters: OrderFilters) {
   } else {
     where.AND = [...condicionesAdicionales]
   }
+
   const [items, total] = await Promise.all([
     prisma.order.findMany({
       where,
@@ -340,6 +346,7 @@ export async function listOrders(filters: OrderFilters) {
     }),
     prisma.order.count({ where }),
   ])
+
   return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
 }
 
@@ -347,6 +354,7 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
   const today = todayRange()
   const baseWhere: any = {}
   if (storeId) baseWhere.storeId = storeId
+
   if (todayOnly) {
     baseWhere.AND = [
       {
@@ -369,6 +377,7 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
       ESCANEADO_POR_APP,
     ]
   }
+
   const [byStatus, byPlatform, byStore] = await Promise.all([
     prisma.order.groupBy({
       by:     ['status'],
@@ -388,9 +397,11 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
       take:    5,
     }),
   ])
+
   const countMap: Record<string, number> = {}
   byStatus.forEach(s => { countMap[s.status] = s._count._all })
   const total = Object.values(countMap).reduce((a, b) => a + b, 0)
+
   let byStoreWithNames: DashboardStats['byStore'] = []
   if (!storeId && byStore.length > 0) {
     const stores = await prisma.store.findMany({
@@ -404,6 +415,7 @@ export async function getDashboardStats(storeId?: string, todayOnly = true): Pro
       count:     s._count._all,
     }))
   }
+
   return {
     total,
     pending:    countMap['PENDING']    ?? 0,
