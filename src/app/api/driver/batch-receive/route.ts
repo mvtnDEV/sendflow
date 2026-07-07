@@ -13,7 +13,6 @@ function verifyDriverToken(req: NextRequest) {
   } catch { return null }
 }
 
-// POST /api/driver/batch-receive — recepcionar múltiples pedidos de una vez
 export async function POST(req: NextRequest) {
   const driver = verifyDriverToken(req)
   if (!driver) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
@@ -29,7 +28,11 @@ export async function POST(req: NextRequest) {
   for (const orderId of orderIds) {
     try {
       const order = await prisma.order.findUnique({ where: { id: orderId } })
-      if (!order || order.status !== 'PENDING') continue
+
+      // ── Fix: permitir PENDING e INCIDENT ──
+      // Los Flex con not_delivered quedan en INCIDENT pero el conductor
+      // los tiene físicamente y debe poder recepcionarlos
+      if (!order || !['PENDING', 'INCIDENT'].includes(order.status)) continue
 
       await prisma.order.update({
         where: { id: orderId },
@@ -46,7 +49,6 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      // Enviar a Envios Now al recepcionar
       try {
         const { toEnviosNowPayload, createEnviosNowDelivery } = await import('@/lib/services/enviosnow.service')
         const fullOrder = await prisma.order.findUnique({
@@ -59,7 +61,11 @@ export async function POST(req: NextRequest) {
           if (result.ok && result.id && result.id !== 'duplicate') {
             await prisma.order.update({
               where: { id: orderId },
-              data:  { externalId: String(result.id) },
+              data: {
+                externalId: String(result.id),
+                // ── Grabar inTransitAt si no lo tiene para facturación ──
+                ...(!fullOrder.inTransitAt && { inTransitAt: now }),
+              },
             })
           }
         }
