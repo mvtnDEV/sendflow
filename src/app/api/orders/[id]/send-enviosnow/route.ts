@@ -17,7 +17,6 @@ export async function POST(
     where:   { id: params.id },
     include: { store: true },
   })
-
   if (!order) {
     return NextResponse.json({ ok: false, error: 'Pedido no encontrado' }, { status: 404 })
   }
@@ -26,7 +25,7 @@ export async function POST(
     const payload = toEnviosNowPayload(order)
     const result  = await createEnviosNowDelivery(payload)
 
-   if (!result.ok) {
+    if (!result.ok) {
       console.error('[send-enviosnow] Error Now:', result.error, '| payload:', JSON.stringify(payload))
       return NextResponse.json({ ok: false, error: result.error })
     }
@@ -34,7 +33,13 @@ export async function POST(
     if (result.id && result.id !== 'duplicate') {
       await prisma.order.update({
         where: { id: order.id },
-        data:  { externalId: String(result.id) },
+        data: {
+          externalId: String(result.id),
+          // ── Si no tiene inTransitAt lo grabamos ahora ──
+          // Garantiza que el pedido entre en facturación aunque no haya
+          // pasado por el flujo normal de escaneo → bodega → ruta
+          ...(!order.inTransitAt && { inTransitAt: new Date() }),
+        },
       })
     }
 
