@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { audit } from '@/lib/services/audit.service'
-import jwt from 'jsonwebtoken'
 
 interface DriverPayload {
   id:      string
@@ -11,13 +10,15 @@ interface DriverPayload {
   storeId: string | null
 }
 
+// ── Token base64 simple — igual que batch-receive ──
 function verifyDriverToken(req: NextRequest): DriverPayload | null {
   const auth = req.headers.get('authorization')
   if (!auth?.startsWith('Bearer ')) return null
   try {
-    const payload = jwt.verify(auth.slice(7), process.env.NEXTAUTH_SECRET!) as DriverPayload
+    const payload = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString())
+    if (payload.exp < Date.now()) return null
     if (payload.role !== 'DRIVER') return null
-    return payload
+    return payload as DriverPayload
   } catch { return null }
 }
 
@@ -32,10 +33,22 @@ export async function GET(req: NextRequest) {
 
   const orders = await prisma.order.findMany({
     where: {
-      OR: [
-        { status: { in: ['IN_TRANSIT', 'INCIDENT'] } },
-        { inTransitAt: { gte: today, lt: tomorrow } },
-        { deliveredAt: { gte: today, lt: tomorrow } },
+      AND: [
+        // Solo pedidos donde este conductor tiene un evento
+        {
+          events: {
+            some: { createdBy: driver.id },
+          },
+        },
+        {
+          OR: [
+            // ── Incluir RECEIVED para que aparezcan después de recepcionar ──
+            { status: { in: ['RECEIVED', 'IN_TRANSIT', 'INCIDENT'] } },
+            { inTransitAt: { gte: today, lt: tomorrow } },
+            { deliveredAt: { gte: today, lt: tomorrow } },
+            { receivedAt:  { gte: today, lt: tomorrow } },
+          ],
+        },
       ],
     },
     include: {
@@ -62,6 +75,12 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Estado inválido' }, { status: 400 })
   }
 
+  const previous = await prisma.order.findUnique({
+    where:  { id: orderId },
+    select: { status: true },
+  })
+  const previousStatus = previous?.status ?? 'PENDING'
+
   const now   = new Date()
   const order = await prisma.order.update({
     where: { id: orderId },
@@ -79,6 +98,13 @@ export async function PATCH(req: NextRequest) {
       },
     },
   })
+
+  try {
+    const { notifyWebhooks } = await import('@/lib/services/webhook.service')
+    await notifyWebhooks(orderId, status, String(previousStatus))
+  } catch (err) {
+    console.error('[Driver orders] Error notificando webhook:', err)
+  }
 
   await audit({
     userId:   driver.id,
