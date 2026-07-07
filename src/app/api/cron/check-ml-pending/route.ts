@@ -4,6 +4,9 @@ import { prisma } from '@/lib/db/prisma'
 import { Prisma } from '@prisma/client'
 import { checkMLShipmentStatus } from '@/lib/integrations/mercadolibre-status'
 
+const NO_ENTREGADO_STATUSES  = ['not_delivered', 'returning', 'returned', 'lost', 'damaged']
+const NO_ENTREGADO_SUBSTATUS = ['receiver_absent', 'address_problem', 'first_attempt_failed', 'second_attempt_failed', 'out_of_delivery_hours', 'refused_delivery']
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -12,9 +15,9 @@ export async function GET(req: NextRequest) {
 
   const pendientes = await prisma.order.findMany({
     where: {
-      platform: 'MERCADOLIBRE',
+      platform:           'MERCADOLIBRE',
       pendingNowEvidence: { not: Prisma.JsonNull },
-      status: { notIn: ['DELIVERED', 'CANCELLED'] },
+      status:             { notIn: ['DELIVERED', 'CANCELLED'] },
     },
     select: { id: true, orderNumber: true, pendingNowEvidence: true },
   })
@@ -42,7 +45,7 @@ export async function GET(req: NextRequest) {
           deliveredAt: now,
           ...(pending?.images?.[0] && { evidencePhoto1: pending.images[0] }),
           ...(pending?.images?.[1] && { evidencePhoto2: pending.images[1] }),
-          evidenceNote: pending?.evidenceNote ?? null,
+          evidenceNote:        pending?.evidenceNote ?? null,
           pendingNowEvidence:  Prisma.JsonNull,
           pendingNowCheckedAt: now,
           events: {
@@ -54,13 +57,14 @@ export async function GET(req: NextRequest) {
           },
         },
       })
-      console.log('[Cron ML] Confirmado y cerrado:', order.orderNumber)
+      console.log('[Cron ML] Confirmado y cerrado como DELIVERED:', order.orderNumber)
       results.push({ orderNumber: order.orderNumber, status: 'closed_delivered' })
+
     } else if (mlCheck.isCancelled) {
       await prisma.order.update({
         where: { id: order.id },
         data: {
-          status: 'CANCELLED',
+          status:              'CANCELLED',
           pendingNowEvidence:  Prisma.JsonNull,
           pendingNowCheckedAt: now,
           events: {
@@ -73,9 +77,35 @@ export async function GET(req: NextRequest) {
         },
       })
       results.push({ orderNumber: order.orderNumber, status: 'closed_cancelled' })
+
     } else {
-      await prisma.order.update({ where: { id: order.id }, data: { pendingNowCheckedAt: now } })
-      results.push({ orderNumber: order.orderNumber, status: 'still_waiting', mlStatus: mlCheck.shipmentStatus })
+      // ── Detectar no entrega aunque no sea DELIVERED ni CANCELLED ──
+      const esNoEntregado =
+        NO_ENTREGADO_STATUSES.includes(mlCheck.shipmentStatus ?? '') ||
+        NO_ENTREGADO_SUBSTATUS.includes(mlCheck.shipmentSubstatus ?? '')
+
+      if (esNoEntregado) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status:              'INCIDENT',
+            pendingNowEvidence:  Prisma.JsonNull,
+            pendingNowCheckedAt: now,
+            events: {
+              create: {
+                status:    'INCIDENT',
+                note:      `ML Flex no pudo entregar · ${mlCheck.shipmentStatus ?? ''} · ${mlCheck.shipmentSubstatus ?? ''}`,
+                createdBy: 'ml-cron-check',
+              },
+            },
+          },
+        })
+        console.log('[Cron ML] Cerrado como INCIDENT:', order.orderNumber, '|', mlCheck.shipmentStatus, mlCheck.shipmentSubstatus)
+        results.push({ orderNumber: order.orderNumber, status: 'closed_incident', mlStatus: mlCheck.shipmentStatus })
+      } else {
+        await prisma.order.update({ where: { id: order.id }, data: { pendingNowCheckedAt: now } })
+        results.push({ orderNumber: order.orderNumber, status: 'still_waiting', mlStatus: mlCheck.shipmentStatus })
+      }
     }
   }
 
