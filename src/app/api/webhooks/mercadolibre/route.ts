@@ -5,18 +5,34 @@ import { decrypt, encrypt } from '@/lib/utils/crypto'
 import { fetchMLOrder, extractMLOrderId, refreshMLToken } from '@/lib/integrations/mercadolibre'
 import { upsertOrderFromWebhook } from '@/lib/services/order.service'
 
+const SHIPMENT_NO_ENTREGADO = [
+  'not_delivered', 'returning', 'returned', 'lost', 'damaged',
+]
+const SUBSTATUS_NO_ENTREGADO = [
+  'receiver_absent', 'address_problem', 'first_attempt_failed',
+  'second_attempt_failed', 'out_of_delivery_hours', 'refused_delivery', 'stolen',
+]
+const ORDER_TAGS_NO_ENTREGADO = [
+  'not_delivered', 'returning', 'returned',
+]
+
 function getMLStatus(order: any, shipment?: any): string | null {
-  const shipStatus  = shipment?.status  ?? null
-  const orderStatus = order?.status     ?? null
-  if (shipStatus  === 'delivered')     return 'DELIVERED'
-  if (shipStatus  === 'not_delivered') return 'INCIDENT'
-  if (shipStatus  === 'shipped')       return 'IN_TRANSIT'
-  if (orderStatus === 'cancelled')     return 'CANCELLED'
+  const shipStatus  = shipment?.status    ?? null
+  const substatus   = shipment?.substatus ?? null
+  const orderStatus = order?.status       ?? null
+  const orderTags   = order?.tags         ?? []
+
+  if (shipStatus === 'delivered')                                                         return 'DELIVERED'
+  if (shipStatus === 'shipped')                                                           return 'IN_TRANSIT'
+  if (orderStatus === 'cancelled')                                                        return 'CANCELLED'
+  if (SHIPMENT_NO_ENTREGADO.includes(shipStatus))                                         return 'INCIDENT'
+  if (SUBSTATUS_NO_ENTREGADO.includes(substatus))                                         return 'INCIDENT'
+  if (orderTags.some((t: string) => ORDER_TAGS_NO_ENTREGADO.includes(t)))                 return 'INCIDENT'
+
   return null
 }
 
 export async function POST(req: NextRequest) {
-  // ── Captura temprana del body — evita 500 silencioso si ML manda body malformado ──
   let body: any = null
   try {
     const raw = await req.text()
@@ -27,7 +43,6 @@ export async function POST(req: NextRequest) {
     body = JSON.parse(raw)
   } catch (parseErr) {
     console.error('[ML webhook] Body no es JSON válido:', parseErr)
-    // Responder 200 para que ML no reintente — el error es del body, no nuestro
     return NextResponse.json({ ok: true, skipped: true })
   }
 
@@ -97,7 +112,7 @@ export async function POST(req: NextRequest) {
       })
       if (shipRes.ok) {
         rawShipment = await shipRes.json()
-        console.log('[ML webhook] Shipment status:', rawShipment.status)
+        console.log('[ML webhook] Shipment status:', rawShipment.status, '| substatus:', rawShipment.substatus)
       }
 
       normalized = await fetchMLOrder(orderId, token)
@@ -137,6 +152,10 @@ export async function POST(req: NextRequest) {
       if (existing && existing.status !== newStatus && existing.status !== 'DELIVERED') {
         const now         = new Date()
         const dateShipped = rawShipment?.status_history?.date_shipped ?? null
+        const motivo      = rawShipment?.substatus
+          ?? rawOrder?.tags?.find((t: string) => ORDER_TAGS_NO_ENTREGADO.includes(t))
+          ?? newStatus
+
         await prisma.order.update({
           where: { id: existing.id },
           data: {
@@ -146,13 +165,15 @@ export async function POST(req: NextRequest) {
             events: {
               create: {
                 status:    newStatus as any,
-                note:      `ML Flex · Estado actualizado a ${newStatus}`,
+                note:      newStatus === 'INCIDENT'
+                  ? `ML Flex · No entregado · ${motivo}`
+                  : `ML Flex · Estado actualizado a ${newStatus}`,
                 createdBy: 'ml-webhook',
               },
             },
           },
         })
-        console.log('[ML webhook] Estado actualizado:', orderId, '->', newStatus)
+        console.log('[ML webhook] Estado actualizado:', orderId, '->', newStatus, '| motivo:', motivo)
       }
     }
 
@@ -165,7 +186,6 @@ export async function POST(req: NextRequest) {
 
   } catch (err: any) {
     console.error('[ML webhook] Error interno:', err)
-    // Responder 200 para evitar que ML reintente en bucle
     return NextResponse.json({ ok: true, error: 'handled' })
   }
 }
