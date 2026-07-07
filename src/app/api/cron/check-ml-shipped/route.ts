@@ -4,29 +4,37 @@ import { prisma } from '@/lib/db/prisma'
 import { decrypt, encrypt } from '@/lib/utils/crypto'
 import { refreshMLToken } from '@/lib/integrations/mercadolibre'
 
+const SHIPMENT_NO_ENTREGADO = [
+  'not_delivered', 'returning', 'returned', 'lost', 'damaged',
+]
+const SUBSTATUS_NO_ENTREGADO = [
+  'receiver_absent', 'address_problem', 'first_attempt_failed',
+  'second_attempt_failed', 'out_of_delivery_hours', 'refused_delivery', 'stolen',
+]
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
+  // ── Revisar pedidos ML Flex en IN_TRANSIT sin confirmación de escaneo ──
+  // Ahora también incluye los que ya tienen mlShippedAt para detectar no entregas
   const pendientes = await prisma.order.findMany({
     where: {
-      platform:    'MERCADOLIBRE',
-      mlShippedAt: null,
-      status:      { in: ['RECEIVED', 'IN_TRANSIT'] },
+      platform:      'MERCADOLIBRE',
+      status:        { in: ['RECEIVED', 'IN_TRANSIT'] },
       integrationId: { not: null },
     },
-    select: { id: true, orderNumber: true, integrationId: true, rawPayload: true },
+    select: { id: true, orderNumber: true, integrationId: true, rawPayload: true, mlShippedAt: true },
   })
 
-  console.log(`[Cron ML Shipped] Revisando ${pendientes.length} pedidos ML Flex sin confirmación de escaneo`)
+  console.log(`[Cron ML Shipped] Revisando ${pendientes.length} pedidos ML Flex activos`)
 
   const results = []
 
   for (const order of pendientes) {
     console.log('[Cron ML Shipped] >>> INICIO', order.orderNumber)
-
     try {
       const shippingId = (order.rawPayload as any)?.shipping?.id
       console.log('[Cron ML Shipped] shippingId:', order.orderNumber, '=', shippingId)
@@ -38,16 +46,12 @@ export async function GET(req: NextRequest) {
       }
 
       const integration = await prisma.storeIntegration.findUnique({ where: { id: order.integrationId } })
-      console.log('[Cron ML Shipped] integration encontrada:', order.orderNumber, !!integration)
-
       if (!integration) {
         results.push({ orderNumber: order.orderNumber, status: 'sin_integracion' })
         continue
       }
 
       const creds = decrypt(integration.apiKeyEnc)
-      console.log('[Cron ML Shipped] creds desencriptadas OK:', order.orderNumber)
-
       let accessToken: string
       let refreshToken: string
 
@@ -61,25 +65,20 @@ export async function GET(req: NextRequest) {
         refreshToken = rt
       }
 
-      console.log('[Cron ML Shipped] Llamando a ML API:', order.orderNumber, 'shipping:', shippingId)
-
       let res: Response
       try {
         res = await fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
-          signal: AbortSignal.timeout(8000),
-          cache: 'no-store', // ── crítico: evita que Next.js cachee la respuesta de ML ──
+          signal:  AbortSignal.timeout(8000),
+          cache:   'no-store',
         })
       } catch (fetchErr: any) {
-        console.error('[Cron ML Shipped] Fetch falló (timeout/red):', order.orderNumber, fetchErr.message)
+        console.error('[Cron ML Shipped] Fetch falló:', order.orderNumber, fetchErr.message)
         results.push({ orderNumber: order.orderNumber, status: 'fetch_error', message: fetchErr.message })
         continue
       }
 
-      console.log('[Cron ML Shipped] Respuesta ML:', order.orderNumber, 'status:', res.status)
-
       if (res.status === 401 || res.status === 403) {
-        console.log('[Cron ML Shipped] Token expirado, refrescando:', order.orderNumber)
         try {
           const refreshed = await refreshMLToken(refreshToken)
           await prisma.storeIntegration.update({
@@ -88,10 +87,9 @@ export async function GET(req: NextRequest) {
           })
           res = await fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, {
             headers: { Authorization: `Bearer ${refreshed.accessToken}` },
-            signal: AbortSignal.timeout(8000),
-            cache: 'no-store',
+            signal:  AbortSignal.timeout(8000),
+            cache:   'no-store',
           })
-          console.log('[Cron ML Shipped] Respuesta tras refresh:', order.orderNumber, 'status:', res.status)
         } catch (refreshErr: any) {
           console.error('[Cron ML Shipped] Refresh token falló:', order.orderNumber, refreshErr.message)
           results.push({ orderNumber: order.orderNumber, status: 'refresh_error', message: refreshErr.message })
@@ -107,10 +105,60 @@ export async function GET(req: NextRequest) {
       }
 
       const shipment    = await res.json()
+      const status      = shipment?.status    ?? null
+      const substatus   = shipment?.substatus ?? null
       const dateShipped = shipment?.status_history?.date_shipped ?? null
-      console.log('[Cron ML Shipped] date_shipped:', order.orderNumber, dateShipped)
 
-      if (dateShipped) {
+      console.log('[Cron ML Shipped]', order.orderNumber, '| status:', status, '| substatus:', substatus, '| date_shipped:', dateShipped)
+
+      // ── Detectar no entrega ──
+      const esNoEntregado =
+        SHIPMENT_NO_ENTREGADO.includes(status) ||
+        SUBSTATUS_NO_ENTREGADO.includes(substatus)
+
+      if (esNoEntregado) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: 'INCIDENT',
+            events: {
+              create: {
+                status:    'INCIDENT',
+                note:      `ML Flex · No entregado · ${status ?? ''}${substatus ? ` · ${substatus}` : ''}`,
+                createdBy: 'ml-cron-check',
+              },
+            },
+          },
+        })
+        console.log('[Cron ML Shipped] ❌ Cerrado como INCIDENT:', order.orderNumber, status, substatus)
+        results.push({ orderNumber: order.orderNumber, status: 'closed_incident', mlStatus: status, substatus })
+        continue
+      }
+
+      // ── Detectar entrega confirmada ──
+      if (status === 'delivered') {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status:      'DELIVERED',
+            deliveredAt: new Date(),
+            ...(dateShipped && { mlShippedAt: new Date(dateShipped) }),
+            events: {
+              create: {
+                status:    'DELIVERED',
+                note:      'ML Flex confirmó entrega',
+                createdBy: 'ml-cron-check',
+              },
+            },
+          },
+        })
+        console.log('[Cron ML Shipped] ✅ Cerrado como DELIVERED:', order.orderNumber)
+        results.push({ orderNumber: order.orderNumber, status: 'closed_delivered' })
+        continue
+      }
+
+      // ── Actualizar mlShippedAt si no lo tiene aún ──
+      if (dateShipped && !order.mlShippedAt) {
         await prisma.order.update({
           where: { id: order.id },
           data:  { mlShippedAt: new Date(dateShipped) },
@@ -118,11 +166,12 @@ export async function GET(req: NextRequest) {
         console.log('[Cron ML Shipped] ✅ Confirmado escaneo Flex:', order.orderNumber, dateShipped)
         results.push({ orderNumber: order.orderNumber, status: 'shipped_confirmed', dateShipped })
       } else {
-        console.log('[Cron ML Shipped] Aún no escaneado:', order.orderNumber)
-        results.push({ orderNumber: order.orderNumber, status: 'aun_no_escaneado' })
+        console.log('[Cron ML Shipped] Aún en tránsito:', order.orderNumber, status)
+        results.push({ orderNumber: order.orderNumber, status: 'aun_en_transito', mlStatus: status })
       }
+
     } catch (err: any) {
-      console.error('[Cron ML Shipped] ❌ Error inesperado:', order.orderNumber, err?.message, err?.stack)
+      console.error('[Cron ML Shipped] ❌ Error inesperado:', order.orderNumber, err?.message)
       results.push({ orderNumber: order.orderNumber, status: 'error', message: err?.message })
     }
 
@@ -130,6 +179,5 @@ export async function GET(req: NextRequest) {
   }
 
   console.log('[Cron ML Shipped] Terminado. Total procesados:', results.length)
-
   return NextResponse.json({ ok: true, checked: pendientes.length, results })
 }
