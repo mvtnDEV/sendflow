@@ -10,7 +10,6 @@ interface DriverPayload {
   storeId: string | null
 }
 
-// ── Token base64 simple — igual que batch-receive ──
 function verifyDriverToken(req: NextRequest): DriverPayload | null {
   const auth = req.headers.get('authorization')
   if (!auth?.startsWith('Bearer ')) return null
@@ -34,7 +33,6 @@ export async function GET(req: NextRequest) {
   const orders = await prisma.order.findMany({
     where: {
       AND: [
-        // Solo pedidos donde este conductor tiene un evento
         {
           events: {
             some: { createdBy: driver.id },
@@ -42,11 +40,12 @@ export async function GET(req: NextRequest) {
         },
         {
           OR: [
-            // ── Incluir RECEIVED para que aparezcan después de recepcionar ──
-            { status: { in: ['RECEIVED', 'IN_TRANSIT', 'INCIDENT'] } },
+            // Pedidos activos en ruta (pueden ser de días anteriores)
+            { status: 'IN_TRANSIT' },
+            // Solo de HOY
+            { receivedAt:  { gte: today, lt: tomorrow } },
             { inTransitAt: { gte: today, lt: tomorrow } },
             { deliveredAt: { gte: today, lt: tomorrow } },
-            { receivedAt:  { gte: today, lt: tomorrow } },
           ],
         },
       ],
