@@ -6,19 +6,14 @@ import { createOrder } from '@/lib/services/order.service'
 
 const ENVIAME_STORE_ID = 'cmovuegdk000051ctcljm2ort'
 
-// ── Parsear dirección en una línea: "Calle 123, Comuna, Región, Chile" ──
 function parsearDireccion(addressLine: string): {
   addressStreet: string
   addressComuna: string
   addressRegion: string
 } {
   if (!addressLine) return { addressStreet: '', addressComuna: '', addressRegion: '' }
-
-  const partes = addressLine.split(',').map(p => p.trim())
-
-  // Quitar "Chile" del final si está
+  const partes   = addressLine.split(',').map(p => p.trim())
   const filtradas = partes.filter(p => p.toLowerCase() !== 'chile')
-
   if (filtradas.length >= 3) {
     return {
       addressStreet: filtradas[0],
@@ -40,7 +35,6 @@ function parsearDireccion(addressLine: string): {
   }
 }
 
-// POST /api/v1/orders — crear pedido
 export async function POST(req: NextRequest) {
   const apiKey = await verifyApiKey(req)
   if (!apiKey) return NextResponse.json({ ok: false, error: 'API Key inválida o no enviada' }, { status: 401 })
@@ -51,34 +45,32 @@ export async function POST(req: NextRequest) {
   const {
     customerName, customerPhone, customerEmail,
     addressStreet, addressComuna, addressRegion, addressNotes,
-    address,        // ← dirección en una línea (formato Senby)
-    notes,          // ← referencia externa de Senby
+    address,
+    notes,
     bultos, externalId, storeId, subStoreName,
   } = body
 
   if (!customerName) return NextResponse.json({ ok: false, error: 'customerName es requerido' }, { status: 400 })
 
-  // ── Resolver dirección — soporta formato clásico y formato Senby (una línea) ──
-  let resolvedStreet  = addressStreet
-  let resolvedComuna  = addressComuna
-  let resolvedRegion  = addressRegion
+  let resolvedStreet = addressStreet
+  let resolvedComuna = addressComuna
+  let resolvedRegion = addressRegion
 
   if (address && !addressStreet) {
-    // Formato Senby — dirección en una sola línea
-    const parsed    = parsearDireccion(address)
-    resolvedStreet  = parsed.addressStreet
-    resolvedComuna  = parsed.addressComuna
-    resolvedRegion  = parsed.addressRegion
+    const parsed   = parsearDireccion(address)
+    resolvedStreet = parsed.addressStreet
+    resolvedComuna = parsed.addressComuna
+    resolvedRegion = parsed.addressRegion
   }
 
   if (!resolvedStreet) return NextResponse.json({ ok: false, error: 'addressStreet o address es requerido' }, { status: 400 })
   if (!resolvedComuna) return NextResponse.json({ ok: false, error: 'addressComuna requerido' }, { status: 400 })
   if (!resolvedRegion) resolvedRegion = 'Región Metropolitana'
 
-  // ── Referencia — soporta externalId clásico y notes de Senby ──
+  // ── Senby pide que su externalId llegue como externalId en Moovex ──
+  // sourceId queda null — el ID de Senby va directo a externalId
   const resolvedExternalId = externalId || notes || undefined
 
-  // ── Resolver tienda ──
   let resolvedStoreId = storeId || apiKey.storeId || ENVIAME_STORE_ID
   if (!resolvedStoreId) {
     const firstStore = await prisma.store.findFirst({ where: { isActive: true }, select: { id: true } })
@@ -98,10 +90,18 @@ export async function POST(req: NextRequest) {
       addressRegion: resolvedRegion,
       addressNotes:  addressNotes || undefined,
       bultos:        bultos ?? 1,
-      sourceId:      resolvedExternalId,
+      sourceId:      undefined,           // ← siempre null para Senby
       subStoreName:  subStoreName ?? undefined,
       createdBy:     'api',
     })
+
+    // ── Guardar externalId de Senby directamente en el campo externalId ──
+    if (resolvedExternalId) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data:  { externalId: String(resolvedExternalId) },
+      })
+    }
 
     return NextResponse.json({
       ok: true,
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
         orderNumber: order.orderNumber,
         qrCode:      order.qrCode,
         status:      order.status,
-        labelUrl:    `${process.env.APP_URL}/api/labels/${order.id}`,
+        // ── Sin labelUrl — Senby usa sus propias etiquetas ──
         createdAt:   order.createdAt,
       }
     }, { status: 201 })
@@ -121,7 +121,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET /api/v1/orders — listar pedidos
 export async function GET(req: NextRequest) {
   const apiKey = await verifyApiKey(req)
   if (!apiKey) return NextResponse.json({ ok: false, error: 'API Key inválida o no enviada' }, { status: 401 })
@@ -140,8 +139,9 @@ export async function GET(req: NextRequest) {
   const where: any = {}
   if (apiKey.storeId) where.storeId     = apiKey.storeId
   if (status)         where.status       = status
-  if (externalId)     where.sourceId     = externalId
+  if (externalId)     where.externalId   = externalId  // ← buscar por externalId real
   if (subStoreName)   where.subStoreName = subStoreName
+
   if (date) {
     const d = new Date(date)
     where.createdAt = {
@@ -178,8 +178,8 @@ export async function GET(req: NextRequest) {
       items: items.map(o => ({
         ...o,
         storeName:    o.store.name,
-        subStoreName: o.subStoreName,
-        externalId:   o.sourceId,
+        sourceId:     null,              // ← siempre null para Senby
+        externalId:   o.externalId,      // ← ID de Senby
       })),
       total, page, pageSize,
       totalPages: Math.ceil(total / pageSize),
