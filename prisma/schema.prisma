@@ -158,6 +158,10 @@ model Order {
   @@index([externalId, integrationId])
   @@index([sourceId])
   @@index([dataRetentionDate])
+  // Rendimiento (P1 auditoría): orden por fecha en listados. Los nombres map:
+  // coinciden con los índices creados por SQL en Supabase (CREATE INDEX CONCURRENTLY).
+  @@index([storeId, createdAt(sort: Desc)], map: "orders_storeId_createdAt_idx")
+  @@index([createdAt(sort: Desc)], map: "orders_createdAt_idx")
   @@map("orders")
 }
 
