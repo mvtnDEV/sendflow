@@ -22,7 +22,6 @@ export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text()
     console.log('[EnviosNow] Raw body:', rawBody)
-
     let body: any
     try { body = JSON.parse(rawBody) } catch {
       return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
@@ -89,17 +88,15 @@ export async function POST(req: NextRequest) {
       const receiverName = delivery.receiverName || null
       const receiverRut  = delivery.receiverRut && delivery.receiverRut !== 'No da rut' ? delivery.receiverRut : null
 
+      // ── evidenceNote: solo receptor y RUT — sin "Actualizado desde Envios Now" ──
+      // Las tiendas solo ven quién recibió y el RUT, no el origen interno
       const evidenceNote = [
-        note,
         receiverName ? `Recibió: ${receiverName}` : null,
         receiverRut  ? `RUT: ${receiverRut}`       : null,
-      ].filter(Boolean).join(' · ')
+      ].filter(Boolean).join(' · ') || null
 
-      // ── Filtro ML Flex: si el pedido es de ML y Now dice DELIVERED/INCIDENT, ──
-      // ── validar primero contra la API de ML antes de cerrar ──────────────────
       if (order.platform === 'MERCADOLIBRE' && (newStatus === 'DELIVERED' || newStatus === 'INCIDENT')) {
         const mlCheck = await checkMLShipmentStatus(order.id)
-
         if (!mlCheck || !mlCheck.isDelivered) {
           await prisma.order.update({
             where: { id: order.id },
@@ -107,7 +104,7 @@ export async function POST(req: NextRequest) {
               pendingNowEvidence: {
                 images,
                 evidenceNote,
-                attemptedStatus: newStatus,
+                attemptedStatus:   newStatus,
                 receivedFromNowAt: now.toISOString(),
               },
               pendingNowCheckedAt: now,
@@ -117,13 +114,9 @@ export async function POST(req: NextRequest) {
           results.push({ externalId, nowId, status: 'waiting_ml_confirmation', mlShipmentStatus: mlCheck?.shipmentStatus ?? null })
           continue
         }
-
         console.log('[EnviosNow] ML Flex confirma entrega, cerrando pedido:', order.orderNumber)
       }
 
-      // Si es ML Flex y se está confirmando DELIVERED, ya pasó la validación contra ML
-      // (mlCheck.isDelivered === true), así que sabemos con certeza que Flex ya escaneó.
-      // Si por algún motivo mlShippedAt sigue null, lo rellenamos aquí mismo.
       const esFlexEntregado = order.platform === 'MERCADOLIBRE' && newStatus === 'DELIVERED'
 
       await prisma.order.update({
@@ -140,6 +133,8 @@ export async function POST(req: NextRequest) {
           pendingNowCheckedAt: null,
           events: {
             create: {
+              // ── Nota interna del timeline — incluye origen Now para auditoría ──
+              // Las tiendas no ven el timeline de enviosnow-webhook
               status:    newStatus as any,
               note:      `Envios Now · ${note}${receiverName ? ` · Recibió: ${receiverName}` : ''}`,
               createdBy: 'enviosnow-webhook',
@@ -148,7 +143,6 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      // Asegurar mlShippedAt si era un Flex recién confirmado entregado
       if (esFlexEntregado) {
         const current = await prisma.order.findUnique({
           where:  { id: order.id },
@@ -168,6 +162,7 @@ export async function POST(req: NextRequest) {
 
     console.log('[EnviosNow] Resultados:', JSON.stringify(results))
     return NextResponse.json({ received: true, results })
+
   } catch (err) {
     console.error('[EnviosNow] Error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
