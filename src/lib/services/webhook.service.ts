@@ -29,14 +29,17 @@ async function buildFullOrderPayload(orderId: string, event: string, previousSta
       timestamp: e.createdAt,
     }))
 
+  // ── Para pedidos de Senby, externalId en el webhook es el ID que ellos mandaron ──
+  // El externalId de Moovex ahora guarda el ID de Senby directamente
+  // sourceId queda null — no se expone
   return {
     event,
     previousStatus,
     data: {
       id:             order.id,
       orderNumber:    order.orderNumber,
-      externalId:     order.externalId,
-      sourceId:       order.sourceId,
+      externalId:     order.externalId,   // ← ID de Senby
+      sourceId:       null,               // ← siempre null para Senby
       subStoreName:   order.subStoreName,
       status:         order.status,
       customerName:   order.customerName,
@@ -128,7 +131,6 @@ async function sendWebhookWithRetry(
   console.error(`[Webhook] Se agotaron los ${MAX_ATTEMPTS} intentos para orderId=${orderId}`)
 }
 
-// ── Deduplicación en memoria: evita disparar el mismo evento 2 veces en menos de 5 segundos ──
 const recentNotifications = new Map<string, number>()
 
 export async function notifyWebhooks(
