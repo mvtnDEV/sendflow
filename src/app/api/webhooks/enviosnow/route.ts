@@ -89,7 +89,6 @@ export async function POST(req: NextRequest) {
       const receiverRut  = delivery.receiverRut && delivery.receiverRut !== 'No da rut' ? delivery.receiverRut : null
 
       // ── evidenceNote: solo receptor y RUT — sin "Actualizado desde Envios Now" ──
-      // Las tiendas solo ven quién recibió y el RUT, no el origen interno
       const evidenceNote = [
         receiverName ? `Recibió: ${receiverName}` : null,
         receiverRut  ? `RUT: ${receiverRut}`       : null,
@@ -110,14 +109,15 @@ export async function POST(req: NextRequest) {
               pendingNowCheckedAt: now,
             },
           })
-          console.log('[EnviosNow] ML Flex aún no confirma entrega, esperando:', order.orderNumber, '| ML status:', mlCheck?.shipmentStatus ?? 'sin respuesta')
+          console.log('[EnviosNow] ML Flex aún no confirma entrega, esperando:', order.orderNumber)
           results.push({ externalId, nowId, status: 'waiting_ml_confirmation', mlShipmentStatus: mlCheck?.shipmentStatus ?? null })
           continue
         }
         console.log('[EnviosNow] ML Flex confirma entrega, cerrando pedido:', order.orderNumber)
       }
 
-      const esFlexEntregado = order.platform === 'MERCADOLIBRE' && newStatus === 'DELIVERED'
+      const esFlexEntregado    = order.platform === 'MERCADOLIBRE' && newStatus === 'DELIVERED'
+      const previousStatus     = order.status
 
       await prisma.order.update({
         where: { id: order.id },
@@ -133,8 +133,6 @@ export async function POST(req: NextRequest) {
           pendingNowCheckedAt: null,
           events: {
             create: {
-              // ── Nota interna del timeline — incluye origen Now para auditoría ──
-              // Las tiendas no ven el timeline de enviosnow-webhook
               status:    newStatus as any,
               note:      `Envios Now · ${note}${receiverName ? ` · Recibió: ${receiverName}` : ''}`,
               createdBy: 'enviosnow-webhook',
@@ -154,6 +152,14 @@ export async function POST(req: NextRequest) {
             data:  { mlShippedAt: current?.inTransitAt ?? now },
           })
         }
+      }
+
+      // ── Notificar webhooks (Senby y otros) cuando Now actualiza el estado ──
+      try {
+        const { notifyWebhooks } = await import('@/lib/services/webhook.service')
+        await notifyWebhooks(order.id, newStatus, previousStatus)
+      } catch (err) {
+        console.error('[EnviosNow] Error notificando webhook:', err)
       }
 
       console.log('[EnviosNow] Actualizado:', extId, '->', newStatus)
