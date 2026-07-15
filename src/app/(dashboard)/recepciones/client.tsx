@@ -37,11 +37,9 @@ function formatSourceId(sourceId: string | null, platform: string): string | nul
   if (!prefix || platform === 'MANUAL') return null
   return `${prefix}-${sourceId}`
 }
-
 function formatRawStatus(status: string): string {
   return status.replace(/_/g, ' ').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
-
 function getPlatformStatus(rawPayload: any): string | null {
   if (!rawPayload) return null
   const status = rawPayload.status ?? rawPayload.financial_status ?? null
@@ -56,6 +54,8 @@ function fmtTime(date: Date | string) {
 function fmtDate(date: Date | string) {
   return new Date(date).toLocaleDateString('es-CL', { day:'2-digit', month:'short', timeZone: TZ })
 }
+
+const SENBY_STORE_ID = 'cmpanvuns000053f2gbs46t83'
 
 export default function RecepcionesClient({
   storeName, todayOnly, orders = [], total, page, totalPages, userRole, userStoreId, searchParams,
@@ -74,15 +74,17 @@ export default function RecepcionesClient({
   const [loadingExportFlex,  setLoadingExportFlex]  = useState(false)
   const [loadingRecepcionar, setLoadingRecepcionar] = useState(false)
   const [loadingEtiquetas,   setLoadingEtiquetas]   = useState(false)
+  const [loadingEnCamino,    setLoadingEnCamino]    = useState(false)
   const [resultado,          setResultado]          = useState<{ ok: boolean; msg: string } | null>(null)
   const [selected,           setSelected]           = useState<Set<string>>(new Set())
 
   const isStoreAdmin = userRole === 'STORE_ADMIN'
   const isSuperAdmin = userRole === 'SUPER_ADMIN'
-  const pendientes    = orders.filter(o => o.status === 'PENDING')
-  const allSelected   = selected.size === orders.length && orders.length > 0
+  const esSenby      = searchParams.storeId === SENBY_STORE_ID
 
-  // ── Pedidos Flex en estado "Esperando" (aún no escaneados por el repartidor) ──
+  const pendientes    = orders.filter(o => o.status === 'PENDING')
+  const recibidos     = orders.filter(o => o.status === 'RECEIVED')
+  const allSelected   = selected.size === orders.length && orders.length > 0
   const flexEsperando = orders.filter(o => o.platform === 'MERCADOLIBRE' && !o.mlShippedAt)
 
   function buildPageUrl(p: number) {
@@ -91,7 +93,6 @@ export default function RecepcionesClient({
     params.set('page', String(p))
     return `/recepciones?${params.toString()}`
   }
-
   function toggleSelected(id: string) {
     setSelected(prev => {
       const next = new Set(prev)
@@ -100,7 +101,6 @@ export default function RecepcionesClient({
       return next
     })
   }
-
   function toggleAll() {
     if (allSelected) setSelected(new Set())
     else setSelected(new Set(orders.map((o: any) => o.id)))
@@ -143,7 +143,6 @@ export default function RecepcionesClient({
     finally { setLoadingExport(false) }
   }
 
-  // ── Exportación separada: solo Flex aún no escaneados por el repartidor ──
   async function exportExcelFlexEsperando() {
     if (flexEsperando.length === 0) { alert('No hay pedidos Flex esperando escaneo en esta vista.'); return }
     setLoadingExportFlex(true)
@@ -193,6 +192,28 @@ export default function RecepcionesClient({
     finally { setLoadingRecepcionar(false) }
   }
 
+  async function ponerEnCaminoTodos() {
+    if (recibidos.length === 0) return
+    if (!confirm(`¿Poner en camino ${recibidos.length} pedido${recibidos.length !== 1 ? 's' : ''} recepcionado${recibidos.length !== 1 ? 's' : ''}?\n\nEsto notificará a Senby que están en camino.`)) return
+    setLoadingEnCamino(true)
+    setResultado(null)
+    try {
+      const res = await fetch('/api/orders/batch-in-transit', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ orderIds: recibidos.map(o => o.id) }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setResultado({ ok: true, msg: `✅ ${data.updated} pedido${data.updated !== 1 ? 's' : ''} en camino` })
+        setTimeout(() => window.location.reload(), 1500)
+      } else {
+        setResultado({ ok: false, msg: `❌ Error: ${data.error}` })
+      }
+    } catch { setResultado({ ok: false, msg: '❌ Error al poner en camino' }) }
+    finally { setLoadingEnCamino(false) }
+  }
+
   async function imprimirEtiquetas() {
     const ids = selected.size > 0 ? Array.from(selected) : orders.map((o: any) => o.id)
     if (ids.length === 0) { alert('No hay pedidos'); return }
@@ -234,6 +255,13 @@ export default function RecepcionesClient({
             {loadingRecepcionar ? '⏳ Recepcionando...' : `📥 Recepcionar (${pendientes.length})`}
           </button>
         )}
+        {/* ── Poner en camino masivo — solo SUPER_ADMIN filtrando por Senby ── */}
+        {isSuperAdmin && esSenby && recibidos.length > 0 && (
+          <button onClick={ponerEnCaminoTodos} disabled={loadingEnCamino}
+            style={{ padding:'7px 14px', background:loadingEnCamino?'#86EFAC':'#16A34A', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingEnCamino?'not-allowed':'pointer' }}>
+            {loadingEnCamino ? '⏳ Poniendo en camino...' : `🚚 Poner en camino (${recibidos.length})`}
+          </button>
+        )}
         {orders.length > 0 && (
           <button onClick={imprimirEtiquetas} disabled={loadingEtiquetas}
             style={{ padding:'7px 14px', background:loadingEtiquetas?'#93C5FD':'#7C3AED', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingEtiquetas?'not-allowed':'pointer' }}>
@@ -244,15 +272,12 @@ export default function RecepcionesClient({
           style={{ padding:'7px 14px', background:loadingExport?'#86EFAC':'#16A34A', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingExport?'not-allowed':'pointer' }}>
           {loadingExport ? '⏳...' : '⬇ Excel'}
         </button>
-
-        {/* Exportación separada — solo SUPER_ADMIN, solo Flex esperando escaneo */}
         {isSuperAdmin && flexEsperando.length > 0 && (
           <button onClick={exportExcelFlexEsperando} disabled={loadingExportFlex}
             style={{ padding:'7px 14px', background:loadingExportFlex?'#FDE68A':'#D97706', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingExportFlex?'not-allowed':'pointer' }}>
             {loadingExportFlex ? '⏳...' : `⬇ Flex esperando (${flexEsperando.length})`}
           </button>
         )}
-
         {selected.size > 0 && (
           <button onClick={() => setSelected(new Set())}
             style={{ padding:'7px 12px', background:'white', color:'#6B7280', border:'1px solid #E2E8F0', borderRadius:8, fontSize:12, cursor:'pointer' }}>
@@ -318,11 +343,11 @@ export default function RecepcionesClient({
               </thead>
               <tbody>
                 {orders.map(order => {
-                  const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-                  const isSelected  = selected.has(order.id)
-                  const sourceLabel = formatSourceId(order.sourceId, order.platform)
+                  const sc             = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+                  const isSelected     = selected.has(order.id)
+                  const sourceLabel    = formatSourceId(order.sourceId, order.platform)
                   const platformStatus = getPlatformStatus(order.rawPayload)
-                  const esFlex = order.platform === 'MERCADOLIBRE'
+                  const esFlex         = order.platform === 'MERCADOLIBRE'
                   return (
                     <tr key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white' }}>
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', textAlign:'center' }}>
@@ -412,11 +437,11 @@ export default function RecepcionesClient({
           {/* CARDS MOBILE */}
           <div className="mobile-card" style={{ flexDirection:'column', gap:8 }}>
             {orders.map(order => {
-              const sc          = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
-              const isSelected  = selected.has(order.id)
-              const sourceLabel = formatSourceId(order.sourceId, order.platform)
+              const sc             = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
+              const isSelected     = selected.has(order.id)
+              const sourceLabel    = formatSourceId(order.sourceId, order.platform)
               const platformStatus = getPlatformStatus(order.rawPayload)
-              const esFlex = order.platform === 'MERCADOLIBRE'
+              const esFlex         = order.platform === 'MERCADOLIBRE'
               return (
                 <div key={order.id} style={{ background: isSelected ? '#F0F7FF' : 'white', border:'1px solid #E2E8F0', borderRadius:12, padding:14, position:'relative' }}>
                   <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10 }}>
