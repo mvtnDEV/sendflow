@@ -7,7 +7,9 @@ import { checkMLShipmentStatus } from '@/lib/integrations/mercadolibre-status'
 const STATE_MAP: Record<string, string> = {
   'entregado':    'DELIVERED',
   'cancelado':    'CANCELLED',
-  'por entregar': 'IN_TRANSIT',
+  // ── 'por entregar' eliminado — Now lo manda automáticamente al crear el envío ──
+  // El IN_TRANSIT solo debe venir de la app del conductor al apretar "Salir a ruta"
+  // Senby ya tiene los pedidos recepcionados — no necesita el IN_TRANSIT de Now
   'pendiente':    'INCIDENT',
   'no entregado': 'INCIDENT',
   'fallido':      'INCIDENT',
@@ -88,7 +90,6 @@ export async function POST(req: NextRequest) {
       const receiverName = delivery.receiverName || null
       const receiverRut  = delivery.receiverRut && delivery.receiverRut !== 'No da rut' ? delivery.receiverRut : null
 
-      // ── evidenceNote: solo receptor y RUT — sin "Actualizado desde Envios Now" ──
       const evidenceNote = [
         receiverName ? `Recibió: ${receiverName}` : null,
         receiverRut  ? `RUT: ${receiverRut}`       : null,
@@ -116,15 +117,14 @@ export async function POST(req: NextRequest) {
         console.log('[EnviosNow] ML Flex confirma entrega, cerrando pedido:', order.orderNumber)
       }
 
-      const esFlexEntregado    = order.platform === 'MERCADOLIBRE' && newStatus === 'DELIVERED'
-      const previousStatus     = order.status
+      const esFlexEntregado = order.platform === 'MERCADOLIBRE' && newStatus === 'DELIVERED'
+      const previousStatus  = order.status
 
       await prisma.order.update({
         where: { id: order.id },
         data: {
           status: newStatus as any,
           ...(newStatus === 'DELIVERED'  && { deliveredAt: now }),
-          ...(newStatus === 'IN_TRANSIT' && { inTransitAt: now }),
           ...(newStatus === 'RECEIVED'   && { receivedAt:  now }),
           ...(images?.[0] && { evidencePhoto1: images[0] }),
           ...(images?.[1] && { evidencePhoto2: images[1] }),
@@ -154,7 +154,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // ── Notificar webhooks (Senby y otros) cuando Now actualiza el estado ──
       try {
         const { notifyWebhooks } = await import('@/lib/services/webhook.service')
         await notifyWebhooks(order.id, newStatus, previousStatus)
