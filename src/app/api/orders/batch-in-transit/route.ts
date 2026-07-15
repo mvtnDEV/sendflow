@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/utils/auth'
-import { prisma } from '@/lib/db/prisma'
+import { batchTransitionOrders } from '@/lib/services/order-batch.service'
+import { deferAfterResponse } from '@/lib/utils/defer'
 
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
@@ -14,46 +16,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'orderIds requerido' }, { status: 400 })
   }
 
-  const now   = new Date()
-  let updated = 0
+  try {
+    const result = await batchTransitionOrders({
+      orderIds,
+      toStatus:       'IN_TRANSIT',
+      fromStatuses:   ['RECEIVED'],
+      eventNote:      'Salió a ruta — recepción masiva web',
+      createdBy:      user.id,
+      timestampField: 'inTransitAt',
+    })
 
-  for (const orderId of orderIds) {
-    try {
-      const order = await prisma.order.findUnique({
-        where:  { id: orderId },
-        select: { id: true, status: true },
-      })
-
-      if (!order || order.status !== 'RECEIVED') continue
-
-      await prisma.order.update({
-        where: { id: orderId },
-        data: {
-          status:      'IN_TRANSIT',
-          inTransitAt: now,
-          events: {
-            create: {
-              status:    'IN_TRANSIT',
-              note:      'Salió a ruta — recepción masiva web',
-              createdBy: user.id,
-            },
-          },
-        },
-      })
-
-      // ── Notificar webhook a Senby ──
-      try {
-        const { notifyWebhooks } = await import('@/lib/services/webhook.service')
-        await notifyWebhooks(orderId, 'IN_TRANSIT', 'RECEIVED')
-      } catch (err) {
-        console.error('[batch-in-transit] Error notificando webhook:', err)
-      }
-
-      updated++
-    } catch (err) {
-      console.error('[batch-in-transit] Error en pedido:', orderId, err)
+    // ── Notificar webhooks a Senby en segundo plano (no bloquea la respuesta) ──
+    if (result.updated.length > 0) {
+      const { notifyWebhooksBatch } = await import('@/lib/services/webhook.service')
+      deferAfterResponse(
+        notifyWebhooksBatch(
+          result.updated.map(o => ({ orderId: o.id, storeId: o.storeId, previousStatus: o.previousStatus })),
+          'IN_TRANSIT',
+        ),
+        'batch-in-transit webhooks',
+      )
     }
-  }
 
-  return NextResponse.json({ ok: true, updated })
+    return NextResponse.json({ ok: true, updated: result.updated.length })
+  } catch (err) {
+    console.error('[batch-in-transit] Error en batch:', err)
+    return NextResponse.json({ ok: false, error: 'Error actualizando pedidos' }, { status: 500 })
+  }
 }

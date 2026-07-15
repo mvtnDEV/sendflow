@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db/prisma'
+import { batchTransitionOrders } from '@/lib/services/order-batch.service'
 
 function verifyDriverToken(req: NextRequest) {
   const auth = req.headers.get('authorization')
@@ -23,34 +24,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'orderIds requerido' }, { status: 400 })
   }
 
-  const now     = new Date()
-  let updated   = 0
-
-  for (const orderId of orderIds) {
-    try {
-      const order = await prisma.order.findUnique({ where: { id: orderId } })
-      if (!order || order.status !== 'RECEIVED') continue
-
-      await prisma.order.update({
-        where: { id: orderId },
-        data: {
-          status:      'IN_TRANSIT',
-          inTransitAt: now,
-          events: {
-            create: {
-              status:    'IN_TRANSIT',
-              note:      'Salió a ruta',
-              createdBy: driver.id,
-            },
-          },
-        },
-      })
-
-      updated++
-    } catch (err) {
-      console.error('[salir-ruta] Error en pedido:', orderId, err)
-    }
+  try {
+    const result = await batchTransitionOrders({
+      orderIds,
+      toStatus:       'IN_TRANSIT',
+      fromStatuses:   ['RECEIVED'],
+      eventNote:      'Salió a ruta',
+      createdBy:      driver.id,
+      timestampField: 'inTransitAt',
+    })
+    return NextResponse.json({ ok: true, updated: result.updated.length })
+  } catch (err) {
+    console.error('[salir-ruta] Error en batch:', err)
+    return NextResponse.json({ ok: false, error: 'Error actualizando pedidos' }, { status: 500 })
   }
-
-  return NextResponse.json({ ok: true, updated })
 }

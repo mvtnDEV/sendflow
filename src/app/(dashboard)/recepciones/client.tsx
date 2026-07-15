@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
@@ -70,6 +71,7 @@ export default function RecepcionesClient({
   userStoreId?: string
   searchParams: Record<string, string | undefined>
 }) {
+  const router = useRouter()
   const [loadingExport,      setLoadingExport]      = useState(false)
   const [loadingExportFlex,  setLoadingExportFlex]  = useState(false)
   const [loadingRecepcionar, setLoadingRecepcionar] = useState(false)
@@ -184,7 +186,7 @@ export default function RecepcionesClient({
       const data = await res.json()
       if (data.ok) {
         setResultado({ ok: true, msg: `✅ ${data.updated} pedido${data.updated !== 1 ? 's' : ''} recepcionado${data.updated !== 1 ? 's' : ''} correctamente` })
-        setTimeout(() => window.location.reload(), 1500)
+        setTimeout(() => router.refresh(), 1500)
       } else {
         setResultado({ ok: false, msg: `❌ Error: ${data.error}` })
       }
@@ -206,7 +208,7 @@ export default function RecepcionesClient({
       const data = await res.json()
       if (data.ok) {
         setResultado({ ok: true, msg: `✅ ${data.updated} pedido${data.updated !== 1 ? 's' : ''} en camino` })
-        setTimeout(() => window.location.reload(), 1500)
+        setTimeout(() => router.refresh(), 1500)
       } else {
         setResultado({ ok: false, msg: `❌ Error: ${data.error}` })
       }
@@ -252,14 +254,14 @@ export default function RecepcionesClient({
         {pendientes.length > 0 && (
           <button onClick={recepcionarTodos} disabled={loadingRecepcionar}
             style={{ padding:'7px 14px', background:loadingRecepcionar?'#93C5FD':'#D97706', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingRecepcionar?'not-allowed':'pointer' }}>
-            {loadingRecepcionar ? '⏳ Recepcionando...' : `📥 Recepcionar (${pendientes.length})`}
+            {loadingRecepcionar ? `⏳ Recepcionando ${pendientes.length} pedidos…` : `📥 Recepcionar (${pendientes.length})`}
           </button>
         )}
         {/* ── Poner en camino masivo — solo SUPER_ADMIN filtrando por Senby ── */}
         {isSuperAdmin && esSenby && recibidos.length > 0 && (
           <button onClick={ponerEnCaminoTodos} disabled={loadingEnCamino}
             style={{ padding:'7px 14px', background:loadingEnCamino?'#86EFAC':'#16A34A', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingEnCamino?'not-allowed':'pointer' }}>
-            {loadingEnCamino ? '⏳ Poniendo en camino...' : `🚚 Poner en camino (${recibidos.length})`}
+            {loadingEnCamino ? `⏳ Poniendo ${recibidos.length} en camino…` : `🚚 Poner en camino (${recibidos.length})`}
           </button>
         )}
         {orders.length > 0 && (

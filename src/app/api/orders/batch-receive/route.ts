@@ -1,7 +1,10 @@
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/utils/auth'
-import { updateOrderStatus } from '@/lib/services/order.service'
+import { batchTransitionOrders } from '@/lib/services/order-batch.service'
+import { createEnviosNowDeliveriesBatch } from '@/lib/services/enviosnow.service'
+import { deferAfterResponse } from '@/lib/utils/defer'
 import { prisma } from '@/lib/db/prisma'
 
 // POST /api/orders/batch-receive — recepcionar múltiples pedidos desde el sistema web
@@ -17,27 +20,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'orderIds requerido' }, { status: 400 })
   }
 
-  let updated = 0
-  const errors: string[] = []
+  try {
+    const result = await batchTransitionOrders({
+      orderIds,
+      toStatus:          'RECEIVED',
+      fromStatuses:      ['PENDING'], // ya recepcionado, skip silencioso
+      eventNote:         'Recepcionado en bodega (batch web)',
+      createdBy:         user.id,
+      restrictToStoreId: user.role === 'STORE_ADMIN' && user.storeId ? user.storeId : undefined,
+      timestampField:    'receivedAt',
+      reportMissing:     true,
+    })
 
-  for (const orderId of orderIds) {
-    try {
-      const order = await prisma.order.findUnique({ where: { id: orderId } })
-      if (!order) { errors.push(`Pedido ${orderId} no encontrado`); continue }
-      if (order.status !== 'PENDING') { continue } // ya recepcionado, skip silencioso
-
-      // STORE_ADMIN solo puede recepcionar pedidos de su tienda
-      if (user.role === 'STORE_ADMIN' && user.storeId !== order.storeId) {
-        errors.push(`Sin acceso al pedido ${order.orderNumber}`)
-        continue
+    if (result.updated.length > 0) {
+      // ── Crear envíos en EnviosNow en paralelo (pool 6, timeout 10s c/u) ──
+      const successes = await createEnviosNowDeliveriesBatch(result.updated)
+      if (successes.length > 0) {
+        await prisma.$transaction(
+          successes.map(s => prisma.order.update({
+            where: { id: s.orderId },
+            data:  { externalId: s.externalId },
+          }))
+        )
       }
 
-      await updateOrderStatus(orderId, 'RECEIVED', 'Recepcionado en bodega (batch web)', user.id)
-      updated++
-    } catch (err: any) {
-      errors.push(err.message)
+      // ── Webhooks en segundo plano (no bloquean la respuesta) ──
+      const { notifyWebhooksBatch } = await import('@/lib/services/webhook.service')
+      deferAfterResponse(
+        notifyWebhooksBatch(
+          result.updated.map(o => ({ orderId: o.id, storeId: o.storeId, previousStatus: o.previousStatus })),
+          'RECEIVED',
+        ),
+        'batch-receive webhooks',
+      )
     }
-  }
 
-  return NextResponse.json({ ok: true, updated, errors })
+    return NextResponse.json({ ok: true, updated: result.updated.length, errors: result.errors })
+  } catch (err: any) {
+    console.error('[batch-receive] Error en batch:', err)
+    return NextResponse.json({ ok: false, error: 'Error recepcionando pedidos' }, { status: 500 })
+  }
 }

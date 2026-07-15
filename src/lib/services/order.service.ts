@@ -177,7 +177,6 @@ export async function updateOrderStatus(
         },
       },
     },
-    include: { store: true, events: { orderBy: { createdAt: 'desc' } } },
   })
 
   if (status === 'RECEIVED' && !skipEnviosNow) {
@@ -199,8 +198,10 @@ export async function updateOrderStatus(
   }
 
   try {
+    // ── Webhook en segundo plano: no bloquea la respuesta si el destino está lento ──
     const { notifyWebhooks } = await import('./webhook.service')
-    await notifyWebhooks(orderId, status, previousStatus)
+    const { deferAfterResponse } = await import('@/lib/utils/defer')
+    deferAfterResponse(notifyWebhooks(orderId, status, previousStatus), 'updateOrderStatus webhook')
   } catch (err) {
     console.error('[Webhook] Error:', err)
   }

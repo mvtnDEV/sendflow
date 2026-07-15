@@ -21,15 +21,18 @@ function extraerRut(evidenceNote: string | null): string | null {
   return rut
 }
 
-async function buildFullOrderPayload(orderId: string, event: string, previousStatus: string) {
-  const order = await prisma.order.findUnique({
-    where:   { id: orderId },
+async function fetchOrdersForPayload(orderIds: string[]) {
+  return prisma.order.findMany({
+    where:   { id: { in: orderIds } },
     include: {
       store:  { select: { name: true } },
-      events: { orderBy: { createdAt: 'asc' }, select: { status: true, note: true, createdAt: true, createdBy: true } },
+      events: { orderBy: { createdAt: 'asc' as const }, select: { status: true, note: true, createdAt: true, createdBy: true } },
     },
   })
-  if (!order) return null
+}
+type OrderForPayload = Awaited<ReturnType<typeof fetchOrdersForPayload>>[number]
+
+function buildPayloadFromOrder(order: OrderForPayload, event: string, previousStatus: string) {
 
   const CREADORES_INTERNOS = ['system', 'webhook', 'ml-webhook', 'enviosnow-webhook', 'api', 'ml-cron-check']
   const NOTAS_INTERNAS     = ['envios now', 'enviame', 'enviosnow', 'now:', 'id now', 'delivery id']
@@ -78,6 +81,12 @@ async function buildFullOrderPayload(orderId: string, event: string, previousSta
       timeline,
     },
   }
+}
+
+async function buildFullOrderPayload(orderId: string, event: string, previousStatus: string) {
+  const [order] = await fetchOrdersForPayload([orderId])
+  if (!order) return null
+  return buildPayloadFromOrder(order, event, previousStatus)
 }
 
 const MAX_ATTEMPTS    = 3
@@ -148,18 +157,15 @@ async function sendWebhookWithRetry(
 
 const recentNotifications = new Map<string, number>()
 
-export async function notifyWebhooks(
-  orderId:        string,
-  newStatus:      string,
-  previousStatus: string,
-) {
+// ── Deduplicación en memoria: true si el mismo evento se envió hace <5s ──
+function isDuplicateNotification(orderId: string, newStatus: string): boolean {
   const dedupeKey = `${orderId}:${newStatus}`
   const lastSent  = recentNotifications.get(dedupeKey)
   const now       = Date.now()
 
   if (lastSent && now - lastSent < 5000) {
     console.log(`[Webhook] Deduplicado — mismo evento enviado hace ${now - lastSent}ms: ${dedupeKey}`)
-    return
+    return true
   }
   recentNotifications.set(dedupeKey, now)
 
@@ -169,6 +175,15 @@ export async function notifyWebhooks(
       if (ts < cutoff) recentNotifications.delete(key)
     }
   }
+  return false
+}
+
+export async function notifyWebhooks(
+  orderId:        string,
+  newStatus:      string,
+  previousStatus: string,
+) {
+  if (isDuplicateNotification(orderId, newStatus)) return
 
   const order = await prisma.order.findUnique({
     where:  { id: orderId },
@@ -199,5 +214,50 @@ export async function notifyWebhooks(
       if (!ak.webhookUrl) return Promise.resolve()
       return sendWebhookWithRetry(ak.id, orderId, ak.webhookUrl, ak.webhookSecret ?? null, payloadStr, 'order.status_changed')
     })
+  )
+}
+
+// ── Versión batch: apiKeys en 1 query, payloads en 1 findMany y envíos
+// (pedido × apiKey) en pool de concurrencia. Mismos reintentos y logging
+// en webhook_events que la versión individual. ──
+export async function notifyWebhooksBatch(
+  updates:   Array<{ orderId: string; storeId: string; previousStatus: string }>,
+  newStatus: string,
+  opts?:     { concurrency?: number },
+) {
+  const pending = updates.filter(u => !isDuplicateNotification(u.orderId, newStatus))
+  if (pending.length === 0) return
+
+  const storeIds = Array.from(new Set(pending.map(u => u.storeId)))
+  const apiKeys  = await prisma.apiKey.findMany({
+    where: {
+      isActive:   true,
+      webhookUrl: { not: null },
+      OR: [
+        { storeId: { in: storeIds } },
+        { storeId: null },
+      ],
+    },
+    select: { id: true, storeId: true, webhookUrl: true, webhookSecret: true },
+  })
+  if (apiKeys.length === 0) return
+
+  const orders   = await fetchOrdersForPayload(pending.map(u => u.orderId))
+  const orderMap = new Map(orders.map(o => [o.id, o]))
+
+  const tasks: Array<{ apiKey: (typeof apiKeys)[number]; orderId: string; payloadStr: string }> = []
+  for (const update of pending) {
+    const order = orderMap.get(update.orderId)
+    if (!order) continue
+    const keys = apiKeys.filter(ak => ak.webhookUrl && (ak.storeId === null || ak.storeId === order.storeId))
+    if (keys.length === 0) continue
+    const payloadStr = JSON.stringify(buildPayloadFromOrder(order, 'order.status_changed', update.previousStatus))
+    for (const apiKey of keys) tasks.push({ apiKey, orderId: order.id, payloadStr })
+  }
+  if (tasks.length === 0) return
+
+  const { mapWithConcurrency } = await import('@/lib/utils/concurrency')
+  await mapWithConcurrency(tasks, opts?.concurrency ?? 10, t =>
+    sendWebhookWithRetry(t.apiKey.id, t.orderId, t.apiKey.webhookUrl!, t.apiKey.webhookSecret ?? null, t.payloadStr, 'order.status_changed')
   )
 }
