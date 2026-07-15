@@ -5,6 +5,22 @@ function signPayload(payload: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(payload).digest('hex')
 }
 
+// ── Extraer "Recibió: X" desde evidenceNote ──
+function extraerReceptor(evidenceNote: string | null): string | null {
+  if (!evidenceNote) return null
+  const match = evidenceNote.match(/Recibió:\s*([^·\n]+)/)
+  return match ? match[1].trim() : null
+}
+
+// ── Extraer "RUT: X" desde evidenceNote ──
+function extraerRut(evidenceNote: string | null): string | null {
+  if (!evidenceNote) return null
+  const match = evidenceNote.match(/RUT:\s*([^·\n]+)/)
+  const rut = match ? match[1].trim() : null
+  if (!rut || rut.length < 3) return null
+  return rut
+}
+
 async function buildFullOrderPayload(orderId: string, event: string, previousStatus: string) {
   const order = await prisma.order.findUnique({
     where:   { id: orderId },
@@ -29,17 +45,14 @@ async function buildFullOrderPayload(orderId: string, event: string, previousSta
       timestamp: e.createdAt,
     }))
 
-  // ── Para pedidos de Senby, externalId en el webhook es el ID que ellos mandaron ──
-  // El externalId de Moovex ahora guarda el ID de Senby directamente
-  // sourceId queda null — no se expone
   return {
     event,
     previousStatus,
     data: {
       id:             order.id,
       orderNumber:    order.orderNumber,
-      externalId:     order.externalId,   // ← ID de Senby
-      sourceId:       null,               // ← siempre null para Senby
+      externalId:     order.externalId,
+      sourceId:       null,
       subStoreName:   order.subStoreName,
       status:         order.status,
       customerName:   order.customerName,
@@ -57,8 +70,10 @@ async function buildFullOrderPayload(orderId: string, event: string, previousSta
       deliveredAt:    order.deliveredAt,
       evidencePhoto:  order.evidencePhoto1,
       evidenceNote:   order.evidenceNote,
-      receptorName:   (order as any).receptorName   ?? null,
-      receptorRut:    (order as any).receptorRut    ?? null,
+      // ── Extraer receptor y RUT desde evidenceNote si los campos están vacíos ──
+      // Now guarda todo en evidenceNote — los campos separados quedan null
+      receptorName:   (order as any).receptorName ?? extraerReceptor(order.evidenceNote),
+      receptorRut:    (order as any).receptorRut  ?? extraerRut(order.evidenceNote),
       incidentReason: (order as any).incidentReason ?? null,
       timeline,
     },
