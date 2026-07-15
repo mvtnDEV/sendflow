@@ -20,7 +20,8 @@ interface EnviosNowResult {
 }
 
 export async function createEnviosNowDelivery(
-  payload: EnviosNowPayload
+  payload:   EnviosNowPayload,
+  timeoutMs: number = 10_000,
 ): Promise<EnviosNowResult> {
   try {
     // ── Log de diagnóstico — ver qué manda Moovex y qué responde Now ──
@@ -33,7 +34,8 @@ export async function createEnviosNowDelivery(
         'X-API-Key':    getApiKey(),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body:   JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
     })
 
     const data = await res.json()
@@ -51,6 +53,37 @@ export async function createEnviosNowDelivery(
     console.error('[EnviosNow] Error de conexión:', err)
     return { ok: false, error: err.message }
   }
+}
+
+// ── Crear envíos en lote: pool de concurrencia + presupuesto global de tiempo ──
+// Retorna solo los éxitos con id real (excluye 'duplicate'). Los fallos quedan
+// como warn y se recuperan con el botón "Reenviar a Envios Now".
+export async function createEnviosNowDeliveriesBatch(
+  orders: Array<{ id: string } & Parameters<typeof toEnviosNowPayload>[0]>,
+  opts?: { concurrency?: number; timeoutMs?: number; deadlineMs?: number },
+): Promise<Array<{ orderId: string; externalId: string }>> {
+  const { concurrency = 6, timeoutMs = 10_000, deadlineMs = 240_000 } = opts ?? {}
+  const deadline = Date.now() + deadlineMs
+
+  const { mapWithConcurrency } = await import('@/lib/utils/concurrency')
+  const settled = await mapWithConcurrency(orders, concurrency, async order => {
+    if (Date.now() > deadline) {
+      console.warn(`[EnviosNow] Deadline del batch alcanzado — pedido ${order.id} queda pendiente`)
+      return null
+    }
+    const result = await createEnviosNowDelivery(toEnviosNowPayload(order), timeoutMs)
+    if (!result.ok) {
+      console.warn(`[EnviosNow] No se pudo crear el envío del pedido ${order.id}:`, result.error)
+      return null
+    }
+    if (!result.id || result.id === 'duplicate') return null
+    return { orderId: order.id, externalId: String(result.id) }
+  })
+
+  return settled
+    .filter((r): r is PromiseFulfilledResult<{ orderId: string; externalId: string } | null> => r.status === 'fulfilled')
+    .map(r => r.value)
+    .filter((v): v is { orderId: string; externalId: string } => v !== null)
 }
 
 export async function cancelEnviosNowDelivery(

@@ -1,6 +1,9 @@
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { batchTransitionOrders } from '@/lib/services/order-batch.service'
+import { createEnviosNowDeliveriesBatch } from '@/lib/services/enviosnow.service'
 
 function verifyDriverToken(req: NextRequest) {
   const auth = req.headers.get('authorization')
@@ -23,60 +26,44 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date()
-  let updated = 0
 
-  for (const orderId of orderIds) {
-    try {
-      const order = await prisma.order.findUnique({ where: { id: orderId } })
+  try {
+    // ── Permitir PENDING, INCIDENT y DELIVERED ──
+    // Los Flex pueden llegar a DELIVERED antes de que el conductor
+    // los recepcione — el escaneo ocurre temprano en bodega
+    const result = await batchTransitionOrders({
+      orderIds,
+      toStatus:       'RECEIVED',
+      fromStatuses:   ['PENDING', 'INCIDENT', 'DELIVERED'],
+      eventNote:      'Recepcionado en bodega vía escaneo batch',
+      createdBy:      driver.id,
+      timestampField: 'receivedAt',
+    })
 
-      // ── Permitir PENDING, INCIDENT y DELIVERED ──
-      // Los Flex pueden llegar a DELIVERED antes de que el conductor
-      // los recepcione — el escaneo ocurre temprano en bodega
-      if (!order || !['PENDING', 'INCIDENT', 'DELIVERED'].includes(order.status)) continue
-
-      await prisma.order.update({
-        where: { id: orderId },
-        data: {
-          status:     'RECEIVED',
-          receivedAt: now,
-          events: {
-            create: {
-              status:    'RECEIVED',
-              note:      'Recepcionado en bodega vía escaneo batch',
-              createdBy: driver.id,
-            },
-          },
-        },
-      })
-
+    if (result.updated.length > 0) {
       try {
-        const { toEnviosNowPayload, createEnviosNowDelivery } = await import('@/lib/services/enviosnow.service')
-        const fullOrder = await prisma.order.findUnique({
-          where:   { id: orderId },
-          include: { store: true },
-        })
-        if (fullOrder) {
-          const payload = toEnviosNowPayload(fullOrder)
-          const result  = await createEnviosNowDelivery(payload)
-          if (result.ok && result.id && result.id !== 'duplicate') {
-            await prisma.order.update({
-              where: { id: orderId },
+        // ── Crear envíos en EnviosNow en paralelo (pool 6, timeout 10s c/u) ──
+        const successes = await createEnviosNowDeliveriesBatch(result.updated)
+        if (successes.length > 0) {
+          const byId = new Map(result.updated.map(o => [o.id, o]))
+          await prisma.$transaction(
+            successes.map(s => prisma.order.update({
+              where: { id: s.orderId },
               data: {
-                externalId: String(result.id),
-                ...(!fullOrder.inTransitAt && { inTransitAt: now }),
+                externalId: s.externalId,
+                ...(!byId.get(s.orderId)?.inTransitAt && { inTransitAt: now }),
               },
-            })
-          }
+            }))
+          )
         }
       } catch (err) {
         console.error('[EnviosNow] Error en batch-receive:', err)
       }
-
-      updated++
-    } catch (err) {
-      console.error('[batch-receive] Error en pedido:', orderId, err)
     }
-  }
 
-  return NextResponse.json({ ok: true, updated })
+    return NextResponse.json({ ok: true, updated: result.updated.length })
+  } catch (err) {
+    console.error('[batch-receive] Error en batch:', err)
+    return NextResponse.json({ ok: false, error: 'Error recepcionando pedidos' }, { status: 500 })
+  }
 }
