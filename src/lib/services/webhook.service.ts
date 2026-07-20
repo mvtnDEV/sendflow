@@ -5,14 +5,12 @@ function signPayload(payload: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(payload).digest('hex')
 }
 
-// ── Extraer "Recibió: X" desde evidenceNote ──
 function extraerReceptor(evidenceNote: string | null): string | null {
   if (!evidenceNote) return null
   const match = evidenceNote.match(/Recibió:\s*([^·\n]+)/)
   return match ? match[1].trim() : null
 }
 
-// ── Extraer "RUT: X" desde evidenceNote ──
 function extraerRut(evidenceNote: string | null): string | null {
   if (!evidenceNote) return null
   const match = evidenceNote.match(/RUT:\s*([^·\n]+)/)
@@ -30,10 +28,10 @@ async function fetchOrdersForPayload(orderIds: string[]) {
     },
   })
 }
+
 type OrderForPayload = Awaited<ReturnType<typeof fetchOrdersForPayload>>[number]
 
 function buildPayloadFromOrder(order: OrderForPayload, event: string, previousStatus: string) {
-
   const CREADORES_INTERNOS = ['system', 'webhook', 'ml-webhook', 'enviosnow-webhook', 'api', 'ml-cron-check']
   const NOTAS_INTERNAS     = ['envios now', 'enviame', 'enviosnow', 'now:', 'id now', 'delivery id']
 
@@ -73,8 +71,6 @@ function buildPayloadFromOrder(order: OrderForPayload, event: string, previousSt
       deliveredAt:    order.deliveredAt,
       evidencePhoto:  order.evidencePhoto1,
       evidenceNote:   order.evidenceNote,
-      // ── Extraer receptor y RUT desde evidenceNote si los campos están vacíos ──
-      // Now guarda todo en evidenceNote — los campos separados quedan null
       receptorName:   (order as any).receptorName ?? extraerReceptor(order.evidenceNote),
       receptorRut:    (order as any).receptorRut  ?? extraerRut(order.evidenceNote),
       incidentReason: (order as any).incidentReason ?? null,
@@ -157,18 +153,15 @@ async function sendWebhookWithRetry(
 
 const recentNotifications = new Map<string, number>()
 
-// ── Deduplicación en memoria: true si el mismo evento se envió hace <5s ──
 function isDuplicateNotification(orderId: string, newStatus: string): boolean {
   const dedupeKey = `${orderId}:${newStatus}`
   const lastSent  = recentNotifications.get(dedupeKey)
   const now       = Date.now()
-
   if (lastSent && now - lastSent < 5000) {
     console.log(`[Webhook] Deduplicado — mismo evento enviado hace ${now - lastSent}ms: ${dedupeKey}`)
     return true
   }
   recentNotifications.set(dedupeKey, now)
-
   if (recentNotifications.size > 500) {
     const cutoff = now - 30000
     for (const [key, ts] of recentNotifications.entries()) {
@@ -217,15 +210,25 @@ export async function notifyWebhooks(
   )
 }
 
-// ── Versión batch: apiKeys en 1 query, payloads en 1 findMany y envíos
-// (pedido × apiKey) en pool de concurrencia. Mismos reintentos y logging
-// en webhook_events que la versión individual. ──
 export async function notifyWebhooksBatch(
   updates:   Array<{ orderId: string; storeId: string; previousStatus: string }>,
   newStatus: string,
   opts?:     { concurrency?: number },
 ) {
-  const pending = updates.filter(u => !isDuplicateNotification(u.orderId, newStatus))
+  // ── Batch intencional — saltear deduplicación ──
+  // La deduplicación es para evitar doble disparo accidental en eventos individuales
+  // En batch cada pedido es único — no hay duplicados reales
+  const pending = updates.filter(u => {
+    const dedupeKey = `${u.orderId}:${newStatus}`
+    const lastSent  = recentNotifications.get(dedupeKey)
+    const now       = Date.now()
+    // Solo salteamos si se envió hace menos de 1 segundo — evita duplicados reales
+    // pero permite el reenvío intencional desde batch
+    if (lastSent && now - lastSent < 1000) return false
+    recentNotifications.set(dedupeKey, now)
+    return true
+  })
+
   if (pending.length === 0) return
 
   const storeIds = Array.from(new Set(pending.map(u => u.storeId)))
@@ -246,6 +249,7 @@ export async function notifyWebhooksBatch(
   const orderMap = new Map(orders.map(o => [o.id, o]))
 
   const tasks: Array<{ apiKey: (typeof apiKeys)[number]; orderId: string; payloadStr: string }> = []
+
   for (const update of pending) {
     const order = orderMap.get(update.orderId)
     if (!order) continue
@@ -254,6 +258,7 @@ export async function notifyWebhooksBatch(
     const payloadStr = JSON.stringify(buildPayloadFromOrder(order, 'order.status_changed', update.previousStatus))
     for (const apiKey of keys) tasks.push({ apiKey, orderId: order.id, payloadStr })
   }
+
   if (tasks.length === 0) return
 
   const { mapWithConcurrency } = await import('@/lib/utils/concurrency')
