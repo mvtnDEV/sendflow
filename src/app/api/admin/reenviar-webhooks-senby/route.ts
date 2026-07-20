@@ -8,16 +8,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
+  const { desde } = await req.json().catch(() => ({ desde: 0 }))
+
   const orders = await prisma.order.findMany({
     where: {
       storeId:     'cmpanvuns000053f2gbs46t83',
       status:      'IN_TRANSIT',
       inTransitAt: { gte: new Date('2026-07-20T00:00:00-04:00') },
     },
-    select: { id: true, orderNumber: true },
+    select:  { id: true, orderNumber: true },
+    skip:    desde,
+    take:    50,
+    orderBy: { inTransitAt: 'asc' },
   })
 
-  console.log(`[Reenvio Senby] Procesando ${orders.length} pedidos`)
+  console.log(`[Reenvio Senby] Lote desde ${desde}, procesando ${orders.length} pedidos`)
 
   let enviados = 0
   let errores  = 0
@@ -29,13 +34,18 @@ export async function POST(req: NextRequest) {
       await notifyWebhooks(order.id, 'IN_TRANSIT', 'RECEIVED')
       enviados++
       console.log(`[Reenvio Senby] ✅ ${order.orderNumber}`)
-      // ── Delay para evitar deduplicación y no saturar el webhook de Senby ──
-      await new Promise(r => setTimeout(r, 200))
+      await new Promise(r => setTimeout(r, 50))
     } catch (err) {
       errores++
       console.error(`[Reenvio Senby] ❌ ${order.orderNumber}:`, err)
     }
   }
 
-  return NextResponse.json({ ok: true, total: orders.length, enviados, errores })
+  return NextResponse.json({ 
+    ok:       true, 
+    total:    orders.length, 
+    enviados, 
+    errores,
+    siguiente: orders.length === 50 ? desde + 50 : null
+  })
 }
