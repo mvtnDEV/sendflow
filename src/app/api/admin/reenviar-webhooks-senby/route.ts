@@ -10,18 +10,12 @@ export async function POST(req: NextRequest) {
 
   const { desde } = await req.json().catch(() => ({ desde: 0 }))
 
-  // ── Traer pedidos IN_TRANSIT de Senby de hoy sin webhook exitoso ──
+  // ── Traer pedidos IN_TRANSIT de Senby de hoy ──
   const orders = await prisma.order.findMany({
     where: {
       storeId:     'cmpanvuns000053f2gbs46t83',
       status:      'IN_TRANSIT',
       inTransitAt: { gte: new Date('2026-07-20T00:00:00-04:00') },
-      webhookEvents: {
-        none: {
-          success:   true,
-          createdAt: { gte: new Date('2026-07-20T00:00:00-04:00') },
-        },
-      },
     },
     select:  { id: true, orderNumber: true },
     skip:    desde,
@@ -29,14 +23,30 @@ export async function POST(req: NextRequest) {
     orderBy: { inTransitAt: 'asc' },
   })
 
-  console.log(`[Reenvio Senby] Lote desde ${desde}, procesando ${orders.length} pedidos`)
+  // ── Filtrar los que NO tuvieron webhook exitoso hoy ──
+  const sinWebhook = await Promise.all(
+    orders.map(async order => {
+      const exitoso = await prisma.webhookEvent.findFirst({
+        where: {
+          orderId:   order.id,
+          success:   true,
+          createdAt: { gte: new Date('2026-07-20T00:00:00-04:00') },
+        },
+      })
+      return exitoso ? null : order
+    })
+  )
+
+  const pendientes = sinWebhook.filter(Boolean) as { id: string; orderNumber: string }[]
+
+  console.log(`[Reenvio Senby] Lote desde ${desde}, sin webhook: ${pendientes.length}/${orders.length}`)
 
   let enviados = 0
   let errores  = 0
 
   const { notifyWebhooks } = await import('@/lib/services/webhook.service')
 
-  for (const order of orders) {
+  for (const order of pendientes) {
     try {
       await notifyWebhooks(order.id, 'IN_TRANSIT', 'RECEIVED')
       enviados++
@@ -48,11 +58,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ 
-    ok:        true, 
-    total:     orders.length, 
-    enviados, 
+  return NextResponse.json({
+    ok:        true,
+    total:     pendientes.length,
+    enviados,
     errores,
-    siguiente: orders.length === 50 ? desde + 50 : null
+    siguiente: orders.length === 50 ? desde + 50 : null,
   })
 }
