@@ -4,13 +4,13 @@ import { prisma } from '@/lib/db/prisma'
 import crypto from 'crypto'
 
 const STATE_MAP: Record<string, string> = {
-  'received':   'RECEIVED',
-  'dispatched': 'DISPATCHED',
-  'picked_up':  'PICKED_UP',
-  'in_transit': 'IN_TRANSIT',
-  'delivered':  'DELIVERED',
-  'failed':     'INCIDENT',
-  'cancelled':  'CANCELLED',
+  'received':   'RECEIVED',   // Recepcionado 
+  'dispatched': 'RECEIVED',   // También recepcionado — conductor va a buscar
+  'picked_up':  'RECEIVED',   // También recepcionado — ya lo tienen físicamente
+  'in_transit': 'IN_TRANSIT', // En camino 
+  'delivered':  'DELIVERED',  // Entregado 
+  'failed':     'INCIDENT',   // No entregado 
+  'cancelled':  'CANCELLED',  // Cancelado 
 }
 
 const STATUS_PRIORITY: Record<string, number> = {
