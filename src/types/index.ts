@@ -60,6 +60,8 @@ export interface DashboardStats {
   total:      number
   pending:    number
   received:   number
+  dispatched: number
+  pickedUp:   number
   inTransit:  number
   delivered:  number
   incident:   number
