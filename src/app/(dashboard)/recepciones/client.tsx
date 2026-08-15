@@ -6,6 +6,8 @@ import Link from 'next/link'
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   PENDING:    { bg: '#FFFBEB', color: '#92400E' },
   RECEIVED:   { bg: '#EFF6FF', color: '#1D4ED8' },
+  DISPATCHED: { bg: '#FFF7ED', color: '#C2410C' },
+  PICKED_UP:  { bg: '#F0F9FF', color: '#0369A1' },
   IN_TRANSIT: { bg: '#F5F3FF', color: '#5B21B6' },
   DELIVERED:  { bg: '#F0FDF4', color: '#166534' },
   INCIDENT:   { bg: '#FFF1F2', color: '#9F1239' },
@@ -13,6 +15,8 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 const STATUS_LABEL: Record<string, string> = {
   PENDING:    'Creado',
   RECEIVED:   'Recepcionado',
+  DISPATCHED: 'Conductor en camino',
+  PICKED_UP:  'Retirado',
   IN_TRANSIT: 'En camino',
   DELIVERED:  'Entregado',
   INCIDENT:   'No entregado',
@@ -257,7 +261,6 @@ export default function RecepcionesClient({
             {loadingRecepcionar ? `⏳ Recepcionando ${pendientes.length} pedidos…` : `📥 Recepcionar (${pendientes.length})`}
           </button>
         )}
-        {/* ── Poner en camino masivo — solo SUPER_ADMIN filtrando por Senby ── */}
         {isSuperAdmin && esSenby && recibidos.length > 0 && (
           <button onClick={ponerEnCaminoTodos} disabled={loadingEnCamino}
             style={{ padding:'7px 14px', background:loadingEnCamino?'#86EFAC':'#16A34A', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loadingEnCamino?'not-allowed':'pointer' }}>
@@ -316,7 +319,6 @@ export default function RecepcionesClient({
         </div>
       ) : (
         <>
-          {/* TABLA DESKTOP */}
           <div className="desktop-table" style={{ background:'white', border:'1px solid #E2E8F0', borderRadius:12, overflow:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
               <thead>
@@ -415,7 +417,7 @@ export default function RecepcionesClient({
                       <td style={{ padding:'11px 12px', borderBottom:'1px solid #F1F5F9', whiteSpace:'nowrap' }}>
                         <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
                           <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
-                          {STATUS_LABEL[order.status]}
+                          {STATUS_LABEL[order.status] ?? order.status}
                         </span>
                         {order.evidencePhoto1 && <span style={{ marginLeft:4, fontSize:11 }}>📷</span>}
                         {order.labelUrl && isStoreAdmin && (
@@ -436,7 +438,6 @@ export default function RecepcionesClient({
             </table>
           </div>
 
-          {/* CARDS MOBILE */}
           <div className="mobile-card" style={{ flexDirection:'column', gap:8 }}>
             {orders.map(order => {
               const sc             = STATUS_COLOR[order.status] ?? STATUS_COLOR.PENDING
@@ -466,7 +467,7 @@ export default function RecepcionesClient({
                     <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                       <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:500, background:sc.bg, color:sc.color }}>
                         <span style={{ width:5, height:5, borderRadius:'50%', background:sc.color }}/>
-                        {STATUS_LABEL[order.status]}
+                        {STATUS_LABEL[order.status] ?? order.status}
                       </span>
                       <Link href={`/recepciones/${order.id}`} style={{ color:'white', fontSize:14, textDecoration:'none', fontWeight:700, padding:'4px 10px', background:'#2563EB', borderRadius:6, display:'inline-block' }}>→</Link>
                     </div>
@@ -502,7 +503,6 @@ export default function RecepcionesClient({
             })}
           </div>
 
-          {/* Paginación */}
           <div style={{ padding:'12px 0', display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12, color:'#6B7280' }}>
             <span>
               Mostrando <strong>{orders.length}</strong> de <strong>{total}</strong> pedido{total!==1?'s':''}
