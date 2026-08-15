@@ -1,20 +1,17 @@
 generator client {
   provider = "prisma-client-js"
 }
-
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
-
 enum UserRole {
   SUPER_ADMIN
   STORE_ADMIN
   VIEWER
   DRIVER
 }
-
 enum Platform {
   SHOPIFY
   MERCADOLIBRE
@@ -22,16 +19,16 @@ enum Platform {
   JUMPSELLER
   MANUAL
 }
-
 enum OrderStatus {
   PENDING
   RECEIVED
+  DISPATCHED
+  PICKED_UP
   IN_TRANSIT
   DELIVERED
   INCIDENT
   CANCELLED
 }
-
 model User {
   id           String    @id @default(cuid())
   email        String    @unique
@@ -46,42 +43,36 @@ model User {
   lastLoginIp  String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-
   store        Store?       @relation(fields: [storeId], references: [id])
   auditLogs    AuditLog[]
   orderEvents  OrderEvent[]
-
   @@index([email])
   @@map("users")
 }
-
 model Store {
-  id           String   @id @default(cuid())
-  name         String
-  slug         String   @unique
-  email        String?
-  phone        String?
-  rut           String?
-  reportEmail   String?
-  encargado     String?
-  addressRetiro String?
+  id                 String   @id @default(cuid())
+  name               String
+  slug               String   @unique
+  email              String?
+  phone              String?
+  rut                String?
+  reportEmail        String?
+  encargado          String?
+  addressRetiro      String?
   tarifaUrbana       Decimal? @db.Decimal(10,2)
   tarifaExtraUrbana  Decimal? @db.Decimal(10,2)
   tarifaRural        Decimal? @db.Decimal(10,2)
   tarifaRetiro       Decimal? @db.Decimal(10,2)
-  fechaTarifa        String? 
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  users        User[]
-  integrations StoreIntegration[]
-  orders       Order[]
-  apiKeys      ApiKey[]
-
+  fechaTarifa        String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  users              User[]
+  integrations       StoreIntegration[]
+  orders             Order[]
+  apiKeys            ApiKey[]
   @@map("stores")
 }
-
 model StoreIntegration {
   id              String    @id @default(cuid())
   storeId         String
@@ -92,25 +83,21 @@ model StoreIntegration {
   isActive        Boolean   @default(true)
   lastSyncAt      DateTime?
   createdAt       DateTime  @default(now())
-
   store    Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   orders   Order[]
   syncLogs SyncLog[]
-
   @@unique([storeId, platform])
   @@map("store_integrations")
 }
-
 model Order {
   id              String      @id @default(cuid())
   orderNumber     String      @unique
   storeId         String
   integrationId   String?
-  externalId      String?     // ID de Envios Now (se asigna al recepcionar)
-  sourceId        String?     // ID de origen: WooCommerce, Shopify, Senby, etc.
-  subStoreName    String?     // Sub-tienda de Senby: Envíame, Jacinta Tienda, ETN Meli
+  externalId      String?
+  sourceId        String?
+  subStoreName    String?
   platform        Platform    @default(MANUAL)
-
   customerName    String
   customerPhone   String?
   customerEmail   String?
@@ -118,53 +105,42 @@ model Order {
   addressComuna   String
   addressRegion   String
   addressNotes    String?
-
   status          OrderStatus @default(PENDING)
   bultos          Int         @default(1)
   weightKg        Decimal?    @db.Decimal(6,2)
   qrCode          String      @unique
   labelUrl        String?
-
   evidencePhoto1  String?
   evidencePhoto2  String?
   evidenceNote    String?
   evidenceTakenAt DateTime?
   evidenceTakenBy String?
-
   receptorName    String?
   receptorRut     String?
   incidentReason  String?
-
   receivedAt      DateTime?
   inTransitAt     DateTime?
   deliveredAt     DateTime?
-
-  dataRetentionDate DateTime?
-  anonymizedAt      DateTime?
-  rawPayload        Json?
+  dataRetentionDate   DateTime?
+  anonymizedAt        DateTime?
+  rawPayload          Json?
   pendingNowEvidence  Json?
   pendingNowCheckedAt DateTime?
   mlShippedAt         DateTime?
-
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   store       Store             @relation(fields: [storeId], references: [id])
   integration StoreIntegration? @relation(fields: [integrationId], references: [id])
   events      OrderEvent[]
-
   @@index([storeId, status])
   @@index([qrCode])
   @@index([externalId, integrationId])
   @@index([sourceId])
   @@index([dataRetentionDate])
-  // Rendimiento (P1 auditoría): orden por fecha en listados. Los nombres map:
-  // coinciden con los índices creados por SQL en Supabase (CREATE INDEX CONCURRENTLY).
   @@index([storeId, createdAt(sort: Desc)], map: "orders_storeId_createdAt_idx")
   @@index([createdAt(sort: Desc)], map: "orders_createdAt_idx")
   @@map("orders")
 }
-
 model OrderEvent {
   id              String      @id @default(cuid())
   orderId         String
@@ -174,14 +150,11 @@ model OrderEvent {
   createdByUserId String?
   ipAddress       String?
   createdAt       DateTime    @default(now())
-
   order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   user      User?  @relation(fields: [createdByUserId], references: [id])
-
   @@index([orderId])
   @@map("order_events")
 }
-
 model SyncLog {
   id             String   @id @default(cuid())
   integrationId  String
@@ -189,12 +162,9 @@ model SyncLog {
   errors         Int      @default(0)
   errorDetails   String?
   createdAt      DateTime @default(now())
-
   integration StoreIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-
   @@map("sync_logs")
 }
-
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
@@ -204,15 +174,12 @@ model AuditLog {
   userAgent String?
   metadata  Json?
   createdAt DateTime @default(now())
-
   user User? @relation(fields: [userId], references: [id])
-
   @@index([userId])
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
 }
-
 model DataDeletionRequest {
   id             String    @id @default(cuid())
   requesterName  String
@@ -223,11 +190,9 @@ model DataDeletionRequest {
   requestedAt    DateTime  @default(now())
   processedAt    DateTime?
   processedBy    String?
-
   @@index([status])
   @@map("data_deletion_requests")
 }
-
 model ApiKey {
   id            String    @id @default(cuid())
   name          String
@@ -239,47 +204,40 @@ model ApiKey {
   lastUsedAt    DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
   store Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
-
   @@index([key])
   @@map("api_keys")
 }
-
 model LoginAttempt {
   id        String   @id @default(cuid())
   email     String
   ip        String
   success   Boolean
   createdAt DateTime @default(now())
-
   @@index([email, createdAt])
   @@index([ip, createdAt])
   @@map("login_attempts")
 }
-
 model ApiRateLimit {
   id        String   @id @default(cuid())
   apiKeyId  String
   createdAt DateTime @default(now())
-
   @@index([apiKeyId, createdAt])
   @@map("api_rate_limits")
 }
 model WebhookEvent {
-  id          String   @id @default(cuid())
-  apiKeyId    String
-  orderId     String
-  event       String
-  url         String
-  payload     Json
-  statusCode  Int?
+  id           String   @id @default(cuid())
+  apiKeyId     String
+  orderId      String
+  event        String
+  url          String
+  payload      Json
+  statusCode   Int?
   responseBody String?
-  success     Boolean  @default(false)
-  attempt     Int      @default(1)
+  success      Boolean  @default(false)
+  attempt      Int      @default(1)
   errorMessage String?
-  createdAt   DateTime @default(now())
-
+  createdAt    DateTime @default(now())
   @@index([orderId])
   @@index([apiKeyId, createdAt])
   @@index([success, createdAt])
