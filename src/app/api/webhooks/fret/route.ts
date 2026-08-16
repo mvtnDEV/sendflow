@@ -4,18 +4,24 @@ import { prisma } from '@/lib/db/prisma'
 import crypto from 'crypto'
 
 const STATE_MAP: Record<string, string> = {
-  'received':   'RECEIVED',   // Recepcionado 
-  'dispatched': 'RECEIVED',   // También recepcionado — conductor va a buscar
-  'picked_up':  'RECEIVED',   // También recepcionado — ya lo tienen físicamente
-  'in_transit': 'IN_TRANSIT', // En camino 
-  'delivered':  'DELIVERED',  // Entregado 
-  'failed':     'INCIDENT',   // No entregado 
-  'cancelled':  'CANCELLED',  // Cancelado 
+  'received':   'RECEIVED',
+  'dispatched': 'RECEIVED',
+  'picked_up':  'RECEIVED',
+  'in_transit': 'IN_TRANSIT',
+  'delivered':  'DELIVERED',
+  'failed':     'INCIDENT',
+  'cancelled':  'CANCELLED',
 }
 
 const STATUS_PRIORITY: Record<string, number> = {
-  PENDING: 0, RECEIVED: 1, DISPATCHED: 2, PICKED_UP: 3,
-  IN_TRANSIT: 4, DELIVERED: 5, INCIDENT: 6, CANCELLED: 7,
+  PENDING:    0,
+  RECEIVED:   1,
+  DISPATCHED: 2,
+  PICKED_UP:  3,
+  IN_TRANSIT: 4,
+  DELIVERED:  5,
+  INCIDENT:   6,
+  CANCELLED:  7,
 }
 
 function verificarFirma(secret: string, signatureHeader: string, rawBody: string): boolean {
@@ -48,7 +54,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Responder 200 inmediatamente — Fret espera menos de 10 segundos ──
   const procesarWebhook = async () => {
     let body: any
     try { body = JSON.parse(rawBody) } catch {
@@ -61,7 +66,7 @@ export async function POST(req: NextRequest) {
       return
     }
 
-    const { referencia, order_code, status, occurred_at } = body.data ?? {}
+    const { referencia, order_code, status, occurred_at, pod } = body.data ?? {}
 
     if (!referencia || !status) {
       console.error('[Fret webhook] Faltan campos requeridos')
@@ -74,7 +79,16 @@ export async function POST(req: NextRequest) {
       return
     }
 
-    // ── Retry hasta 3 veces si hay timeout de DB ──
+    // ── Extraer evidencia del pod si viene ──
+    const evidencePhoto1  = pod?.photos?.[0]       ?? null
+    const evidencePhoto2  = pod?.photos?.[1]       ?? null
+    const receptorName    = pod?.receiver_name     ?? null
+    const receptorRut     = pod?.receiver_rut      ?? null
+    const evidenceNote    = [
+      receptorName ? `Recibió: ${receptorName}` : null,
+      receptorRut  ? `RUT: ${receptorRut}`       : null,
+    ].filter(Boolean).join(' · ') || null
+
     let lastError: any
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -111,22 +125,28 @@ export async function POST(req: NextRequest) {
           data: {
             status: newStatus as any,
             ...(newStatus === 'RECEIVED'   && { receivedAt:  now }),
-            ...(newStatus === 'DISPATCHED' && { inTransitAt: now }),
-            ...(newStatus === 'PICKED_UP'  && { receivedAt:  now }),
             ...(newStatus === 'IN_TRANSIT' && { inTransitAt: now }),
-            ...(newStatus === 'DELIVERED'  && { deliveredAt: now }),
+            ...(newStatus === 'DELIVERED'  && {
+              deliveredAt:    now,
+              // ── Guardar evidencia del pod ──
+              ...(evidencePhoto1 && { evidencePhoto1 }),
+              ...(evidencePhoto2 && { evidencePhoto2 }),
+              ...(receptorName   && { receptorName }),
+              ...(receptorRut    && { receptorRut }),
+              ...(evidenceNote   && { evidenceNote }),
+            }),
             ...(order_code && { externalId: order_code }),
             events: {
               create: {
                 status:    newStatus as any,
-                note:      `Actualizado por Moovex · ${status}`,
+                note:      `Actualizado por Moovex · ${status}${receptorName ? ` · Recibió: ${receptorName}` : ''}`,
                 createdBy: 'fret-webhook',
               },
             },
           },
         })
 
-        console.log('[Fret webhook] ✅ Actualizado:', order.orderNumber, '->', newStatus)
+        console.log('[Fret webhook] ✅ Actualizado:', order.orderNumber, '->', newStatus, pod ? '| con evidencia' : '')
 
         try {
           const { notifyWebhooks } = await import('@/lib/services/webhook.service')
@@ -135,7 +155,7 @@ export async function POST(req: NextRequest) {
           console.error('[Fret webhook] Error notificando webhook:', err)
         }
 
-        return // ── Éxito — salir del retry loop ──
+        return
 
       } catch (err: any) {
         lastError = err
