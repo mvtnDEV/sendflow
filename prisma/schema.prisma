@@ -59,6 +59,7 @@ model Store {
   reportEmail        String?
   encargado          String?
   addressRetiro      String?
+  puntoRetiroFret    String?
   tarifaUrbana       Decimal? @db.Decimal(10,2)
   tarifaExtraUrbana  Decimal? @db.Decimal(10,2)
   tarifaRural        Decimal? @db.Decimal(10,2)
