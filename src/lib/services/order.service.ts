@@ -124,7 +124,7 @@ export async function createOrder(input: CreateOrderInput) {
       },
     },
     include: {
-      store: true,
+      store: { select: { id: true, name: true, puntoRetiroFret: true } },
       events: true,
     },
   });
