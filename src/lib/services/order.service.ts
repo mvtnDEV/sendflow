@@ -84,6 +84,11 @@ interface CreateOrderInput {
   createdBy?: string;
 }
 
+// ── Tiendas que NO van a Fret ──
+const TIENDAS_EXCLUIDAS_FRET = new Set([
+  "cmpanvuns000053f2gbs46t83", // Senby
+]);
+
 export async function createOrder(input: CreateOrderInput) {
   if (!isRegionPermitida(input.addressRegion)) {
     throw new Error(
@@ -130,54 +135,58 @@ export async function createOrder(input: CreateOrderInput) {
   });
 
   // ── Enviar automáticamente a Fret al crear el pedido ──
-  try {
-    const { toFretPayload, createFretOrders } = await import("./fret.service");
-    const payload = toFretPayload({
-      orderNumber: order.orderNumber,
-      customerName: order.customerName,
-      customerPhone: order.customerPhone,
-      customerEmail: order.customerEmail,
-      addressStreet: order.addressStreet,
-      addressComuna: order.addressComuna,
-      addressNotes: order.addressNotes,
-      bultos: order.bultos,
-      qrCode: order.qrCode,
-      sourceId: order.sourceId,
-      platform: String(order.platform),
-      puntoRetiroFret: (order.store as any).puntoRetiroFret ?? null,
-      subStoreName: order.subStoreName,
-    });
-    const result = await createFretOrders([payload]);
-    if (result.ok && result.created[0]) {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: { externalId: result.created[0].order_code },
+  // Excluir tiendas que no van a Fret (Senby)
+  if (!TIENDAS_EXCLUIDAS_FRET.has(order.storeId)) {
+    try {
+      const { toFretPayload, createFretOrders } =
+        await import("./fret.service");
+      const payload = toFretPayload({
+        orderNumber: order.orderNumber,
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        customerEmail: order.customerEmail,
+        addressStreet: order.addressStreet,
+        addressComuna: order.addressComuna,
+        addressNotes: order.addressNotes,
+        bultos: order.bultos,
+        qrCode: order.qrCode,
+        sourceId: order.sourceId,
+        platform: String(order.platform),
+        puntoRetiroFret: (order.store as any).puntoRetiroFret ?? null,
+        subStoreName: order.subStoreName,
       });
-      console.log(
-        "[Fret] ✅ Pedido creado:",
-        order.orderNumber,
-        "→",
-        result.created[0].order_code,
-      );
-    } else if (result.duplicated[0]) {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: { externalId: result.duplicated[0].order_code },
-      });
-      console.log(
-        "[Fret] Duplicado:",
-        order.orderNumber,
-        "→",
-        result.duplicated[0].order_code,
-      );
-    } else {
-      console.warn(
-        "[Fret] ❌ No se pudo crear:",
-        result.error ?? result.rejected?.[0]?.detail,
-      );
+      const result = await createFretOrders([payload]);
+      if (result.ok && result.created[0]) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { externalId: result.created[0].order_code },
+        });
+        console.log(
+          "[Fret] ✅ Pedido creado:",
+          order.orderNumber,
+          "→",
+          result.created[0].order_code,
+        );
+      } else if (result.duplicated[0]) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { externalId: result.duplicated[0].order_code },
+        });
+        console.log(
+          "[Fret] Duplicado:",
+          order.orderNumber,
+          "→",
+          result.duplicated[0].order_code,
+        );
+      } else {
+        console.warn(
+          "[Fret] ❌ No se pudo crear:",
+          result.error ?? result.rejected?.[0]?.detail,
+        );
+      }
+    } catch (err) {
+      console.error("[Fret] Error enviando a Fret:", err);
     }
-  } catch (err) {
-    console.error("[Fret] Error enviando a Fret:", err);
   }
 
   return order;
