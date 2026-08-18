@@ -59,6 +59,7 @@ export function toFretPayload(order: {
   platform: string;
   puntoRetiroFret?: string | null;
   subStoreName?: string | null;
+  rawPayload?: any;
 }): FretOrder {
   const rawPhone = order.customerPhone?.replace(/\D/g, "") ?? "";
   const phone = rawPhone.startsWith("56")
@@ -68,11 +69,15 @@ export function toFretPayload(order: {
       : "+56912345678";
 
   // ── QR que escaneará el conductor de Fret ──
-  // ML Flex: usa sourceId (ID de ML) que viene en la etiqueta física
-  // Resto: usa qrCode interno de Moovex
+  // ML Flex: usa pack_id (lo que viene en la etiqueta física de Flex).
+  //          Si no hay pack_id, usa sourceId como respaldo.
+  // Resto: usa qrCode interno de Moovex.
+  const packId = (order.rawPayload as any)?.pack_id;
   const qr_code =
-    order.platform === "MERCADOLIBRE" && order.sourceId
-      ? order.sourceId
+    order.platform === "MERCADOLIBRE"
+      ? packId
+        ? String(packId)
+        : (order.sourceId ?? order.qrCode)
       : order.qrCode;
 
   // ── Punto de retiro ──

@@ -154,6 +154,7 @@ export async function createOrder(input: CreateOrderInput) {
         platform: String(order.platform),
         puntoRetiroFret: (order.store as any).puntoRetiroFret ?? null,
         subStoreName: order.subStoreName,
+        rawPayload: order.rawPayload,
       });
       const result = await createFretOrders([payload]);
       if (result.ok && result.created[0]) {
