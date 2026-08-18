@@ -135,9 +135,14 @@ export async function POST(req: NextRequest) {
           newStatus,
         );
 
+        // ── Excepción: un pedido en INCIDENT puede recuperarse a cualquier estado ──
+        // (una incidencia se resuelve — ej: no pudieron escanear pero después sí retiraron)
+        const esRecuperacionDeIncidente = order.status === "INCIDENT";
+
         if (
+          !esRecuperacionDeIncidente &&
           (STATUS_PRIORITY[newStatus] ?? 0) <=
-          (STATUS_PRIORITY[order.status] ?? 0)
+            (STATUS_PRIORITY[order.status] ?? 0)
         ) {
           console.log(
             "[Fret webhook] Estado ignorado por prioridad:",
