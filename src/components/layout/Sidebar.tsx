@@ -34,18 +34,6 @@ const NAV = [
         roles: ["SUPER_ADMIN", "STORE_ADMIN", "VIEWER"],
       },
       {
-        href: "/operador/now",
-        label: "Now",
-        icon: "now",
-        roles: ["SUPER_ADMIN"],
-      },
-      {
-        href: "/operador/fret",
-        label: "Fret",
-        icon: "fret",
-        roles: ["SUPER_ADMIN"],
-      },
-      {
         href: "/pedidos/nuevo",
         label: "Nuevo pedido",
         icon: "plus",
@@ -173,17 +161,6 @@ const ICONS: Record<string, React.ReactNode> = {
   invoice: (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
       <path d="M3 1h10a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm1 3v1h8V4H4zm0 3v1h8V7H4zm0 3v1h5v-1H4z" />
-    </svg>
-  ),
-  // ── Operadores ──
-  now: (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm.5 3.5v4l3 1.5-.5 1L7 9V4.5h1.5z" />
-    </svg>
-  ),
-  fret: (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M1 4h10v6H1V4zm10 1.5h1.5L15 8v2h-4V5.5zM3 11a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" />
     </svg>
   ),
 };
@@ -324,36 +301,6 @@ export default function Sidebar({
                 >
                   {ICONS[item.icon]}
                   {item.label}
-                  {item.href === "/operador/now" && (
-                    <span
-                      style={{
-                        marginLeft: "auto",
-                        fontSize: 9,
-                        background: "rgba(34,197,94,.15)",
-                        color: "#22C55E",
-                        padding: "1px 6px",
-                        borderRadius: 10,
-                        fontWeight: 500,
-                      }}
-                    >
-                      NOW
-                    </span>
-                  )}
-                  {item.href === "/operador/fret" && (
-                    <span
-                      style={{
-                        marginLeft: "auto",
-                        fontSize: 9,
-                        background: "rgba(251,146,60,.15)",
-                        color: "#FB923C",
-                        padding: "1px 6px",
-                        borderRadius: 10,
-                        fontWeight: 500,
-                      }}
-                    >
-                      FRET
-                    </span>
-                  )}
                   {item.href === "/pedidos/carga-masiva" && (
                     <span
                       style={{
