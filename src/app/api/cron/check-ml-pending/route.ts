@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
 import { checkMLShipmentStatus } from "@/lib/integrations/mercadolibre-status";
 
-// ── Tiendas que operan con Fret: sus estados los maneja Fret, NO ML ──
+// ── Tiendas Fret: no marcar INCIDENT (Fret maneja). Flex delivered ya lo cubre check-ml-shipped ──
 const TIENDAS_FRET = new Set([
   "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess
   "cmouw44ej0004thpecq6bct35", // Eco pañal
@@ -117,7 +117,6 @@ export async function GET(req: NextRequest) {
     } else {
       const esTiendaFret = TIENDAS_FRET.has(order.storeId);
 
-      // ── Detectar no entrega solo para tiendas Now (Fret maneja las suyas) ──
       const esNoEntregado =
         !esTiendaFret &&
         (NO_ENTREGADO_STATUSES.includes(mlCheck.shipmentStatus ?? "") ||

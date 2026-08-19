@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 
-// ── Tiendas que operan con Fret: sus estados los maneja Fret, NO ML ──
+// ── Tiendas Fret: Flex puede CERRAR delivered (respaldo), nunca INCIDENT ──
 const TIENDAS_FRET = new Set([
   "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess
   "cmouw44ej0004thpecq6bct35", // Eco pañal
@@ -193,35 +193,55 @@ export async function GET(req: NextRequest) {
         dateShipped,
       );
 
-      // ── Tienda Fret: solo registrar escaneo Flex, Fret maneja los estados ──
       const esTiendaFret = TIENDAS_FRET.has(order.storeId);
 
+      // ── TIENDA FRET: Flex solo puede CERRAR delivered (respaldo). Nunca INCIDENT. ──
       if (esTiendaFret) {
+        // Registrar escaneo si no estaba
         if (dateShipped && !order.mlShippedAt) {
           await prisma.order.update({
             where: { id: order.id },
             data: { mlShippedAt: new Date(dateShipped) },
           });
+        }
+
+        // RESPALDO: si Flex confirma entrega → cerrar DELIVERED
+        if (status === "delivered") {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: {
+              status: "DELIVERED",
+              deliveredAt: new Date(),
+              ...(dateShipped && { mlShippedAt: new Date(dateShipped) }),
+              events: {
+                create: {
+                  status: "DELIVERED",
+                  note: "Flex confirmó entrega (respaldo — Fret no había cerrado)",
+                  createdBy: "ml-cron-check",
+                },
+              },
+            },
+          });
           console.log(
-            "[Cron ML Shipped] Tienda Fret · escaneo Flex registrado:",
+            "[Cron ML Shipped] ✅ Tienda Fret · CERRADO por respaldo Flex:",
             order.orderNumber,
           );
           results.push({
             orderNumber: order.orderNumber,
-            status: "fret_shipped_confirmed",
-            dateShipped,
+            status: "fret_cerrado_por_flex",
           });
         } else {
           results.push({
             orderNumber: order.orderNumber,
-            status: "fret_sin_cambios",
+            status: "fret_en_curso",
+            mlStatus: status,
           });
         }
         console.log("[Cron ML Shipped] >>> FIN", order.orderNumber);
         continue;
       }
 
-      // ── Resto de tiendas (Now): lógica original de ML ──
+      // ── TIENDAS NOW (resto): lógica original completa ──
       const esNoEntregado =
         SHIPMENT_NO_ENTREGADO.includes(status) ||
         SUBSTATUS_NO_ENTREGADO.includes(substatus);

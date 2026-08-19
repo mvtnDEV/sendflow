@@ -9,7 +9,10 @@ import {
 } from "@/lib/integrations/mercadolibre";
 import { upsertOrderFromWebhook } from "@/lib/services/order.service";
 
-// ── Tiendas que operan con Fret: sus estados los maneja Fret, NO ML ──
+// ── Tiendas que operan con Fret ──
+// Fret controla los estados, PERO Flex puede cerrar DELIVERED como respaldo
+// (porque a veces Fret no cierra en su sistema y los pedidos quedan en camino).
+// Flex NUNCA marca INCIDENT ni estados intermedios en estas tiendas.
 const TIENDAS_FRET = new Set([
   "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess
   "cmouw44ej0004thpecq6bct35", // Eco pañal
@@ -183,7 +186,6 @@ export async function POST(req: NextRequest) {
           normalized,
         );
       } catch (err: any) {
-        // ── Pedido fuera de zona de despacho (no RM): ignorar limpiamente ──
         if (err.message?.includes("fuera de zona de despacho")) {
           console.log(
             "[ML webhook] Pedido fuera de RM, ignorado:",
@@ -201,10 +203,66 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── ¿Es una tienda Fret? Si es así, Fret maneja los estados, no ML ──
     const esTiendaFret = TIENDAS_FRET.has(integration.storeId);
-
     const newStatus = getMLStatus(rawOrder, rawShipment);
+
+    // ── LÓGICA PARA TIENDAS FRET ──
+    // Flex solo puede CERRAR entregas (delivered) como respaldo.
+    // NUNCA marca INCIDENT ni estados intermedios (eso lo controla Fret).
+    if (esTiendaFret) {
+      const existing = await prisma.order.findFirst({
+        where: { integrationId: integration.id, sourceId: String(orderId) },
+        select: { id: true, status: true },
+      });
+
+      if (existing) {
+        const dateShipped = rawShipment?.status_history?.date_shipped ?? null;
+        const now = new Date();
+
+        // Registrar escaneo Flex siempre que exista
+        if (dateShipped) {
+          await prisma.order.update({
+            where: { id: existing.id },
+            data: { mlShippedAt: new Date(dateShipped) },
+          });
+        }
+
+        // ── RESPALDO: si Flex dice DELIVERED y el pedido aún no está cerrado → cerrar ──
+        if (newStatus === "DELIVERED" && existing.status !== "DELIVERED") {
+          await prisma.order.update({
+            where: { id: existing.id },
+            data: {
+              status: "DELIVERED",
+              deliveredAt: now,
+              events: {
+                create: {
+                  status: "DELIVERED",
+                  note: "Flex confirmó entrega (respaldo — Fret no había cerrado)",
+                  createdBy: "ml-webhook",
+                },
+              },
+            },
+          });
+          console.log(
+            "[ML webhook] Tienda Fret · CERRADO por respaldo Flex:",
+            orderId,
+          );
+        } else {
+          console.log(
+            "[ML webhook] Tienda Fret · solo escaneo registrado (Flex no delivered):",
+            orderId,
+          );
+        }
+      }
+
+      await prisma.storeIntegration.update({
+        where: { id: integration.id },
+        data: { lastSyncAt: new Date() },
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── LÓGICA PARA TIENDAS NOW (resto) — sin cambios ──
     if (
       newStatus &&
       ["DELIVERED", "INCIDENT", "CANCELLED"].includes(newStatus)
@@ -214,20 +272,7 @@ export async function POST(req: NextRequest) {
         select: { id: true, status: true },
       });
 
-      // ── Para tiendas Fret: solo registrar mlShippedAt, NO cambiar estado ──
-      if (esTiendaFret) {
-        const dateShipped = rawShipment?.status_history?.date_shipped ?? null;
-        if (existing && dateShipped) {
-          await prisma.order.update({
-            where: { id: existing.id },
-            data: { mlShippedAt: new Date(dateShipped) },
-          });
-          console.log(
-            "[ML webhook] Tienda Fret · solo registrado escaneo Flex:",
-            orderId,
-          );
-        }
-      } else if (
+      if (
         existing &&
         existing.status !== newStatus &&
         existing.status !== "DELIVERED"
