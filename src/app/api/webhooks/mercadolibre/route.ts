@@ -8,11 +8,9 @@ import {
   refreshMLToken,
 } from "@/lib/integrations/mercadolibre";
 import { upsertOrderFromWebhook } from "@/lib/services/order.service";
+import { notificarEntregaAFret } from "@/lib/services/fret.service";
 
 // ── Tiendas que operan con Fret ──
-// Fret controla los estados, PERO Flex puede cerrar DELIVERED como respaldo
-// (porque a veces Fret no cierra en su sistema y los pedidos quedan en camino).
-// Flex NUNCA marca INCIDENT ni estados intermedios en estas tiendas.
 const TIENDAS_FRET = new Set([
   "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess
   "cmouw44ej0004thpecq6bct35", // Eco pañal
@@ -215,7 +213,7 @@ export async function POST(req: NextRequest) {
     if (esTiendaFret) {
       const existing = await prisma.order.findFirst({
         where: { integrationId: integration.id, sourceId: String(orderId) },
-        select: { id: true, status: true },
+        select: { id: true, status: true, orderNumber: true },
       });
 
       if (existing) {
@@ -232,11 +230,12 @@ export async function POST(req: NextRequest) {
 
         // ── RESPALDO: si Flex dice DELIVERED y el pedido aún no está cerrado → cerrar ──
         if (newStatus === "DELIVERED" && existing.status !== "DELIVERED") {
+          const fechaEntrega = new Date();
           await prisma.order.update({
             where: { id: existing.id },
             data: {
               status: "DELIVERED",
-              deliveredAt: now,
+              deliveredAt: fechaEntrega,
               events: {
                 create: {
                   status: "DELIVERED",
@@ -250,6 +249,24 @@ export async function POST(req: NextRequest) {
             "[ML webhook] Tienda Fret · CERRADO por respaldo Flex:",
             orderId,
           );
+
+          // ── Avisar a Fret que Flex entregó, para que cierren en su sistema ──
+          const referencia = (existing.orderNumber ?? "").replace("#", "");
+          const shippingId = rawOrder?.shipping?.id;
+          if (referencia) {
+            const fretResp = await notificarEntregaAFret({
+              referencia,
+              shipmentId: shippingId ? String(shippingId) : undefined,
+              fecha: fechaEntrega.toISOString(),
+            });
+            console.log(
+              "[ML webhook] Notificación a Fret:",
+              referencia,
+              "| ok:",
+              fretResp.ok,
+              fretResp.ok ? "" : `| error: ${fretResp.error}`,
+            );
+          }
         } else {
           console.log(
             "[ML webhook] Tienda Fret · solo escaneo registrado (Flex no delivered):",
@@ -329,3 +346,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, error: "handled" });
   }
 }
+
