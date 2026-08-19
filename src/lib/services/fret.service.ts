@@ -81,9 +81,6 @@ export function toFretPayload(order: {
       : order.qrCode;
 
   // ── Punto de retiro ──
-  // 1. Si tiene subStoreName mapeado → usar ese
-  // 2. Si la tienda tiene puntoRetiroFret → usar ese
-  // 3. Sin punto de retiro
   const punto_retiro =
     (order.subStoreName && SUBSTORENAME_TO_PUNTO_RETIRO[order.subStoreName]) ||
     order.puntoRetiroFret ||
@@ -153,5 +150,52 @@ export async function createFretOrders(
       rejected: [],
       error: err.message,
     };
+  }
+}
+
+// ── Notificar a Fret que Flex cerró la entrega ──
+// Fret no siempre recibe el "delivered" de Flex, así que cuando nuestro
+// respaldo detecta la entrega en Flex, le avisamos con la referencia para
+// que cierren el pedido en su sistema.
+export async function notificarEntregaAFret(params: {
+  referencia: string; // número de 6 dígitos SIN #
+  shipmentId?: string | null; // shipping.id de ML Flex
+  fecha: string; // ISO string de la entrega
+  timeoutMs?: number;
+}): Promise<{ ok: boolean; status?: number; error?: string }> {
+  const { referencia, shipmentId, fecha, timeoutMs = 8_000 } = params;
+
+  try {
+    const res = await fetch(`${FRET_API_BASE}/orders/${referencia}/status`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${getFretApiKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: "delivered",
+        fecha,
+        ...(shipmentId && { shipment_id: String(shipmentId) }),
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    const bodyText = await res.text().catch(() => "");
+    console.log(
+      "[Fret notify] referencia:",
+      referencia,
+      "| status:",
+      res.status,
+      "| resp:",
+      bodyText.slice(0, 300),
+    );
+
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: bodyText.slice(0, 300) };
+    }
+    return { ok: true, status: res.status };
+  } catch (err: any) {
+    console.error("[Fret notify] Error de conexión:", referencia, err.message);
+    return { ok: false, error: err.message };
   }
 }

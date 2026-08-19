@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
+import { notificarEntregaAFret } from "@/lib/services/fret.service";
 
 // ── Tiendas Fret: Flex puede CERRAR delivered (respaldo), nunca INCIDENT ──
 const TIENDAS_FRET = new Set([
@@ -207,11 +208,12 @@ export async function GET(req: NextRequest) {
 
         // RESPALDO: si Flex confirma entrega → cerrar DELIVERED
         if (status === "delivered") {
+          const fechaEntrega = new Date();
           await prisma.order.update({
             where: { id: order.id },
             data: {
               status: "DELIVERED",
-              deliveredAt: new Date(),
+              deliveredAt: fechaEntrega,
               ...(dateShipped && { mlShippedAt: new Date(dateShipped) }),
               events: {
                 create: {
@@ -226,9 +228,20 @@ export async function GET(req: NextRequest) {
             "[Cron ML Shipped] ✅ Tienda Fret · CERRADO por respaldo Flex:",
             order.orderNumber,
           );
+
+          // ── Avisar a Fret que Flex entregó, para que cierren en su sistema ──
+          const referencia = order.orderNumber.replace("#", "");
+          const fretResp = await notificarEntregaAFret({
+            referencia,
+            shipmentId: String(shippingId),
+            fecha: fechaEntrega.toISOString(),
+          });
+
           results.push({
             orderNumber: order.orderNumber,
             status: "fret_cerrado_por_flex",
+            fretNotificado: fretResp.ok,
+            fretError: fretResp.ok ? undefined : fretResp.error,
           });
         } else {
           results.push({

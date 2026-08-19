@@ -105,6 +105,13 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
         .join(" · ") || null;
 
+    const traeEvidencia = !!(
+      evidencePhoto1 ||
+      evidencePhoto2 ||
+      receptorName ||
+      receptorRut
+    );
+
     let lastError: any;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -118,7 +125,15 @@ export async function POST(req: NextRequest) {
               { qrCode: referencia },
             ],
           },
-          select: { id: true, orderNumber: true, status: true },
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            evidencePhoto1: true,
+            evidencePhoto2: true,
+            receptorName: true,
+            receptorRut: true,
+          },
         });
 
         if (!order) {
@@ -134,6 +149,48 @@ export async function POST(req: NextRequest) {
           "| nuevo:",
           newStatus,
         );
+
+        // ── CASO ESPECIAL: pedido ya DELIVERED pero SIN evidencia ──
+        // (se cerró antes por respaldo Flex, que no manda foto/receptor).
+        // Si ahora llega un delivered CON evidencia, solo la completamos
+        // sin tocar el estado ni la fecha de entrega.
+        const yaEstabaDelivered = order.status === "DELIVERED";
+        const noTeniaEvidencia = !(
+          order.evidencePhoto1 ||
+          order.evidencePhoto2 ||
+          order.receptorName ||
+          order.receptorRut
+        );
+
+        if (
+          newStatus === "DELIVERED" &&
+          yaEstabaDelivered &&
+          noTeniaEvidencia &&
+          traeEvidencia
+        ) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: {
+              ...(evidencePhoto1 && { evidencePhoto1 }),
+              ...(evidencePhoto2 && { evidencePhoto2 }),
+              ...(receptorName && { receptorName }),
+              ...(receptorRut && { receptorRut }),
+              ...(evidenceNote && { evidenceNote }),
+              events: {
+                create: {
+                  status: "DELIVERED",
+                  note: `Evidencia recibida de Fret${receptorName ? ` · Recibió: ${receptorName}` : ""}`,
+                  createdBy: "fret-webhook",
+                },
+              },
+            },
+          });
+          console.log(
+            "[Fret webhook] 📸 Evidencia completada (pedido ya estaba entregado):",
+            order.orderNumber,
+          );
+          return;
+        }
 
         // ── Excepción: un pedido en INCIDENT puede recuperarse a cualquier estado ──
         // (una incidencia se resuelve — ej: no pudieron escanear pero después sí retiraron)
