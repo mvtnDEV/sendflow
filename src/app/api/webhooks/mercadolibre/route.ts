@@ -16,6 +16,9 @@ import { upsertOrderFromWebhook } from "@/lib/services/order.service";
 const TIENDAS_FRET = new Set([
   "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess
   "cmouw44ej0004thpecq6bct35", // Eco pañal
+  "cmouw23l60003thpe1q7f16r3", // Oasis verde
+  "cmpbfadyd00032vgl7klna40b", // Fire Master
+  "cmovurlze000018duer7sffp4", // Protec
 ]);
 
 const SHIPMENT_NO_ENTREGADO = [
