@@ -43,14 +43,70 @@ function verificarFirma(
   }
 }
 
+// ── Extrae los campos de evidencia de un pod ──
+function extraerEvidencia(pod: any) {
+  const evidencePhoto1 = pod?.photos?.[0] ?? null;
+  const evidencePhoto2 = pod?.photos?.[1] ?? null;
+  const receptorName = pod?.receiver_name ?? null;
+  const receptorRut = pod?.receiver_rut ?? null;
+  const evidenceNote =
+    [
+      receptorName ? `Recibió: ${receptorName}` : null,
+      receptorRut ? `RUT: ${receptorRut}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || null;
+  const traeEvidencia = !!(
+    evidencePhoto1 ||
+    evidencePhoto2 ||
+    receptorName ||
+    receptorRut
+  );
+  return {
+    evidencePhoto1,
+    evidencePhoto2,
+    receptorName,
+    receptorRut,
+    evidenceNote,
+    traeEvidencia,
+  };
+}
+
+// ── Busca el pedido por cualquiera de sus identificadores ──
+async function buscarPedido(referencia: string, order_code?: string) {
+  return prisma.order.findFirst({
+    where: {
+      OR: [
+        { orderNumber: referencia },
+        { orderNumber: `#${referencia}` },
+        ...(order_code ? [{ externalId: order_code }] : []),
+        { externalId: referencia },
+        { qrCode: referencia },
+      ],
+    },
+    select: {
+      id: true,
+      orderNumber: true,
+      status: true,
+      evidencePhoto1: true,
+      evidencePhoto2: true,
+      receptorName: true,
+      receptorRut: true,
+    },
+  });
+}
+
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signatureHeader = req.headers.get("x-fret-signature") ?? "";
   const deliveryId = req.headers.get("x-fret-delivery") ?? "";
+  const eventHeader = req.headers.get("x-fret-event") ?? "";
 
   console.log(
     "[Fret webhook] delivery:",
     deliveryId,
+    "| event:",
+    eventHeader,
     "| body:",
     rawBody.slice(0, 300),
   );
@@ -73,16 +129,101 @@ export async function POST(req: NextRequest) {
       return;
     }
 
-    if (body.event !== "order.status_changed") {
-      console.log("[Fret webhook] Evento ignorado:", body.event);
-      return;
-    }
-
+    // El evento viene en el header X-Fret-Event, con fallback a body.event
+    const evento = eventHeader || body.event;
     const { referencia, order_code, status, occurred_at, pod } =
       body.data ?? {};
 
-    if (!referencia || !status) {
-      console.error("[Fret webhook] Faltan campos requeridos");
+    if (!referencia) {
+      console.error("[Fret webhook] Falta referencia");
+      return;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // EVENTO 1: order.pod_added — llega la foto DESPUÉS de la entrega
+    // (típicamente tras nuestro aviso de delivered; el estado no cambió)
+    // → solo completar evidencia, sin tocar estado ni fecha
+    // ══════════════════════════════════════════════════════════════
+    if (evento === "order.pod_added") {
+      const ev = extraerEvidencia(pod);
+      if (!ev.traeEvidencia) {
+        console.log(
+          "[Fret webhook] pod_added sin evidencia, ignorando:",
+          referencia,
+        );
+        return;
+      }
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const order = await buscarPedido(referencia, order_code);
+          if (!order) {
+            console.log(
+              "[Fret webhook] pod_added · pedido no encontrado:",
+              referencia,
+            );
+            return;
+          }
+
+          const yaTeniaEvidencia = !!(
+            order.evidencePhoto1 ||
+            order.evidencePhoto2 ||
+            order.receptorName ||
+            order.receptorRut
+          );
+
+          if (yaTeniaEvidencia) {
+            console.log(
+              "[Fret webhook] pod_added · ya tenía evidencia, ignorando:",
+              order.orderNumber,
+            );
+            return;
+          }
+
+          await prisma.order.update({
+            where: { id: order.id },
+            data: {
+              ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
+              ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
+              ...(ev.receptorName && { receptorName: ev.receptorName }),
+              ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
+              ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
+              events: {
+                create: {
+                  status: "DELIVERED",
+                  note: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+                  createdBy: "fret-webhook",
+                },
+              },
+            },
+          });
+          console.log(
+            "[Fret webhook] 📸 Evidencia completada (pod_added):",
+            order.orderNumber,
+          );
+          return;
+        } catch (err: any) {
+          console.error(
+            `[Fret webhook] pod_added intento ${attempt}/3:`,
+            err.message,
+          );
+          if (attempt < 3)
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+        }
+      }
+      return;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // EVENTO 2: order.status_changed — cambio de estado (flujo normal)
+    // ══════════════════════════════════════════════════════════════
+    if (evento !== "order.status_changed") {
+      console.log("[Fret webhook] Evento ignorado:", evento);
+      return;
+    }
+
+    if (!status) {
+      console.error("[Fret webhook] Falta status");
       return;
     }
 
@@ -92,49 +233,12 @@ export async function POST(req: NextRequest) {
       return;
     }
 
-    // ── Extraer evidencia del pod si viene ──
-    const evidencePhoto1 = pod?.photos?.[0] ?? null;
-    const evidencePhoto2 = pod?.photos?.[1] ?? null;
-    const receptorName = pod?.receiver_name ?? null;
-    const receptorRut = pod?.receiver_rut ?? null;
-    const evidenceNote =
-      [
-        receptorName ? `Recibió: ${receptorName}` : null,
-        receptorRut ? `RUT: ${receptorRut}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ") || null;
-
-    const traeEvidencia = !!(
-      evidencePhoto1 ||
-      evidencePhoto2 ||
-      receptorName ||
-      receptorRut
-    );
+    const ev = extraerEvidencia(pod);
 
     let lastError: any;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const order = await prisma.order.findFirst({
-          where: {
-            OR: [
-              { orderNumber: referencia },
-              { orderNumber: `#${referencia}` },
-              { externalId: order_code },
-              { externalId: referencia },
-              { qrCode: referencia },
-            ],
-          },
-          select: {
-            id: true,
-            orderNumber: true,
-            status: true,
-            evidencePhoto1: true,
-            evidencePhoto2: true,
-            receptorName: true,
-            receptorRut: true,
-          },
-        });
+        const order = await buscarPedido(referencia, order_code);
 
         if (!order) {
           console.log("[Fret webhook] Pedido no encontrado:", referencia);
@@ -151,9 +255,8 @@ export async function POST(req: NextRequest) {
         );
 
         // ── CASO ESPECIAL: pedido ya DELIVERED pero SIN evidencia ──
-        // (se cerró antes por respaldo Flex, que no manda foto/receptor).
-        // Si ahora llega un delivered CON evidencia, solo la completamos
-        // sin tocar el estado ni la fecha de entrega.
+        // (se cerró antes por respaldo Flex). Si llega delivered CON evidencia,
+        // solo la completamos sin tocar estado ni fecha.
         const yaEstabaDelivered = order.status === "DELIVERED";
         const noTeniaEvidencia = !(
           order.evidencePhoto1 ||
@@ -166,34 +269,33 @@ export async function POST(req: NextRequest) {
           newStatus === "DELIVERED" &&
           yaEstabaDelivered &&
           noTeniaEvidencia &&
-          traeEvidencia
+          ev.traeEvidencia
         ) {
           await prisma.order.update({
             where: { id: order.id },
             data: {
-              ...(evidencePhoto1 && { evidencePhoto1 }),
-              ...(evidencePhoto2 && { evidencePhoto2 }),
-              ...(receptorName && { receptorName }),
-              ...(receptorRut && { receptorRut }),
-              ...(evidenceNote && { evidenceNote }),
+              ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
+              ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
+              ...(ev.receptorName && { receptorName: ev.receptorName }),
+              ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
+              ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
               events: {
                 create: {
                   status: "DELIVERED",
-                  note: `Evidencia recibida de Fret${receptorName ? ` · Recibió: ${receptorName}` : ""}`,
+                  note: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
                   createdBy: "fret-webhook",
                 },
               },
             },
           });
           console.log(
-            "[Fret webhook] 📸 Evidencia completada (pedido ya estaba entregado):",
+            "[Fret webhook] 📸 Evidencia completada (ya estaba entregado):",
             order.orderNumber,
           );
           return;
         }
 
         // ── Excepción: un pedido en INCIDENT puede recuperarse a cualquier estado ──
-        // (una incidencia se resuelve — ej: no pudieron escanear pero después sí retiraron)
         const esRecuperacionDeIncidente = order.status === "INCIDENT";
 
         if (
@@ -222,18 +324,17 @@ export async function POST(req: NextRequest) {
             ...(newStatus === "IN_TRANSIT" && { inTransitAt: now }),
             ...(newStatus === "DELIVERED" && {
               deliveredAt: now,
-              // ── Guardar evidencia del pod ──
-              ...(evidencePhoto1 && { evidencePhoto1 }),
-              ...(evidencePhoto2 && { evidencePhoto2 }),
-              ...(receptorName && { receptorName }),
-              ...(receptorRut && { receptorRut }),
-              ...(evidenceNote && { evidenceNote }),
+              ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
+              ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
+              ...(ev.receptorName && { receptorName: ev.receptorName }),
+              ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
+              ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
             }),
             ...(order_code && { externalId: order_code }),
             events: {
               create: {
                 status: newStatus as any,
-                note: `Actualizado por Moovex · ${status}${receptorName ? ` · Recibió: ${receptorName}` : ""}`,
+                note: `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
                 createdBy: "fret-webhook",
               },
             },
