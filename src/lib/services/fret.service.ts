@@ -72,11 +72,11 @@ export function toFretPayload(order: {
   // ML Flex: usa pack_id (lo que viene en la etiqueta física de Flex).
   //          Si no hay pack_id, usa sourceId como respaldo.
   // Resto: usa qrCode interno de Moovex.
-  const packId = (order.rawPayload as any)?.pack_id;
+  const shippingId = (order.rawPayload as any)?.shipping?.id;
   const qr_code =
     order.platform === "MERCADOLIBRE"
-      ? packId
-        ? String(packId)
+      ? shippingId
+        ? String(shippingId)
         : (order.sourceId ?? order.qrCode)
       : order.qrCode;
 
