@@ -43,7 +43,6 @@ function verificarFirma(
   }
 }
 
-// ── Extrae los campos de evidencia de un pod ──
 function extraerEvidencia(pod: any) {
   const evidencePhoto1 = pod?.photos?.[0] ?? null;
   const evidencePhoto2 = pod?.photos?.[1] ?? null;
@@ -72,7 +71,6 @@ function extraerEvidencia(pod: any) {
   };
 }
 
-// ── Busca el pedido por cualquiera de sus identificadores ──
 async function buscarPedido(referencia: string, order_code?: string) {
   return prisma.order.findFirst({
     where: {
@@ -88,12 +86,65 @@ async function buscarPedido(referencia: string, order_code?: string) {
       id: true,
       orderNumber: true,
       status: true,
+      externalId: true,
       evidencePhoto1: true,
       evidencePhoto2: true,
       receptorName: true,
       receptorRut: true,
     },
   });
+}
+
+// ── Propaga un cambio de estado a todos los pedidos del mismo pack ──
+// (pedidos con el mismo externalId FR- = mismo paquete físico en Fret)
+async function propagarAPack(
+  orderId: string,
+  externalId: string | null,
+  data: any,
+) {
+  if (!externalId || !externalId.startsWith("FR-")) return;
+
+  const hermanas = await prisma.order.findMany({
+    where: {
+      externalId,
+      id: { not: orderId },
+    },
+    select: { id: true, orderNumber: true, status: true },
+  });
+
+  for (const hermana of hermanas) {
+    const newPriority = STATUS_PRIORITY[data.status] ?? 0;
+    const currentPriority = STATUS_PRIORITY[hermana.status] ?? 0;
+    if (newPriority <= currentPriority) continue;
+
+    await prisma.order.update({
+      where: { id: hermana.id },
+      data: {
+        status: data.status,
+        ...(data.receivedAt && { receivedAt: data.receivedAt }),
+        ...(data.inTransitAt && { inTransitAt: data.inTransitAt }),
+        ...(data.deliveredAt && { deliveredAt: data.deliveredAt }),
+        ...(data.evidencePhoto1 && { evidencePhoto1: data.evidencePhoto1 }),
+        ...(data.evidencePhoto2 && { evidencePhoto2: data.evidencePhoto2 }),
+        ...(data.receptorName && { receptorName: data.receptorName }),
+        ...(data.receptorRut && { receptorRut: data.receptorRut }),
+        ...(data.evidenceNote && { evidenceNote: data.evidenceNote }),
+        events: {
+          create: {
+            status: data.status,
+            note: data.eventNote ?? `Actualizado por Moovex (pack)`,
+            createdBy: "fret-webhook",
+          },
+        },
+      },
+    });
+    console.log(
+      "[Fret webhook] 📦 Pack propagado:",
+      hermana.orderNumber,
+      "->",
+      data.status,
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -111,7 +162,6 @@ export async function POST(req: NextRequest) {
     rawBody.slice(0, 300),
   );
 
-  // ── Verificar firma ──
   const secret = process.env.FRET_WEBHOOK_SECRET;
   if (secret && signatureHeader) {
     if (!verificarFirma(secret, signatureHeader, rawBody)) {
@@ -129,7 +179,6 @@ export async function POST(req: NextRequest) {
       return;
     }
 
-    // El evento viene en el header X-Fret-Event, con fallback a body.event
     const evento = eventHeader || body.event;
     const { referencia, order_code, status, occurred_at, pod } =
       body.data ?? {};
@@ -140,9 +189,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // EVENTO 1: order.pod_added — llega la foto DESPUÉS de la entrega
-    // (típicamente tras nuestro aviso de delivered; el estado no cambió)
-    // → solo completar evidencia, sin tocar estado ni fecha
+    // EVENTO 1: order.pod_added — foto después de la entrega
     // ══════════════════════════════════════════════════════════════
     if (evento === "order.pod_added") {
       const ev = extraerEvidencia(pod);
@@ -197,6 +244,18 @@ export async function POST(req: NextRequest) {
               },
             },
           });
+
+          // Propagar evidencia al pack
+          await propagarAPack(order.id, order.externalId, {
+            status: "DELIVERED",
+            evidencePhoto1: ev.evidencePhoto1,
+            evidencePhoto2: ev.evidencePhoto2,
+            receptorName: ev.receptorName,
+            receptorRut: ev.receptorRut,
+            evidenceNote: ev.evidenceNote,
+            eventNote: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+          });
+
           console.log(
             "[Fret webhook] 📸 Evidencia completada (pod_added):",
             order.orderNumber,
@@ -215,7 +274,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // EVENTO 2: order.status_changed — cambio de estado (flujo normal)
+    // EVENTO 2: order.status_changed — cambio de estado
     // ══════════════════════════════════════════════════════════════
     if (evento !== "order.status_changed") {
       console.log("[Fret webhook] Evento ignorado:", evento);
@@ -254,9 +313,20 @@ export async function POST(req: NextRequest) {
           newStatus,
         );
 
+        // ── PROTECCIÓN: no cambiar estado de pedidos PENDING ──
+        // Fret manda in_transit/cancelled sobre pedidos que no retiró.
+        // Si el pedido está PENDING, solo aceptamos picked_up (RECEIVED).
+        if (order.status === "PENDING" && newStatus !== "RECEIVED") {
+          console.log(
+            "[Fret webhook] Ignorando",
+            newStatus,
+            "sobre PENDING (no fue retirado):",
+            order.orderNumber,
+          );
+          return;
+        }
+
         // ── CASO ESPECIAL: pedido ya DELIVERED pero SIN evidencia ──
-        // (se cerró antes por respaldo Flex). Si llega delivered CON evidencia,
-        // solo la completamos sin tocar estado ni fecha.
         const yaEstabaDelivered = order.status === "DELIVERED";
         const noTeniaEvidencia = !(
           order.evidencePhoto1 ||
@@ -288,6 +358,17 @@ export async function POST(req: NextRequest) {
               },
             },
           });
+
+          await propagarAPack(order.id, order.externalId, {
+            status: "DELIVERED",
+            evidencePhoto1: ev.evidencePhoto1,
+            evidencePhoto2: ev.evidencePhoto2,
+            receptorName: ev.receptorName,
+            receptorRut: ev.receptorRut,
+            evidenceNote: ev.evidenceNote,
+            eventNote: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+          });
+
           console.log(
             "[Fret webhook] 📸 Evidencia completada (ya estaba entregado):",
             order.orderNumber,
@@ -295,7 +376,7 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        // ── Excepción: un pedido en INCIDENT puede recuperarse a cualquier estado ──
+        // ── Excepción: un pedido en INCIDENT puede recuperarse ──
         const esRecuperacionDeIncidente = order.status === "INCIDENT";
 
         if (
@@ -316,29 +397,31 @@ export async function POST(req: NextRequest) {
         const previousStatus = order.status;
         const now = occurred_at ? new Date(occurred_at) : new Date();
 
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            status: newStatus as any,
-            ...(newStatus === "RECEIVED" && { receivedAt: now }),
-            ...(newStatus === "IN_TRANSIT" && { inTransitAt: now }),
-            ...(newStatus === "DELIVERED" && {
-              deliveredAt: now,
-              ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
-              ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
-              ...(ev.receptorName && { receptorName: ev.receptorName }),
-              ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
-              ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
-            }),
-            ...(order_code && { externalId: order_code }),
-            events: {
-              create: {
-                status: newStatus as any,
-                note: `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
-                createdBy: "fret-webhook",
-              },
+        const updateData: any = {
+          status: newStatus as any,
+          ...(newStatus === "RECEIVED" && { receivedAt: now }),
+          ...(newStatus === "IN_TRANSIT" && { inTransitAt: now }),
+          ...(newStatus === "DELIVERED" && {
+            deliveredAt: now,
+            ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
+            ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
+            ...(ev.receptorName && { receptorName: ev.receptorName }),
+            ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
+            ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
+          }),
+          ...(order_code && { externalId: order_code }),
+          events: {
+            create: {
+              status: newStatus as any,
+              note: `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+              createdBy: "fret-webhook",
             },
           },
+        };
+
+        await prisma.order.update({
+          where: { id: order.id },
+          data: updateData,
         });
 
         console.log(
@@ -348,6 +431,23 @@ export async function POST(req: NextRequest) {
           newStatus,
           pod ? "| con evidencia" : "",
         );
+
+        // ── Propagar al pack (mismas órdenes con mismo FR-) ──
+        const eventNote = `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`;
+        await propagarAPack(order.id, order.externalId ?? order_code, {
+          status: newStatus,
+          ...(newStatus === "RECEIVED" && { receivedAt: now }),
+          ...(newStatus === "IN_TRANSIT" && { inTransitAt: now }),
+          ...(newStatus === "DELIVERED" && {
+            deliveredAt: now,
+            ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
+            ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
+            ...(ev.receptorName && { receptorName: ev.receptorName }),
+            ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
+            ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
+          }),
+          eventNote,
+        });
 
         try {
           const { notifyWebhooks } =
