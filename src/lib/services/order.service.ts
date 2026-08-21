@@ -119,6 +119,43 @@ export async function createOrder(input: CreateOrderInput) {
   // ── Enviar automáticamente a Fret al crear el pedido ──
   if (!TIENDAS_EXCLUIDAS_FRET.has(order.storeId)) {
     try {
+      // ── PACK GROUPING: si es ML y ya existe otra orden con el mismo ──
+      // shipping_id que ya tiene FR-, no reenviar a Fret (es el mismo paquete).
+      // Solo copiar el FR- al nuevo pedido.
+      const shippingId = (order.rawPayload as any)?.shipping?.id;
+
+      if (order.platform === "MERCADOLIBRE" && shippingId) {
+        const hermana = await prisma.order.findFirst({
+          where: {
+            id: { not: order.id },
+            platform: "MERCADOLIBRE",
+            externalId: { not: null, startsWith: "FR-" },
+            rawPayload: {
+              path: ["shipping", "id"],
+              equals: Number(shippingId),
+            },
+          },
+          select: { externalId: true, orderNumber: true },
+        });
+
+        if (hermana?.externalId) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { externalId: hermana.externalId },
+          });
+          console.log(
+            "[Fret] 📦 Pack agrupado:",
+            order.orderNumber,
+            "→ mismo FR que",
+            hermana.orderNumber,
+            "(",
+            hermana.externalId,
+            ")",
+          );
+          return order;
+        }
+      }
+
       const { toFretPayload, createFretOrders } =
         await import("./fret.service");
       const payload = toFretPayload({
