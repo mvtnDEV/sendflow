@@ -47,24 +47,6 @@ function todayRange() {
   };
 }
 
-const CREADORES_AUTOMATICOS = [
-  "system",
-  "webhook",
-  "ml-webhook",
-  "enviosnow-webhook",
-  "api",
-  "ml-cron-check",
-];
-
-const ESCANEADO_POR_APP = {
-  events: {
-    some: {
-      status: "RECEIVED" as const,
-      createdBy: { notIn: CREADORES_AUTOMATICOS },
-    },
-  },
-};
-
 interface CreateOrderInput {
   storeId: string;
   integrationId?: string;
@@ -135,7 +117,6 @@ export async function createOrder(input: CreateOrderInput) {
   });
 
   // ── Enviar automáticamente a Fret al crear el pedido ──
-  // Excluir tiendas que no van a Fret (Senby)
   if (!TIENDAS_EXCLUIDAS_FRET.has(order.storeId)) {
     try {
       const { toFretPayload, createFretOrders } =
@@ -312,13 +293,7 @@ export async function listOrders(filters: OrderFilters) {
       { subStoreName: { contains: filters.search, mode: "insensitive" } },
     ];
   }
-  const condicionesAdicionales: any[] = filters.search
-    ? []
-    : [
-        {
-          OR: [{ status: "PENDING" }, ESCANEADO_POR_APP],
-        },
-      ];
+
   if (filters.todayOnly && !filters.dateFrom && !filters.dateTo) {
     if (filters.superAdminView) {
       where.AND = [
@@ -328,23 +303,12 @@ export async function listOrders(filters: OrderFilters) {
             { status: "IN_TRANSIT" },
             { status: "DISPATCHED" },
             { status: "PICKED_UP" },
+            { status: "RECEIVED" },
+            { status: "PENDING", createdAt: today },
             { deliveredAt: today },
             { status: "INCIDENT", inTransitAt: today },
           ],
         },
-        {
-          NOT: {
-            AND: [
-              { platform: "WOOCOMMERCE" },
-              {
-                NOT: {
-                  rawPayload: { path: ["status"], equals: "enviado_intralog" },
-                },
-              },
-            ],
-          },
-        },
-        ...condicionesAdicionales,
       ];
     } else {
       where.AND = [
@@ -353,12 +317,14 @@ export async function listOrders(filters: OrderFilters) {
             { inTransitAt: today },
             { deliveredAt: today },
             { status: "PENDING", createdAt: today },
+            { status: "RECEIVED", createdAt: today },
+            { status: "RECEIVED" },
             { status: "DISPATCHED", createdAt: today },
             { status: "PICKED_UP", createdAt: today },
+            { status: "IN_TRANSIT" },
             { status: "INCIDENT", inTransitAt: today },
           ],
         },
-        ...condicionesAdicionales,
       ];
     }
   } else if (filters.dateFrom || filters.dateTo) {
@@ -366,70 +332,8 @@ export async function listOrders(filters: OrderFilters) {
       ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
       ...(filters.dateTo && { lte: new Date(filters.dateTo + "T23:59:59") }),
     };
-    if (filters.superAdminView && !filters.status) {
-      where.AND = [
-        {
-          NOT: {
-            AND: [{ status: "PENDING" }, { NOT: { platform: "MANUAL" } }],
-          },
-        },
-        { NOT: { status: "RECEIVED" } },
-        {
-          NOT: {
-            AND: [
-              { platform: "WOOCOMMERCE" },
-              {
-                NOT: {
-                  rawPayload: { path: ["status"], equals: "enviado_intralog" },
-                },
-              },
-            ],
-          },
-        },
-        ...condicionesAdicionales,
-      ];
-    } else {
-      where.AND = [...condicionesAdicionales];
-    }
-  } else if (filters.superAdminView && !filters.status) {
-    where.AND = [
-      {
-        NOT: { AND: [{ status: "PENDING" }, { NOT: { platform: "MANUAL" } }] },
-      },
-      { NOT: { status: "RECEIVED" } },
-      {
-        NOT: {
-          AND: [
-            { platform: "WOOCOMMERCE" },
-            {
-              NOT: {
-                rawPayload: { path: ["status"], equals: "enviado_intralog" },
-              },
-            },
-          ],
-        },
-      },
-      ...condicionesAdicionales,
-    ];
-  } else if (filters.superAdminView) {
-    where.AND = [
-      {
-        NOT: {
-          AND: [
-            { platform: "WOOCOMMERCE" },
-            {
-              NOT: {
-                rawPayload: { path: ["status"], equals: "enviado_intralog" },
-              },
-            },
-          ],
-        },
-      },
-      ...condicionesAdicionales,
-    ];
-  } else {
-    where.AND = [...condicionesAdicionales];
   }
+
   const [items, total] = await Promise.all([
     prisma.order.findMany({
       where,
@@ -483,15 +387,13 @@ export async function getDashboardStats(
           { status: "IN_TRANSIT" },
           { status: "DISPATCHED" },
           { status: "PICKED_UP" },
+          { status: "RECEIVED" },
+          { status: "PENDING", createdAt: today },
         ],
       },
-      {
-        OR: [{ status: "PENDING" }, ESCANEADO_POR_APP],
-      },
     ];
-  } else {
-    baseWhere.OR = [{ status: "PENDING" }, ESCANEADO_POR_APP];
   }
+
   const [byStatus, byPlatform, byStore] = await Promise.all([
     prisma.order.groupBy({
       by: ["status"],
