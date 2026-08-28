@@ -12,6 +12,9 @@ const SUBSTORENAME_TO_PUNTO_RETIRO: Record<string, string> = {
   "Elige tu numero": "elige-tu-num",
 };
 
+// ── Puntos de retiro que ya tienen pedidos en bodega (no requieren retiro) ──
+const PUNTOS_EN_BODEGA = new Set(["sendby"]);
+
 function getFretApiKey(): string {
   return process.env.FRET_API_KEY ?? "";
 }
@@ -28,6 +31,7 @@ interface FretOrder {
   referencia_direccion?: string;
   observaciones?: string;
   punto_retiro?: string;
+  en_bodega?: boolean;
 }
 
 interface FretCreatedOrder {
@@ -69,9 +73,8 @@ export function toFretPayload(order: {
       : "+56912345678";
 
   // ── QR que escaneará el conductor de Fret ──
-  // ML Flex: usa pack_id (lo que viene en la etiqueta física de Flex).
-  //          Si no hay pack_id, usa sourceId como respaldo.
-  // Resto: usa qrCode interno de Moovex.
+  // ML Flex: usa shipment_id (shipping.id).
+  // Resto: usa qrCode interno de Moovex (mn_XXXXXXXX).
   const shippingId = (order.rawPayload as any)?.shipping?.id;
   const qr_code =
     order.platform === "MERCADOLIBRE"
@@ -81,10 +84,15 @@ export function toFretPayload(order: {
       : order.qrCode;
 
   // ── Punto de retiro ──
+  // Prioridad: puntoRetiroFret de la tienda > subStoreName mapping
+  // Senby siempre usa 'sendby' porque tiene puntoRetiroFret seteado.
   const punto_retiro =
-    (order.subStoreName && SUBSTORENAME_TO_PUNTO_RETIRO[order.subStoreName]) ||
     order.puntoRetiroFret ||
+    (order.subStoreName && SUBSTORENAME_TO_PUNTO_RETIRO[order.subStoreName]) ||
     undefined;
+
+  // ── en_bodega: true para puntos que ya tienen los pedidos en bodega ──
+  const esBodega = !!(punto_retiro && PUNTOS_EN_BODEGA.has(punto_retiro));
 
   return {
     referencia: order.orderNumber.replace("#", ""),
@@ -92,9 +100,10 @@ export function toFretPayload(order: {
     telefono: phone,
     direccion: order.addressStreet,
     comuna: order.addressComuna,
+    ...(order.bultos === 1 && qr_code ? { qr_code } : {}),
     bultos: order.bultos,
-    qr_code,
     ...(punto_retiro && { punto_retiro }),
+    ...(esBodega && { en_bodega: true }),
     ...(order.customerEmail && { email: order.customerEmail }),
     ...(order.addressNotes && { referencia_direccion: order.addressNotes }),
   };
@@ -154,13 +163,10 @@ export async function createFretOrders(
 }
 
 // ── Notificar a Fret que Flex cerró la entrega ──
-// Fret no siempre recibe el "delivered" de Flex, así que cuando nuestro
-// respaldo detecta la entrega en Flex, le avisamos con la referencia para
-// que cierren el pedido en su sistema.
 export async function notificarEntregaAFret(params: {
-  referencia: string; // número de 6 dígitos SIN #
-  shipmentId?: string | null; // shipping.id de ML Flex
-  fecha: string; // ISO string de la entrega
+  referencia: string;
+  shipmentId?: string | null;
+  fecha: string;
   timeoutMs?: number;
 }): Promise<{ ok: boolean; status?: number; error?: string }> {
   const { referencia, shipmentId, fecha, timeoutMs = 8_000 } = params;

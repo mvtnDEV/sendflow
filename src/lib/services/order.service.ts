@@ -67,9 +67,7 @@ interface CreateOrderInput {
 }
 
 // ── Tiendas que NO van a Fret ──
-const TIENDAS_EXCLUIDAS_FRET = new Set([
-  "cmpanvuns000053f2gbs46t83", // Senby
-]);
+const TIENDAS_EXCLUIDAS_FRET = new Set<string>([]);
 
 export async function createOrder(input: CreateOrderInput) {
   if (!isRegionPermitida(input.addressRegion)) {
@@ -119,9 +117,17 @@ export async function createOrder(input: CreateOrderInput) {
   // ── Enviar automáticamente a Fret al crear el pedido ──
   if (!TIENDAS_EXCLUIDAS_FRET.has(order.storeId)) {
     try {
+      // ── Verificar si el pedido ya tiene externalId (ej: ID de Senby) ──
+      // Si lo tiene, no sobreescribir con el FR- de Fret.
+      // El webhook de Fret encuentra el pedido por orderNumber, no necesita el FR-.
+      const fresh = await prisma.order.findUnique({
+        where: { id: order.id },
+        select: { externalId: true },
+      });
+      const preservarExternalId = !!fresh?.externalId;
+
       // ── PACK GROUPING: si es ML y ya existe otra orden con el mismo ──
       // shipping_id que ya tiene FR-, no reenviar a Fret (es el mismo paquete).
-      // Solo copiar el FR- al nuevo pedido.
       const shippingId = (order.rawPayload as any)?.shipping?.id;
 
       if (order.platform === "MERCADOLIBRE" && shippingId) {
@@ -139,10 +145,12 @@ export async function createOrder(input: CreateOrderInput) {
         });
 
         if (hermana?.externalId) {
-          await prisma.order.update({
-            where: { id: order.id },
-            data: { externalId: hermana.externalId },
-          });
+          if (!preservarExternalId) {
+            await prisma.order.update({
+              where: { id: order.id },
+              data: { externalId: hermana.externalId },
+            });
+          }
           console.log(
             "[Fret] 📦 Pack agrupado:",
             order.orderNumber,
@@ -151,6 +159,9 @@ export async function createOrder(input: CreateOrderInput) {
             "(",
             hermana.externalId,
             ")",
+            preservarExternalId
+              ? `(externalId preservado: ${fresh?.externalId})`
+              : "",
           );
           return order;
         }
@@ -176,26 +187,36 @@ export async function createOrder(input: CreateOrderInput) {
       });
       const result = await createFretOrders([payload]);
       if (result.ok && result.created[0]) {
-        await prisma.order.update({
-          where: { id: order.id },
-          data: { externalId: result.created[0].order_code },
-        });
+        if (!preservarExternalId) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { externalId: result.created[0].order_code },
+          });
+        }
         console.log(
           "[Fret] ✅ Pedido creado:",
           order.orderNumber,
           "→",
           result.created[0].order_code,
+          preservarExternalId
+            ? `(externalId preservado: ${fresh?.externalId})`
+            : "",
         );
       } else if (result.duplicated[0]) {
-        await prisma.order.update({
-          where: { id: order.id },
-          data: { externalId: result.duplicated[0].order_code },
-        });
+        if (!preservarExternalId) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { externalId: result.duplicated[0].order_code },
+          });
+        }
         console.log(
           "[Fret] Duplicado:",
           order.orderNumber,
           "→",
           result.duplicated[0].order_code,
+          preservarExternalId
+            ? `(externalId preservado: ${fresh?.externalId})`
+            : "",
         );
       } else {
         console.warn(
