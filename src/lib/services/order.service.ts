@@ -69,6 +69,12 @@ interface CreateOrderInput {
 // ── Tiendas que NO van a Fret ──
 const TIENDAS_EXCLUIDAS_FRET = new Set<string>([]);
 
+// ── Senby: solo estas sub-tiendas van a Fret, el resto va a Now ──
+// El lunes cuando TODAS vayan a Fret, cambiar enviarAFret a:
+// const enviarAFret = !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
+const SENBY_STORE_ID = "cmpanvuns000053f2gbs46t83";
+const SENBY_SUBTIENDAS_FRET = new Set(["Tienda de Jacinta", "Jacinta tienda"]);
+
 export async function createOrder(input: CreateOrderInput) {
   if (!isRegionPermitida(input.addressRegion)) {
     throw new Error(
@@ -114,8 +120,15 @@ export async function createOrder(input: CreateOrderInput) {
     },
   });
 
-  // ── Enviar automáticamente a Fret al crear el pedido ──
-  if (!TIENDAS_EXCLUIDAS_FRET.has(order.storeId)) {
+  // ── Decidir si enviar a Fret ──
+  // Senby: solo sub-tiendas en SENBY_SUBTIENDAS_FRET van a Fret
+  // Resto: todas van a Fret excepto las excluidas
+  const esSenby = order.storeId === SENBY_STORE_ID;
+  const enviarAFret = esSenby
+    ? SENBY_SUBTIENDAS_FRET.has(order.subStoreName ?? "")
+    : !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
+
+  if (enviarAFret) {
     try {
       // ── Verificar si el pedido ya tiene externalId (ej: ID de Senby) ──
       // Si lo tiene, no sobreescribir con el FR- de Fret.
