@@ -1,16 +1,9 @@
 const FRET_API_BASE =
   "https://bqdrjwyqptqdidyjumdv.supabase.co/functions/v1/merchant-api";
 
-// ── Mapeo subStoreName → puntoRetiro para sub-tiendas de Senby ──
-const SUBSTORENAME_TO_PUNTO_RETIRO: Record<string, string> = {
-  "Tienda de Jacinta": "jacinta-tien",
-  "Jacinta tienda": "jacinta-tien",
-  Enviame: "more-amor",
-  "ETN Meli": "elige-tu-num",
-  "Colo Colo": "colo-colo",
-  "More amor": "more-amor",
-  "Elige tu numero": "elige-tu-num",
-};
+// ── Ya no se usa mapeo por sub-tienda ──
+// Todas las sub-tiendas de Senby usan el puntoRetiroFret de la tienda ('sendby')
+const SUBSTORENAME_TO_PUNTO_RETIRO: Record<string, string> = {};
 
 // ── Puntos de retiro que ya tienen pedidos en bodega (no requieren retiro) ──
 const PUNTOS_EN_BODEGA = new Set(["sendby"]);
