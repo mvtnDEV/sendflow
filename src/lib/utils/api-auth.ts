@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { checkRateLimit } from '@/lib/utils/rate-limit'
 
 export interface ApiKeyPayload {
   id:      string
@@ -19,26 +20,12 @@ export async function verifyApiKey(req: NextRequest): Promise<ApiKeyPayload | nu
   })
   if (!apiKey) return null
 
-  // Rate limiting
-  const since = new Date(Date.now() - RATE_LIMIT_WINDOW * 1000)
-  const count = await prisma.$queryRaw<{ count: bigint }[]>`
-    SELECT COUNT(*) as count FROM api_rate_limits
-    WHERE key = ${key} AND created_at > ${since}
-  `
-  const requests = Number(count[0]?.count ?? 0)
-  if (requests >= RATE_LIMIT_MAX) return null
-
-  // Registrar request
-  await prisma.$executeRaw`
-    INSERT INTO api_rate_limits (key, created_at) VALUES (${key}, NOW())
-  `
-
-  // Limpiar registros antiguos cada 100 requests
-  if (requests % 100 === 0) {
-    await prisma.$executeRaw`
-      DELETE FROM api_rate_limits WHERE created_at < NOW() - INTERVAL '1 hour'
-    `
-  }
+  // Rate limiting.
+  // Antes esto consultaba `api_rate_limits.key`, columna que el modelo
+  // ApiRateLimit no tiene (define apiKeyId): reventaba en runtime y tumbaba
+  // toda la API v1. Ahora usa el helper genérico sobre rate_limit_hits.
+  const permitido = await checkRateLimit(`apikey:${apiKey.id}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW)
+  if (!permitido) return null
 
   // Actualizar lastUsedAt
   await prisma.apiKey.update({

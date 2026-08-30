@@ -68,7 +68,7 @@ export default function TrackingPage() {
             <div>
               <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 3 }}>Pedido</div>
               <div style={{ fontSize: 20, fontWeight: 500, color: '#1D4ED8' }}>{result.orderNumber}</div>
-              <div style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>{result.storeName}</div>
+              <div style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>{result.customerName}</div>
             </div>
             <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, background: STATUS_COLOR[result.status] + '20', color: STATUS_COLOR[result.status] }}>
               {STATUS_LABEL[result.status]}
@@ -79,7 +79,7 @@ export default function TrackingPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13 }}>
               <div>
                 <div style={{ fontSize: 11, color: '#9CA3AF' }}>Destino</div>
-                <div style={{ fontWeight: 500, marginTop: 2 }}>{result.comuna}, {result.region}</div>
+                <div style={{ fontWeight: 500, marginTop: 2 }}>{result.comuna}</div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: '#9CA3AF' }}>Bultos</div>
@@ -104,10 +104,8 @@ export default function TrackingPage() {
                     zIndex: 1,
                   }}/>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{STATUS_LABEL[ev.status] ?? ev.status}</div>
-                  {ev.note && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 1 }}>{ev.note}</div>}
-                  <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
-                    {new Date(ev.timestamp).toLocaleString('es-CL')}
-                  </div>
+                  {ev.text && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 1 }}>{ev.text}</div>}
+                  <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{ev.formatted}</div>
                 </div>
               )
             })}

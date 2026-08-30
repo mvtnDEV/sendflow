@@ -32,7 +32,7 @@ function formatSourceId(sourceId: string | undefined, platform: string): string 
 }
 
 export async function generateQRImage(qrCode: string): Promise<string> {
-  const trackingUrl = `${process.env.APP_URL}/public-tracking?q=${qrCode}`
+  const trackingUrl = `${process.env.APP_URL}/track/${encodeURIComponent(qrCode)}`
   return QRCode.toDataURL(trackingUrl, {
     errorCorrectionLevel: 'M',
     margin: 2,

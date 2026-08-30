@@ -244,6 +244,13 @@ model WebhookEvent {
   @@index([success, createdAt])
   @@map("webhook_events")
 }
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  bucket    String
+  createdAt DateTime @default(now())
+  @@index([bucket, createdAt])
+  @@map("rate_limit_hits")
+}
 enum AlertType {
   FLEX_CANCELLED
   STUCK_IN_TRANSIT
