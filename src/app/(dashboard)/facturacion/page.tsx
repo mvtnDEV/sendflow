@@ -1,22 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { clasificarZona } from '@/lib/utils/zonas'
 
-const COMUNAS_EXTRA_URBANAS = ['colina', 'padre hurtado']
-const COMUNAS_RURALES = [
-  'paine', 'pirque', 'til til', 'tiltil', 'melipilla',
-  'peñaflor', 'penaflor', 'isla de maipo', 'lampa',
-]
-const IVA_RATE = 0.19
-
-function normalizarComuna(comuna: string): string {
-  return comuna.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-}
+// Adapta la zona compartida al vocabulario que ya usaba esta página.
 function getTipoTarifa(comuna: string): 'urbana' | 'extraUrbana' | 'rural' {
-  const c = normalizarComuna(comuna)
-  if (COMUNAS_RURALES.some(r => c.includes(r) || r.includes(c))) return 'rural'
-  if (COMUNAS_EXTRA_URBANAS.some(e => c.includes(e) || e.includes(c))) return 'extraUrbana'
-  return 'urbana'
+  const z = clasificarZona(comuna)
+  return z === 'RURAL' ? 'rural' : z === 'EXTRA_URBANA' ? 'extraUrbana' : 'urbana'
 }
+
+const IVA_RATE = 0.19
 function getMesActual(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -43,6 +35,10 @@ interface StoreFactura {
     deliveredAt: string; inTransitAt: string; bultos: number; platform: string
   }[]
   total: number
+  resumenMargen: {
+    ingresoNeto: number; costoNeto: number; margenNeto: number
+    pedidosConCosto: number; pedidosSinCosto: number; conRetiro: number
+  }
 }
 
 export default function FacturacionPage() {
@@ -366,6 +362,24 @@ export default function FacturacionPage() {
                         <div style={{ fontSize:12, color:'rgba(255,255,255,.8)' }}>{fmt(calc.neto)} + {fmt(calc.iva)}</div>
                         <div style={{ fontSize:16, fontWeight:700, color:'white' }}>{fmt(calc.totalConIva)}</div>
                       </div>
+                      {/* Margen: ingreso menos lo que cobra el operador. Todo neto. */}
+                      {(() => {
+                        const rm = sf.resumenMargen
+                        if (!rm) return null
+                        const pct = rm.ingresoNeto > 0 ? Math.round((rm.margenNeto / rm.ingresoNeto) * 100) : 0
+                        return (
+                          <div style={{ padding:'8px 14px', borderRadius:8, background:'#052E24', minWidth:190, display:'flex', flexDirection:'column', justifyContent:'center' }}>
+                            <div style={{ fontSize:11, color:'rgba(255,255,255,.5)', marginBottom:3 }}>MARGEN NETO</div>
+                            <div style={{ fontSize:16, fontWeight:700, color:'#34D399' }}>{fmt(rm.margenNeto)} <span style={{ fontSize:11, fontWeight:500, opacity:.8 }}>({pct}%)</span></div>
+                            <div style={{ fontSize:11, color:'rgba(255,255,255,.6)' }}>ingreso {fmt(rm.ingresoNeto)} − costo {fmt(rm.costoNeto)}</div>
+                            {rm.pedidosSinCosto > 0 && (
+                              <div style={{ fontSize:10, color:'#FBBF24', marginTop:3 }}>
+                                {rm.pedidosSinCosto} sin tarifa de operador cargada
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     <div style={{ overflowX:'auto' }}>

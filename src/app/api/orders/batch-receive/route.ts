@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
         await prisma.$transaction(
           successes.map(s => prisma.order.update({
             where: { id: s.orderId },
-            data:  { externalId: s.externalId },
+            data:  { externalId: s.externalId, operator: 'NOW' },
           }))
         )
       }

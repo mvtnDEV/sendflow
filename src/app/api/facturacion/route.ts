@@ -2,6 +2,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/utils/auth";
 import { prisma } from "@/lib/db/prisma";
+import { clasificarZona, clasificarZonaRetiro } from "@/lib/utils/zonas";
+import { costoEnvio, costoRetiro, operadorDe } from "@/lib/config/tarifas-operador";
 
 const TZ = "America/Santiago";
 const IVA_RATE = 0.19;
@@ -14,35 +16,6 @@ function getChileOffsetStr(): string {
   const offsetHours = offsetMs / (1000 * 60 * 60);
   const sign = offsetHours >= 0 ? "+" : "-";
   return `${sign}${String(Math.abs(offsetHours)).padStart(2, "0")}:00`;
-}
-
-const COMUNAS_EXTRA_URBANO = ["colina", "padre hurtado"];
-const COMUNAS_RURAL = [
-  "paine",
-  "pirque",
-  "til til",
-  "tiltil",
-  "melipilla",
-  "peñaflor",
-  "penaflor",
-  "isla de maipo",
-  "lampa",
-];
-
-function normalizarComuna(comuna: string): string {
-  return comuna
-    .toLowerCase()
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function clasificarZona(comuna: string): "URBANA" | "EXTRA_URBANA" | "RURAL" {
-  const c = normalizarComuna(comuna);
-  if (COMUNAS_RURAL.some((r) => c.includes(r) || r.includes(c))) return "RURAL";
-  if (COMUNAS_EXTRA_URBANO.some((e) => c.includes(e) || e.includes(c)))
-    return "EXTRA_URBANA";
-  return "URBANA";
 }
 
 export async function GET(req: NextRequest) {
@@ -124,6 +97,9 @@ export async function GET(req: NextRequest) {
           status: true,
           bultos: true,
           platform: true,
+          externalId: true,
+          operator: true,
+          conRetiro: true,
         },
       });
 
@@ -143,6 +119,8 @@ export async function GET(req: NextRequest) {
         : 0;
       const tarifaRural = store.tarifaRural ? Number(store.tarifaRural) : 0;
 
+      const tarifaRetiro = store.tarifaRetiro ? Number(store.tarifaRetiro) : 0;
+
       const ordersConZona = ordersEnPeriodo.map((o) => {
         const zona = clasificarZona(o.addressComuna);
         const tarifa =
@@ -151,8 +129,46 @@ export async function GET(req: NextRequest) {
             : zona === "EXTRA_URBANA"
               ? tarifaExtraUrbana
               : tarifaUrbana;
-        return { ...o, zona, tarifa, storeName: store.name };
+
+        // ── Costo del operador y margen. Todo NETO, igual que las tarifas ──
+        const operador = operadorDe(o.operator, o.externalId);
+        const zonaRet = clasificarZonaRetiro(o.addressComuna);
+
+        const costoEnv = costoEnvio(operador, zona);
+        const costoRet = o.conRetiro ? costoRetiro(operador, zonaRet) : 0;
+        const precioRet = o.conRetiro ? tarifaRetiro : 0;
+
+        // null = todavía no conocemos la tarifa de ese operador (hoy, Fret).
+        // Se deja en null y no en 0 para no inflar el margen con un costo falso.
+        const costo =
+          costoEnv === null || costoRet === null ? null : costoEnv + costoRet;
+        const precio = tarifa + precioRet;
+        const margen = costo === null ? null : precio - costo;
+
+        return {
+          ...o,
+          zona,
+          tarifa,
+          storeName: store.name,
+          operador,
+          zonaRetiro: o.conRetiro ? zonaRet : null,
+          precio,
+          costo,
+          margen,
+        };
       });
+
+      // ── Resumen de margen del periodo ──
+      const conCosto = ordersConZona.filter((o) => o.costo !== null);
+      const resumenMargen = {
+        ingresoNeto: ordersConZona.reduce((a, o) => a + o.precio, 0),
+        costoNeto: conCosto.reduce((a, o) => a + (o.costo ?? 0), 0),
+        margenNeto: conCosto.reduce((a, o) => a + (o.margen ?? 0), 0),
+        pedidosConCosto: conCosto.length,
+        // Pedidos cuyo operador todavía no tiene tarifa cargada.
+        pedidosSinCosto: ordersConZona.length - conCosto.length,
+        conRetiro: ordersConZona.filter((o) => o.conRetiro).length,
+      };
 
       function zonaResumen(
         zona: "URBANA" | "EXTRA_URBANA" | "RURAL",
@@ -195,6 +211,7 @@ export async function GET(req: NextRequest) {
         orders: ordersConZona,
         total: ordersConZona.length,
         resumenZonas,
+        resumenMargen,
         netoGeneral,
         ivaGeneral,
         totalGeneralConIva,

@@ -161,7 +161,7 @@ export async function createOrder(input: CreateOrderInput) {
           if (!preservarExternalId) {
             await prisma.order.update({
               where: { id: order.id },
-              data: { externalId: hermana.externalId },
+              data: { externalId: hermana.externalId, operator: 'FRET' },
             });
           }
           console.log(
@@ -203,7 +203,7 @@ export async function createOrder(input: CreateOrderInput) {
         if (!preservarExternalId) {
           await prisma.order.update({
             where: { id: order.id },
-            data: { externalId: result.created[0].order_code },
+            data: { externalId: result.created[0].order_code, operator: 'FRET' },
           });
         }
         console.log(
@@ -219,7 +219,7 @@ export async function createOrder(input: CreateOrderInput) {
         if (!preservarExternalId) {
           await prisma.order.update({
             where: { id: order.id },
-            data: { externalId: result.duplicated[0].order_code },
+            data: { externalId: result.duplicated[0].order_code, operator: 'FRET' },
           });
         }
         console.log(
