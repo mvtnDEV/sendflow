@@ -123,7 +123,7 @@ export default async function RecepcionesPage({ searchParams }: Props) {
           {verTodo && <input type="hidden" name="historial" value="1"/>}
           <div style={{ display:'flex', alignItems:'center', gap:8, background:'white', border:'1px solid #E2E8F0', borderRadius:8, padding:'7px 12px', flex:1, minWidth:200 }}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="#9CA3AF"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.868-3.834zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/></svg>
-            <input name="search" defaultValue={searchParams.search} placeholder="Cliente, N° pedido, dirección..."
+            <input name="search" defaultValue={searchParams.search} placeholder="Cliente, N° pedido, dirección, código operador..."
               style={{ border:'none', outline:'none', fontSize:13, flex:1, fontFamily:'inherit' }}/>
           </div>
           {stores.length > 0 && (

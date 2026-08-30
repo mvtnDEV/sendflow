@@ -98,16 +98,18 @@ export async function GET(req: NextRequest) {
         status: "closed_delivered",
       });
     } else if (mlCheck.isCancelled) {
+      // Flex canceló → en Moovex se cierra como NO ENTREGADO, no como Cancelado.
+      // "Cancelado" queda reservado para cancelaciones nuestras o de la tienda.
       await prisma.order.update({
         where: { id: order.id },
         data: {
-          status: "CANCELLED",
+          status: "INCIDENT",
           pendingNowEvidence: Prisma.JsonNull,
           pendingNowCheckedAt: now,
           events: {
             create: {
-              status: "CANCELLED",
-              note: "ML Flex marcó el envío como cancelado",
+              status: "INCIDENT",
+              note: "ML Flex canceló el envío",
               createdBy: "ml-cron-check",
             },
           },
@@ -115,7 +117,7 @@ export async function GET(req: NextRequest) {
       });
       results.push({
         orderNumber: order.orderNumber,
-        status: "closed_cancelled",
+        status: "closed_incident_cancelado",
       });
     } else {
       const esTiendaFret = TIENDAS_FRET.has(order.storeId);

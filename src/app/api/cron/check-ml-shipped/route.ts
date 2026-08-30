@@ -6,7 +6,8 @@ import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 import { notificarEntregaAFret } from "@/lib/services/fret.service";
 import { raiseAlert } from "@/lib/services/alert.service";
 
-// ── Tiendas Fret: Flex puede CERRAR delivered (respaldo), nunca INCIDENT ──
+// ── Tiendas Fret: Flex puede CERRAR delivered (respaldo) y cerrar como no
+//    entregado cuando CANCELA. Los demás no-entregados los maneja el operador. ──
 const TIENDAS_FRET = new Set([
   "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess
   "cmouw44ej0004thpecq6bct35", // Eco pañal
@@ -200,11 +201,16 @@ export async function GET(req: NextRequest) {
 
       const esTiendaFret = TIENDAS_FRET.has(order.storeId);
 
+      // Flex cancelado: en Moovex se cierra como NO ENTREGADO (INCIDENT),
+      // en todas las tiendas, tambien las Fret.
+      const esCancelado = status === "cancelled";
+
       const esNoEntregado =
         SHIPMENT_NO_ENTREGADO.includes(status) ||
         SUBSTATUS_NO_ENTREGADO.includes(substatus);
 
-      // ── TIENDA FRET: Flex solo puede CERRAR delivered (respaldo). Nunca INCIDENT. ──
+      // ── TIENDA FRET: Flex cierra delivered (respaldo) y cierra no entregado si
+      //    canceló. El resto de no-entregados no toca el estado: los maneja el operador. ──
       if (esTiendaFret) {
         // Registrar escaneo si no estaba
         if (dateShipped && !order.mlShippedAt) {
@@ -251,11 +257,46 @@ export async function GET(req: NextRequest) {
             fretNotificado: fretResp.ok,
             fretError: fretResp.ok ? undefined : fretResp.error,
           });
+        } else if (esCancelado) {
+          // ── Flex CANCELÓ: se cierra como no entregado, aunque sea tienda Fret ──
+          await prisma.order.update({
+            where: { id: order.id },
+            data: {
+              status: "INCIDENT",
+              events: {
+                create: {
+                  status: "INCIDENT",
+                  note: "ML Flex canceló el envío",
+                  createdBy: "ml-cron-check",
+                },
+              },
+            },
+          });
+          console.log(
+            "[Cron ML Shipped] ❌ Tienda Fret · CERRADO como no entregado (Flex canceló):",
+            order.orderNumber,
+          );
+
+          await raiseAlert({
+            type: "FLEX_CANCELLED",
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            storeId: order.storeId,
+            title: `${order.orderNumber} · Flex canceló el envío`,
+            detail:
+              "Se cerró como no entregado en Moovex. Confirmar con el operador que no lo siga repartiendo.",
+            metadata: { mlStatus: status, mlSubstatus: substatus },
+          });
+
+          results.push({
+            orderNumber: order.orderNumber,
+            status: "closed_incident_cancelado",
+            mlStatus: status,
+          });
         } else {
-          // ── ALERTA: Flex canceló o marcó no-entregado, pero Fret sigue gestionando.
-          // Antes esto caía acá en silencio y nadie se enteraba.
-          // El estado del pedido NO se toca: Fret lo sigue gestionando.
-          if (status === "cancelled" || esNoEntregado) {
+          // ── Flex marcó no-entregado pero NO canceló: el operador sigue
+          // gestionando, así que el estado no se toca. Solo se avisa.
+          if (esNoEntregado) {
             await raiseAlert({
               type: "FLEX_CANCELLED",
               orderId: order.id,
@@ -279,7 +320,7 @@ export async function GET(req: NextRequest) {
       }
 
       // ── TIENDAS NOW (resto): lógica original completa ──
-      if (esNoEntregado) {
+      if (esNoEntregado || esCancelado) {
         await prisma.order.update({
           where: { id: order.id },
           data: {
@@ -287,7 +328,9 @@ export async function GET(req: NextRequest) {
             events: {
               create: {
                 status: "INCIDENT",
-                note: `ML Flex · No entregado · ${status ?? ""}${substatus ? ` · ${substatus}` : ""}`,
+                note: esCancelado
+                  ? "ML Flex canceló el envío"
+                  : `ML Flex · No entregado · ${status ?? ""}${substatus ? ` · ${substatus}` : ""}`,
                 createdBy: "ml-cron-check",
               },
             },

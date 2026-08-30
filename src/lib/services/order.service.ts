@@ -362,6 +362,8 @@ export async function listOrders(filters: OrderFilters) {
       { customerPhone: { contains: filters.search } },
       { sourceId: { contains: filters.search } },
       { subStoreName: { contains: filters.search, mode: "insensitive" } },
+      // Codigo del operador (FR-1234). Antes solo se podia buscar desde /fret.
+      { externalId: { contains: filters.search } },
     ];
   }
 

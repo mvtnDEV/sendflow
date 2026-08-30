@@ -45,7 +45,10 @@ function getMLStatus(order: any, shipment?: any): string | null {
 
   if (shipStatus === "delivered") return "DELIVERED";
   if (shipStatus === "shipped") return "IN_TRANSIT";
-  if (orderStatus === "cancelled") return "CANCELLED";
+  // Flex canceló → en Moovex se cierra como NO ENTREGADO (INCIDENT).
+  // "CANCELLED" queda reservado para cancelaciones nuestras o de la tienda.
+  if (shipStatus === "cancelled" || orderStatus === "cancelled")
+    return "INCIDENT";
   if (SHIPMENT_NO_ENTREGADO.includes(shipStatus)) return "INCIDENT";
   if (SUBSTATUS_NO_ENTREGADO.includes(substatus)) return "INCIDENT";
   if (orderTags.some((t: string) => ORDER_TAGS_NO_ENTREGADO.includes(t)))
@@ -208,8 +211,9 @@ export async function POST(req: NextRequest) {
     const newStatus = getMLStatus(rawOrder, rawShipment);
 
     // ── LÓGICA PARA TIENDAS FRET ──
-    // Flex solo puede CERRAR entregas (delivered) como respaldo.
-    // NUNCA marca INCIDENT ni estados intermedios (eso lo controla Fret).
+    // Flex cierra entregas (delivered) como respaldo y cierra como no entregado
+    // cuando CANCELA. Los demás no-entregados no tocan el estado: los controla
+    // el operador.
     if (esTiendaFret) {
       const existing = await prisma.order.findFirst({
         where: { integrationId: integration.id, sourceId: String(orderId) },
@@ -267,6 +271,29 @@ export async function POST(req: NextRequest) {
               fretResp.ok ? "" : `| error: ${fretResp.error}`,
             );
           }
+        } else if (
+          (rawShipment?.status === "cancelled" ||
+            rawOrder?.status === "cancelled") &&
+          !["DELIVERED", "INCIDENT"].includes(existing.status)
+        ) {
+          // ── Flex CANCELÓ: se cierra como no entregado, aunque sea tienda Fret ──
+          await prisma.order.update({
+            where: { id: existing.id },
+            data: {
+              status: "INCIDENT",
+              events: {
+                create: {
+                  status: "INCIDENT",
+                  note: "ML Flex canceló el envío",
+                  createdBy: "ml-webhook",
+                },
+              },
+            },
+          });
+          console.log(
+            "[ML webhook] Tienda Fret · CERRADO como no entregado (Flex canceló):",
+            orderId,
+          );
         } else {
           console.log(
             "[ML webhook] Tienda Fret · solo escaneo registrado (Flex no delivered):",
@@ -316,9 +343,12 @@ export async function POST(req: NextRequest) {
               create: {
                 status: newStatus as any,
                 note:
-                  newStatus === "INCIDENT"
-                    ? `ML Flex · No entregado · ${motivo}`
-                    : `ML Flex · Estado actualizado a ${newStatus}`,
+                  rawShipment?.status === "cancelled" ||
+                  rawOrder?.status === "cancelled"
+                    ? "ML Flex canceló el envío"
+                    : newStatus === "INCIDENT"
+                      ? `ML Flex · No entregado · ${motivo}`
+                      : `ML Flex · Estado actualizado a ${newStatus}`,
                 createdBy: "ml-webhook",
               },
             },

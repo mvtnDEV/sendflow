@@ -40,12 +40,6 @@ const NAV = [
         roles: ["SUPER_ADMIN", "STORE_ADMIN", "VIEWER"],
       },
       {
-        href: "/fret",
-        label: "Fret",
-        icon: "fret",
-        roles: ["SUPER_ADMIN"],
-      },
-      {
         href: "/pedidos/nuevo",
         label: "Nuevo pedido",
         icon: "plus",
@@ -120,11 +114,6 @@ const ICONS: Record<string, React.ReactNode> = {
   inbox: (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
       <path d="M1 3h14v2H1zm2 3h10l2 5H1l2-5zm2 7a1 1 0 1 1 2 0 1 1 0 0 1-2 0zm6 0a1 1 0 1 1 2 0 1 1 0 0 1-2 0z" />
-    </svg>
-  ),
-  fret: (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M0 3h10v7H0V3zm10 2h2l3 3v2h-5V5zm-8 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm9 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" />
     </svg>
   ),
   plus: (
@@ -360,21 +349,6 @@ export default function Sidebar({
                       }}
                     >
                       {alertCount > 99 ? "99+" : alertCount}
-                    </span>
-                  )}
-                  {item.href === "/fret" && (
-                    <span
-                      style={{
-                        marginLeft: "auto",
-                        fontSize: 9,
-                        background: "rgba(251,146,60,.15)",
-                        color: "#FB923C",
-                        padding: "1px 6px",
-                        borderRadius: 10,
-                        fontWeight: 500,
-                      }}
-                    >
-                      FRET
                     </span>
                   )}
                   {item.href === "/pedidos/carga-masiva" && (
