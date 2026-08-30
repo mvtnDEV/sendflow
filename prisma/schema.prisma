@@ -244,3 +244,33 @@ model WebhookEvent {
   @@index([success, createdAt])
   @@map("webhook_events")
 }
+enum AlertType {
+  FLEX_CANCELLED
+  STUCK_IN_TRANSIT
+  NOT_SENT_TO_FRET
+  FRET_NOT_PICKED_UP
+}
+enum AlertStatus {
+  ACTIVE
+  RESOLVED
+}
+model Alert {
+  id           String      @id @default(cuid())
+  type         AlertType
+  status       AlertStatus @default(ACTIVE)
+  dedupeKey    String      @unique
+  orderId      String?
+  orderNumber  String?
+  storeId      String?
+  title        String
+  detail       String?
+  metadata     Json?
+  firstSeenAt  DateTime    @default(now())
+  lastSeenAt   DateTime    @default(now())
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  resolvedNote String?
+  @@index([status, type])
+  @@index([storeId, status])
+  @@map("alerts")
+}

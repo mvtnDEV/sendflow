@@ -17,6 +17,7 @@ export type AuditAction =
   | 'DATA_DELETION_REQUEST'
   | 'DATA_ANONYMIZED'
   | 'CREATE_USER'
+  | 'RESOLVE_ALERT'
 
 interface AuditParams {
   userId?:   string

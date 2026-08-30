@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 import { notificarEntregaAFret } from "@/lib/services/fret.service";
+import { raiseAlert } from "@/lib/services/alert.service";
 
 // ── Tiendas Fret: Flex puede CERRAR delivered (respaldo), nunca INCIDENT ──
 const TIENDAS_FRET = new Set([
@@ -199,6 +200,10 @@ export async function GET(req: NextRequest) {
 
       const esTiendaFret = TIENDAS_FRET.has(order.storeId);
 
+      const esNoEntregado =
+        SHIPMENT_NO_ENTREGADO.includes(status) ||
+        SUBSTATUS_NO_ENTREGADO.includes(substatus);
+
       // ── TIENDA FRET: Flex solo puede CERRAR delivered (respaldo). Nunca INCIDENT. ──
       if (esTiendaFret) {
         // Registrar escaneo si no estaba
@@ -247,6 +252,22 @@ export async function GET(req: NextRequest) {
             fretError: fretResp.ok ? undefined : fretResp.error,
           });
         } else {
+          // ── ALERTA: Flex canceló o marcó no-entregado, pero Fret sigue gestionando.
+          // Antes esto caía acá en silencio y nadie se enteraba.
+          // El estado del pedido NO se toca: Fret lo sigue gestionando.
+          if (status === "cancelled" || esNoEntregado) {
+            await raiseAlert({
+              type: "FLEX_CANCELLED",
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              storeId: order.storeId,
+              title: `${order.orderNumber} · Flex marcó "${status}" y el operador sigue gestionando`,
+              detail:
+                "Mercado Libre Flex dejó de gestionar este envío, pero el pedido sigue abierto en Moovex. Revisar con el operador.",
+              metadata: { mlStatus: status, mlSubstatus: substatus },
+            });
+          }
+
           results.push({
             orderNumber: order.orderNumber,
             status: "fret_en_curso",
@@ -258,10 +279,6 @@ export async function GET(req: NextRequest) {
       }
 
       // ── TIENDAS NOW (resto): lógica original completa ──
-      const esNoEntregado =
-        SHIPMENT_NO_ENTREGADO.includes(status) ||
-        SUBSTATUS_NO_ENTREGADO.includes(substatus);
-
       if (esNoEntregado) {
         await prisma.order.update({
           where: { id: order.id },

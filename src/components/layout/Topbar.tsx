@@ -5,6 +5,7 @@ import type { SessionUser } from '@/types'
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard':            'Tablero',
   '/reportes':             'Reportes y métricas',
+  '/alertas':              'Alertas operativas',
   '/recepciones':          'Recepciones',
   '/pedidos/nuevo':        'Nuevo pedido',
   '/pedidos/carga-masiva': 'Carga masiva Excel',

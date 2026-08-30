@@ -22,6 +22,12 @@ const NAV = [
         icon: "chart",
         roles: ["SUPER_ADMIN", "STORE_ADMIN", "VIEWER"],
       },
+      {
+        href: "/alertas",
+        label: "Alertas",
+        icon: "bell",
+        roles: ["SUPER_ADMIN"],
+      },
     ],
   },
   {
@@ -174,6 +180,11 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M3 1h10a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm1 3v1h8V4H4zm0 3v1h8V7H4zm0 3v1h5v-1H4z" />
     </svg>
   ),
+  bell: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M8 1a1 1 0 0 1 1 1v.6a4.5 4.5 0 0 1 3.5 4.4v2.5l1.2 2A.5.5 0 0 1 13.3 12H2.7a.5.5 0 0 1-.43-.75l1.23-2V7a4.5 4.5 0 0 1 3.5-4.4V2a1 1 0 0 1 1-1zM6.2 13h3.6a1.8 1.8 0 0 1-3.6 0z" />
+    </svg>
+  ),
 };
 
 export default function Sidebar({
@@ -192,6 +203,30 @@ export default function Sidebar({
   useEffect(() => {
     onClose?.();
   }, [pathname]);
+
+  // Contador de alertas activas para el badge del menú (solo SUPER_ADMIN)
+  const [alertCount, setAlertCount] = useState(0);
+  useEffect(() => {
+    if (user.role !== "SUPER_ADMIN") return;
+
+    let cancelado = false;
+    const cargar = async () => {
+      try {
+        const res = await fetch("/api/alerts/count");
+        const data = await res.json();
+        if (!cancelado && data?.ok) setAlertCount(data.count ?? 0);
+      } catch {
+        /* silencioso: el badge nunca debe romper el menú */
+      }
+    };
+
+    cargar();
+    const id = setInterval(cargar, 60_000);
+    return () => {
+      cancelado = true;
+      clearInterval(id);
+    };
+  }, [user.role, pathname]);
 
   const sidebarContent = (
     <aside
@@ -312,6 +347,21 @@ export default function Sidebar({
                 >
                   {ICONS[item.icon]}
                   {item.label}
+                  {item.href === "/alertas" && alertCount > 0 && (
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        fontSize: 9,
+                        background: "rgba(239,68,68,.18)",
+                        color: "#EF4444",
+                        padding: "1px 6px",
+                        borderRadius: 10,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {alertCount > 99 ? "99+" : alertCount}
+                    </span>
+                  )}
                   {item.href === "/fret" && (
                     <span
                       style={{
