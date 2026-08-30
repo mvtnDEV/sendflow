@@ -71,13 +71,20 @@ CREATE INDEX "alerts_storeId_status_idx" ON "alerts"("storeId", "status");
 --                        (la reemplaza rate_limit_hits), pero sigue declarada
 --                        para que un push no la borre.
 --
--- Para confirmar como estan de verdad, correr esta consulta de solo lectura:
+-- La consulta de comprobacion va abajo, SIN comentar, para que se ejecute sola
+-- al pegar este archivo. Es de solo lectura.
 --
---   SELECT table_name, column_name, data_type
---   FROM information_schema.columns
---   WHERE table_schema = 'public'
---     AND table_name IN ('login_attempts', 'api_rate_limits')
---   ORDER BY table_name, ordinal_position;
---
--- Si login_attempts trae `created_at`, el schema ya quedo correcto.
+-- Como leer el resultado:
+--   * si login_attempts aparece con la columna `created_at` -> el schema quedo
+--     correcto, no hay nada mas que hacer;
+--   * si aparece con `createdAt` -> hay que quitar el @map("created_at") del
+--     modelo LoginAttempt en schema.prisma;
+--   * si login_attempts NO aparece -> la tabla no existe y el login de
+--     produccion deberia estar cayendo. Avisar antes de tocar nada mas.
 -- ─────────────────────────────────────────────────────────────────────────────
+
+SELECT table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name IN ('login_attempts', 'api_rate_limits', 'alerts', 'rate_limit_hits')
+ORDER BY table_name, ordinal_position;

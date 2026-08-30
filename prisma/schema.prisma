@@ -209,29 +209,32 @@ model ApiKey {
   @@index([key])
   @@map("api_keys")
 }
+/// Tabla creada con SQL a mano, NO desde este schema. Forma verificada contra
+/// la base de producción el 2026-08-30 (information_schema.columns):
+///   id integer (autoincremental) · created_at timestamp with time zone.
+/// Los tres detalles importan: sin @default(autoincrement()) Prisma manda un
+/// cuid a una columna entera, sin @map no encuentra la columna, y sin
+/// @db.Timestamptz el tipo no calza. Cualquiera de los tres tumba el login.
 model LoginAttempt {
-  id        String   @id @default(cuid())
+  id        Int      @id @default(autoincrement())
   email     String
   ip        String
   success   Boolean
-  // La tabla real usa created_at (se creó con SQL a mano, no desde este
-  // schema). Sin este @map, cualquier consulta por Prisma no encuentra la
-  // columna y el login se cae entero.
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   @@index([email, createdAt])
   @@index([ip, createdAt])
   @@map("login_attempts")
 }
 /// DEPRECADO — ya no lo usa nadie: el rate limit de /api/v1 pasó a RateLimitHit.
-/// Se deja declarado a propósito para que un `db push` no borre la tabla en
-/// producción. OJO: es probable que la tabla real tenga las columnas `key` y
-/// `created_at` (el código viejo consultaba `key`), así que este modelo puede
-/// no describirla bien. Verificar antes de borrarla en un commit aparte.
+/// Se deja declarado a propósito para que un `db push` no borre la tabla.
+/// Forma verificada contra producción el 2026-08-30: id integer autoincremental,
+/// key text, created_at timestamp with time zone. El modelo anterior declaraba
+/// `apiKeyId`, columna que esta tabla nunca tuvo.
 model ApiRateLimit {
-  id        String   @id @default(cuid())
-  apiKeyId  String
-  createdAt DateTime @default(now())
-  @@index([apiKeyId, createdAt])
+  id        Int      @id @default(autoincrement())
+  key       String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  @@index([key, createdAt])
   @@map("api_rate_limits")
 }
 model WebhookEvent {
