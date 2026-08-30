@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 
-type AlertType   = 'FLEX_CANCELLED' | 'STUCK_IN_TRANSIT' | 'NOT_SENT_TO_FRET' | 'FRET_NOT_PICKED_UP'
+type AlertType   = 'FLEX_CANCELLED' | 'STUCK_IN_TRANSIT'
 type AlertStatus = 'ACTIVE' | 'RESOLVED'
 
 interface AlertRow {
@@ -23,25 +23,19 @@ interface AlertRow {
 }
 
 const TYPE_LABEL: Record<AlertType, string> = {
-  FLEX_CANCELLED:     'Flex canceló',
-  STUCK_IN_TRANSIT:   'Trabado en camino',
-  NOT_SENT_TO_FRET:   'No enviado al operador',
-  FRET_NOT_PICKED_UP: 'Sin retirar',
+  FLEX_CANCELLED:   'Flex canceló',
+  STUCK_IN_TRANSIT: 'Aún en camino',
 }
 const TYPE_STYLE: Record<AlertType, { bg: string; color: string }> = {
-  FLEX_CANCELLED:     { bg:'#FEF2F2', color:'#B91C1C' },
-  STUCK_IN_TRANSIT:   { bg:'#FFF7ED', color:'#C2410C' },
-  NOT_SENT_TO_FRET:   { bg:'#EFF6FF', color:'#1D4ED8' },
-  FRET_NOT_PICKED_UP: { bg:'#F5F3FF', color:'#5B21B6' },
+  FLEX_CANCELLED:   { bg:'#FEF2F2', color:'#B91C1C' },
+  STUCK_IN_TRANSIT: { bg:'#FFF7ED', color:'#C2410C' },
 }
 const TYPE_HELP: Record<AlertType, string> = {
-  FLEX_CANCELLED:     'Mercado Libre Flex dejó de gestionar el envío pero el pedido sigue abierto.',
-  STUCK_IN_TRANSIT:   'Lleva más de 24 horas en camino sin cerrarse.',
-  NOT_SENT_TO_FRET:   'Creado hace más de 2 horas y todavía no tiene número de operador.',
-  FRET_NOT_PICKED_UP: 'Asignado al operador hace más de 48 horas y aún no lo retira.',
+  FLEX_CANCELLED:   'Mercado Libre Flex dejó de gestionar el envío. Revisar con el operador.',
+  STUCK_IN_TRANSIT: 'Lleva más de 24 horas en camino sin cerrarse.',
 }
 
-const TIPOS: AlertType[] = ['FLEX_CANCELLED', 'STUCK_IN_TRANSIT', 'NOT_SENT_TO_FRET', 'FRET_NOT_PICKED_UP']
+const TIPOS: AlertType[] = ['FLEX_CANCELLED', 'STUCK_IN_TRANSIT']
 
 function antiguedad(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime()

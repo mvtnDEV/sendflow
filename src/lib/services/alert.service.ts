@@ -21,6 +21,15 @@ interface RaiseAlertParams {
   metadata?:    Record<string, unknown>
 }
 
+/**
+ * Tipos de alerta que se muestran hoy.
+ *
+ * NOT_SENT_TO_FRET y FRET_NOT_PICKED_UP siguen declarados en el enum de la base
+ * a propósito: sacar valores de un enum en Postgres obliga a recrear el tipo.
+ * Se filtran acá, así que sus filas viejas quedan invisibles sin tocar la DB.
+ */
+export const TIPOS_ACTIVOS: AlertType[] = ['FLEX_CANCELLED', 'STUCK_IN_TRANSIT']
+
 /** Clave de deduplicación: una alerta viva por tipo + pedido. */
 export function buildDedupeKey(type: AlertType, orderId?: string | null) {
   return `${type}:${orderId ?? 'global'}`
@@ -89,8 +98,10 @@ interface ListAlertsFilters {
 export async function listAlerts(filters: ListAlertsFilters = {}) {
   return prisma.alert.findMany({
     where: {
+      type: filters.type && TIPOS_ACTIVOS.includes(filters.type)
+        ? filters.type
+        : { in: TIPOS_ACTIVOS },
       ...(filters.status  && { status:  filters.status  }),
-      ...(filters.type    && { type:    filters.type    }),
       ...(filters.storeId && { storeId: filters.storeId }),
     },
     orderBy: { lastSeenAt: 'desc' },
@@ -112,7 +123,9 @@ export async function resolveAlert(id: string, userId: string, note?: string | n
 
 export async function countActiveAlerts(): Promise<number> {
   try {
-    return await prisma.alert.count({ where: { status: 'ACTIVE' } })
+    return await prisma.alert.count({
+      where: { status: 'ACTIVE', type: { in: TIPOS_ACTIVOS } },
+    })
   } catch (err) {
     console.error('[Alert count error]', err)
     return 0
@@ -121,15 +134,9 @@ export async function countActiveAlerts(): Promise<number> {
 
 /** Etiquetas en español chileno para el panel. */
 export const ALERT_TYPE_LABEL: Record<AlertType, string> = {
-  FLEX_CANCELLED:     'Flex canceló / no entregó',
-  STUCK_IN_TRANSIT:   'Trabado en camino (+24 h)',
-  NOT_SENT_TO_FRET:   'No enviado al operador (+2 h)',
-  FRET_NOT_PICKED_UP: 'Sin retirar (+48 h)',
-}
-
-export const ALERT_TYPE_COLOR: Record<AlertType, string> = {
-  FLEX_CANCELLED:     '#EF4444',
-  STUCK_IN_TRANSIT:   '#F59E0B',
-  NOT_SENT_TO_FRET:   '#2563EB',
-  FRET_NOT_PICKED_UP: '#7C3AED',
+  FLEX_CANCELLED:     'Flex canceló',
+  STUCK_IN_TRANSIT:   'Aún en camino (+24 h)',
+  // Ya no se generan; se dejan por si queda alguna fila vieja.
+  NOT_SENT_TO_FRET:   'No enviado al operador',
+  FRET_NOT_PICKED_UP: 'Sin retirar',
 }

@@ -1,13 +1,11 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser }            from '@/lib/utils/auth'
-import { listAlerts }                from '@/lib/services/alert.service'
+import { listAlerts, TIPOS_ACTIVOS } from '@/lib/services/alert.service'
 import { prisma }                    from '@/lib/db/prisma'
 import type { AlertStatus, AlertType } from '@prisma/client'
 
-const TIPOS_VALIDOS: AlertType[] = [
-  'FLEX_CANCELLED', 'STUCK_IN_TRANSIT', 'NOT_SENT_TO_FRET', 'FRET_NOT_PICKED_UP',
-]
+const TIPOS_VALIDOS: AlertType[] = TIPOS_ACTIVOS
 const ESTADOS_VALIDOS: AlertStatus[] = ['ACTIVE', 'RESOLVED']
 
 export async function GET(req: NextRequest) {

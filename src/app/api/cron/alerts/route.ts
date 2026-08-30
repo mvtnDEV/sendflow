@@ -21,9 +21,7 @@ export async function GET(req: NextRequest) {
     id: true,
     orderNumber: true,
     storeId: true,
-    createdAt: true,
     inTransitAt: true,
-    externalId: true,
     store: { select: { name: true } },
   };
 
@@ -58,68 +56,6 @@ export async function GET(req: NextRequest) {
       autoResueltas: await autoResolveMissing(
         "STUCK_IN_TRANSIT",
         trabados.map((o) => o.id),
-      ),
-    };
-
-    // ── NOT_SENT_TO_FRET: PENDING sin externalId por más de 2 h ────────────
-    const sinEnviar = await prisma.order.findMany({
-      where: {
-        status: "PENDING",
-        externalId: null,
-        createdAt: { lt: new Date(ahora - 2 * HORA) },
-      },
-      select,
-      take: 500,
-    });
-
-    for (const o of sinEnviar) {
-      await raiseAlert({
-        type: "NOT_SENT_TO_FRET",
-        orderId: o.id,
-        orderNumber: o.orderNumber,
-        storeId: o.storeId,
-        title: `${o.orderNumber} nunca se envió al operador`,
-        detail: `${o.store.name} · Creado hace ${horasDesde(o.createdAt)} h y sigue sin número de operador.`,
-        metadata: { createdAt: o.createdAt },
-      });
-    }
-
-    resumen.NOT_SENT_TO_FRET = {
-      levantadas: sinEnviar.length,
-      autoResueltas: await autoResolveMissing(
-        "NOT_SENT_TO_FRET",
-        sinEnviar.map((o) => o.id),
-      ),
-    };
-
-    // ── FRET_NOT_PICKED_UP: PENDING con FR- por más de 48 h ────────────────
-    const sinRetirar = await prisma.order.findMany({
-      where: {
-        status: "PENDING",
-        externalId: { startsWith: "FR-" },
-        createdAt: { lt: new Date(ahora - 48 * HORA) },
-      },
-      select,
-      take: 500,
-    });
-
-    for (const o of sinRetirar) {
-      await raiseAlert({
-        type: "FRET_NOT_PICKED_UP",
-        orderId: o.id,
-        orderNumber: o.orderNumber,
-        storeId: o.storeId,
-        title: `${o.orderNumber} sin retirar hace ${horasDesde(o.createdAt)} h`,
-        detail: `${o.store.name} · El operador ya tiene el pedido asignado pero no lo ha retirado.`,
-        metadata: { createdAt: o.createdAt, externalId: o.externalId },
-      });
-    }
-
-    resumen.FRET_NOT_PICKED_UP = {
-      levantadas: sinRetirar.length,
-      autoResueltas: await autoResolveMissing(
-        "FRET_NOT_PICKED_UP",
-        sinRetirar.map((o) => o.id),
       ),
     };
 
