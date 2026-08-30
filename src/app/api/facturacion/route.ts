@@ -2,8 +2,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/utils/auth";
 import { prisma } from "@/lib/db/prisma";
-import { clasificarZona, clasificarZonaRetiro } from "@/lib/utils/zonas";
-import { costoEnvio, costoRetiro, operadorDe } from "@/lib/config/tarifas-operador";
+import { clasificarZona } from "@/lib/utils/zonas";
+import { costoPorBulto, operadorDe, type Operador } from "@/lib/config/tarifas-operador";
 
 const TZ = "America/Santiago";
 const IVA_RATE = 0.19;
@@ -99,7 +99,6 @@ export async function GET(req: NextRequest) {
           platform: true,
           externalId: true,
           operator: true,
-          conRetiro: true,
         },
       });
 
@@ -119,8 +118,6 @@ export async function GET(req: NextRequest) {
         : 0;
       const tarifaRural = store.tarifaRural ? Number(store.tarifaRural) : 0;
 
-      const tarifaRetiro = store.tarifaRetiro ? Number(store.tarifaRetiro) : 0;
-
       const ordersConZona = ordersEnPeriodo.map((o) => {
         const zona = clasificarZona(o.addressComuna);
         const tarifa =
@@ -130,19 +127,16 @@ export async function GET(req: NextRequest) {
               ? tarifaExtraUrbana
               : tarifaUrbana;
 
-        // ── Costo del operador y margen. Todo NETO, igual que las tarifas ──
+        // ── Costo del operador y margen. Se cobra POR BULTO, y la tarifa la
+        //    define la zona (misma logica para el precio y para el costo).
         const operador = operadorDe(o.operator, o.externalId);
-        const zonaRet = clasificarZonaRetiro(o.addressComuna);
+        const costoUnit = costoPorBulto(operador, zona);
+        const bultos = o.bultos ?? 1;
 
-        const costoEnv = costoEnvio(operador, zona);
-        const costoRet = o.conRetiro ? costoRetiro(operador, zonaRet) : 0;
-        const precioRet = o.conRetiro ? tarifaRetiro : 0;
-
-        // null = todavía no conocemos la tarifa de ese operador (hoy, Fret).
+        // null = todavia no conocemos la tarifa de ese operador (hoy, Fret).
         // Se deja en null y no en 0 para no inflar el margen con un costo falso.
-        const costo =
-          costoEnv === null || costoRet === null ? null : costoEnv + costoRet;
-        const precio = tarifa + precioRet;
+        const precio = tarifa * bultos;
+        const costo = costoUnit === null ? null : costoUnit * bultos;
         const margen = costo === null ? null : precio - costo;
 
         return {
@@ -151,23 +145,56 @@ export async function GET(req: NextRequest) {
           tarifa,
           storeName: store.name,
           operador,
-          zonaRetiro: o.conRetiro ? zonaRet : null,
+          costoUnit,
           precio,
           costo,
           margen,
         };
       });
 
-      // ── Resumen de margen del periodo ──
+      // ── Desglose por operador y zona: la tabla que se muestra en pantalla ──
+      const claves = new Map<string, { operador: Operador; zona: "URBANA" | "EXTRA_URBANA" | "RURAL" }>();
+      ordersConZona.forEach((o) =>
+        claves.set(o.operador + "|" + o.zona, { operador: o.operador, zona: o.zona }),
+      );
+
+      const desglose = [...claves.values()]
+        .map(({ operador, zona }) => {
+          const filas = ordersConZona.filter(
+            (o) => o.operador === operador && o.zona === zona,
+          );
+          const bultos = filas.reduce((a, o) => a + (o.bultos ?? 1), 0);
+          const ingreso = filas.reduce((a, o) => a + o.precio, 0);
+          const sinTarifa = filas.some((o) => o.costo === null);
+          const costo = sinTarifa ? null : filas.reduce((a, o) => a + (o.costo ?? 0), 0);
+          return {
+            operador,
+            zona,
+            pedidos: filas.length,
+            bultos,
+            tarifaMoovex: filas[0]?.tarifa ?? 0,
+            tarifaOperador: filas[0]?.costoUnit ?? null,
+            ingreso,
+            costo,
+            margen: costo === null ? null : ingreso - costo,
+          };
+        })
+        .sort((a, b) =>
+          a.operador === b.operador
+            ? a.zona.localeCompare(b.zona)
+            : a.operador.localeCompare(b.operador),
+        );
+
       const conCosto = ordersConZona.filter((o) => o.costo !== null);
       const resumenMargen = {
         ingresoNeto: ordersConZona.reduce((a, o) => a + o.precio, 0),
         costoNeto: conCosto.reduce((a, o) => a + (o.costo ?? 0), 0),
         margenNeto: conCosto.reduce((a, o) => a + (o.margen ?? 0), 0),
+        bultos: ordersConZona.reduce((a, o) => a + (o.bultos ?? 1), 0),
         pedidosConCosto: conCosto.length,
-        // Pedidos cuyo operador todavía no tiene tarifa cargada.
+        // Pedidos cuyo operador todavia no tiene tarifa cargada.
         pedidosSinCosto: ordersConZona.length - conCosto.length,
-        conRetiro: ordersConZona.filter((o) => o.conRetiro).length,
+        desglose,
       };
 
       function zonaResumen(

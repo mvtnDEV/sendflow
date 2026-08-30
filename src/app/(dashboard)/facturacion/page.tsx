@@ -2,6 +2,9 @@
 import { useEffect, useState } from 'react'
 import { clasificarZona } from '@/lib/utils/zonas'
 
+const ZONA_LABEL: Record<string, string> = { URBANA:'Urbana', EXTRA_URBANA:'Extra urbana', RURAL:'Rural' }
+const OPERADOR: Record<string, string> = { NOW:'Now', FRET:'Fret', MOOVEX:'Moovex' }
+
 // Adapta la zona compartida al vocabulario que ya usaba esta página.
 function getTipoTarifa(comuna: string): 'urbana' | 'extraUrbana' | 'rural' {
   const z = clasificarZona(comuna)
@@ -36,8 +39,13 @@ interface StoreFactura {
   }[]
   total: number
   resumenMargen: {
-    ingresoNeto: number; costoNeto: number; margenNeto: number
-    pedidosConCosto: number; pedidosSinCosto: number; conRetiro: number
+    ingresoNeto: number; costoNeto: number; margenNeto: number; bultos: number
+    pedidosConCosto: number; pedidosSinCosto: number
+    desglose: {
+      operador: string; zona: string; pedidos: number; bultos: number
+      tarifaMoovex: number; tarifaOperador: number | null
+      ingreso: number; costo: number | null; margen: number | null
+    }[]
   }
 }
 
@@ -362,25 +370,61 @@ export default function FacturacionPage() {
                         <div style={{ fontSize:12, color:'rgba(255,255,255,.8)' }}>{fmt(calc.neto)} + {fmt(calc.iva)}</div>
                         <div style={{ fontSize:16, fontWeight:700, color:'white' }}>{fmt(calc.totalConIva)}</div>
                       </div>
-                      {/* Margen: ingreso menos lo que cobra el operador. Todo neto. */}
-                      {(() => {
+                      {/* Margen: lo que cobramos por bulto menos lo que nos cobra el operador */}
+                      {sf.resumenMargen && (() => {
                         const rm = sf.resumenMargen
-                        if (!rm) return null
                         const pct = rm.ingresoNeto > 0 ? Math.round((rm.margenNeto / rm.ingresoNeto) * 100) : 0
                         return (
-                          <div style={{ padding:'8px 14px', borderRadius:8, background:'#052E24', minWidth:190, display:'flex', flexDirection:'column', justifyContent:'center' }}>
+                          <div style={{ padding:'8px 14px', borderRadius:8, background:'#052E24', minWidth:180, display:'flex', flexDirection:'column', justifyContent:'center' }}>
                             <div style={{ fontSize:11, color:'rgba(255,255,255,.5)', marginBottom:3 }}>MARGEN NETO</div>
                             <div style={{ fontSize:16, fontWeight:700, color:'#34D399' }}>{fmt(rm.margenNeto)} <span style={{ fontSize:11, fontWeight:500, opacity:.8 }}>({pct}%)</span></div>
-                            <div style={{ fontSize:11, color:'rgba(255,255,255,.6)' }}>ingreso {fmt(rm.ingresoNeto)} − costo {fmt(rm.costoNeto)}</div>
+                            <div style={{ fontSize:11, color:'rgba(255,255,255,.6)' }}>{fmt(rm.ingresoNeto)} − {fmt(rm.costoNeto)}</div>
                             {rm.pedidosSinCosto > 0 && (
-                              <div style={{ fontSize:10, color:'#FBBF24', marginTop:3 }}>
-                                {rm.pedidosSinCosto} sin tarifa de operador cargada
-                              </div>
+                              <div style={{ fontSize:10, color:'#FBBF24', marginTop:3 }}>{rm.pedidosSinCosto} sin tarifa de operador</div>
                             )}
                           </div>
                         )
                       })()}
                     </div>
+
+                    {/* Desglose de margen por operador y zona */}
+                    {sf.resumenMargen?.desglose?.length > 0 && (
+                      <div style={{ marginBottom:16, border:'1px solid #E2E8F0', borderRadius:10, overflow:'hidden' }}>
+                        <div style={{ padding:'8px 14px', background:'#F8FAFC', fontSize:12, fontWeight:600, color:'#374151' }}>
+                          Margen por operador y zona
+                          <span style={{ fontWeight:400, color:'#9CA3AF', marginLeft:6 }}>· tarifas netas por bulto</span>
+                        </div>
+                        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                          <thead>
+                            <tr style={{ color:'#6B7280', textAlign:'left' }}>
+                              {['Operador','Zona','Pedidos','Bultos','Cobramos c/u','Nos cobran c/u','Margen c/u','Ingreso','Costo','Margen'].map(h => (
+                                <th key={h} style={{ padding:'7px 12px', fontWeight:500, borderTop:'1px solid #E2E8F0', whiteSpace:'nowrap' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sf.resumenMargen.desglose.map(d => {
+                              const margenUnit = d.tarifaOperador === null ? null : d.tarifaMoovex - d.tarifaOperador
+                              const zonaLabel = ZONA_LABEL[d.zona] ?? d.zona
+                              return (
+                                <tr key={d.operador + d.zona} style={{ borderTop:'1px solid #F1F5F9' }}>
+                                  <td style={{ padding:'7px 12px', fontWeight:500 }}>{OPERADOR[d.operador] ?? d.operador}</td>
+                                  <td style={{ padding:'7px 12px' }}>{zonaLabel}</td>
+                                  <td style={{ padding:'7px 12px' }}>{d.pedidos}</td>
+                                  <td style={{ padding:'7px 12px' }}>{d.bultos}</td>
+                                  <td style={{ padding:'7px 12px' }}>{fmt(d.tarifaMoovex)}</td>
+                                  <td style={{ padding:'7px 12px', color:'#B91C1C' }}>{d.tarifaOperador === null ? '—' : fmt(d.tarifaOperador)}</td>
+                                  <td style={{ padding:'7px 12px', fontWeight:600, color: margenUnit === null ? '#9CA3AF' : margenUnit < 0 ? '#B91C1C' : '#15803D' }}>{margenUnit === null ? '—' : fmt(margenUnit)}</td>
+                                  <td style={{ padding:'7px 12px' }}>{fmt(d.ingreso)}</td>
+                                  <td style={{ padding:'7px 12px', color:'#B91C1C' }}>{d.costo === null ? '—' : fmt(d.costo)}</td>
+                                  <td style={{ padding:'7px 12px', fontWeight:700, color: d.margen === null ? '#9CA3AF' : d.margen < 0 ? '#B91C1C' : '#15803D' }}>{d.margen === null ? 'sin tarifa' : fmt(d.margen)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
 
                     <div style={{ overflowX:'auto' }}>
                       <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>

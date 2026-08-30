@@ -135,10 +135,6 @@ model Order {
   mlShippedAt         DateTime?
   // Quien mueve el pedido. Define que tarifa de COSTO se le aplica.
   operator            Operator?
-  // Si el pedido incluye retiro en origen. Antes era solo un checkbox en
-  // estado de React (retiroMap) que se perdia al recargar, asi que el retiro
-  // nunca se llegaba a facturar.
-  conRetiro           Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   store       Store             @relation(fields: [storeId], references: [id])
