@@ -7,27 +7,24 @@ import type { SessionUser } from '@/types'
 const MAX_ATTEMPTS = 5
 const WINDOW_MINUTES = 15
 
+// Antes esto era SQL crudo con los nombres de columna escritos a mano
+// ("created_at"), lo que escondía que el schema y la tabla real no coincidían.
+// Con Prisma el mapeo vive en un solo lugar: schema.prisma.
 async function checkRateLimit(email: string, ip: string): Promise<boolean> {
   const since = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000)
-  const attempts = await prisma.$queryRaw<{ count: bigint }[]>`
-    SELECT COUNT(*) as count FROM login_attempts
-    WHERE email = ${email}
-    AND success = false
-    AND created_at > ${since}
-  `
-  return Number(attempts[0]?.count ?? 0) < MAX_ATTEMPTS
+  const intentos = await prisma.loginAttempt.count({
+    where: { email, success: false, createdAt: { gt: since } },
+  })
+  return intentos < MAX_ATTEMPTS
 }
 
 async function recordAttempt(email: string, ip: string, success: boolean) {
-  await prisma.$executeRaw`
-    INSERT INTO login_attempts (email, ip, success, created_at)
-    VALUES (${email}, ${ip}, ${success}, NOW())
-  `
+  await prisma.loginAttempt.create({ data: { email, ip, success } })
+
   // Limpiar intentos antiguos
-  await prisma.$executeRaw`
-    DELETE FROM login_attempts
-    WHERE created_at < NOW() - INTERVAL '24 hours'
-  `
+  await prisma.loginAttempt.deleteMany({
+    where: { createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+  })
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({

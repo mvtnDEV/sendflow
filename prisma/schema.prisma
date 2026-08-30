@@ -214,11 +214,19 @@ model LoginAttempt {
   email     String
   ip        String
   success   Boolean
-  createdAt DateTime @default(now())
+  // La tabla real usa created_at (se creó con SQL a mano, no desde este
+  // schema). Sin este @map, cualquier consulta por Prisma no encuentra la
+  // columna y el login se cae entero.
+  createdAt DateTime @default(now()) @map("created_at")
   @@index([email, createdAt])
   @@index([ip, createdAt])
   @@map("login_attempts")
 }
+/// DEPRECADO — ya no lo usa nadie: el rate limit de /api/v1 pasó a RateLimitHit.
+/// Se deja declarado a propósito para que un `db push` no borre la tabla en
+/// producción. OJO: es probable que la tabla real tenga las columnas `key` y
+/// `created_at` (el código viejo consultaba `key`), así que este modelo puede
+/// no describirla bien. Verificar antes de borrarla en un commit aparte.
 model ApiRateLimit {
   id        String   @id @default(cuid())
   apiKeyId  String

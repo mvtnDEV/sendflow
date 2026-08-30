@@ -1,9 +1,15 @@
--- Mejoras 1 y 2 (alertas + tracking publico con rate limit).
--- Generado con: prisma migrate diff --from-schema-datamodel <schema en 7251413> --to-schema-datamodel prisma/schema.prisma --script
+-- Mejoras 1 y 2 — alertas + tracking publico con rate limiting.
 --
--- IMPORTANTE: aplicar ESTE archivo, no 'prisma db push'.
--- Es 100% aditivo: crea 2 enums y 2 tablas nuevas y no toca ninguna tabla existente.
--- Ver la nota sobre la deriva de schema en el mensaje del commit.
+-- COMO APLICARLO: pegar este archivo completo en el SQL Editor de Supabase.
+-- NO usar `prisma db push` contra produccion (ver nota al final).
+--
+-- Es 100% aditivo y verificado: solo CREATE TYPE / CREATE TABLE / CREATE INDEX.
+-- No hay un solo ALTER, DROP ni RENAME. No toca ninguna tabla existente.
+--
+-- Generado con:
+--   prisma migrate diff --from-schema-datamodel <schema en 7251413, con el
+--   @map("created_at") de LoginAttempt ya aplicado> --to-schema-datamodel
+--   prisma/schema.prisma --script
 
 -- CreateEnum
 CREATE TYPE "AlertType" AS ENUM ('FLEX_CANCELLED', 'STUCK_IN_TRANSIT', 'NOT_SENT_TO_FRET', 'FRET_NOT_PICKED_UP');
@@ -53,3 +59,25 @@ CREATE INDEX "alerts_status_type_idx" ON "alerts"("status", "type");
 -- CreateIndex
 CREATE INDEX "alerts_storeId_status_idx" ON "alerts"("storeId", "status");
 
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ANTES DE CORRER CUALQUIER `prisma db push` EN PRODUCCION, leer esto.
+--
+-- El schema.prisma no describe del todo dos tablas que se crearon a mano:
+--   * login_attempts  -> la columna real es `created_at`. Ya quedo corregido en
+--                        el schema con @map("created_at").
+--   * api_rate_limits -> el codigo viejo consultaba una columna `key` que el
+--                        modelo no declara. Esa tabla ya no la usa nadie
+--                        (la reemplaza rate_limit_hits), pero sigue declarada
+--                        para que un push no la borre.
+--
+-- Para confirmar como estan de verdad, correr esta consulta de solo lectura:
+--
+--   SELECT table_name, column_name, data_type
+--   FROM information_schema.columns
+--   WHERE table_schema = 'public'
+--     AND table_name IN ('login_attempts', 'api_rate_limits')
+--   ORDER BY table_name, ordinal_position;
+--
+-- Si login_attempts trae `created_at`, el schema ya quedo correcto.
+-- ─────────────────────────────────────────────────────────────────────────────
