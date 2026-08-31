@@ -118,13 +118,11 @@ export async function createOrder(input: CreateOrderInput) {
   });
 
   // ── Decidir si enviar a Fret ──
-  // Todas las tiendas van a Fret excepto las excluidas
   const enviarAFret = !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
 
   if (enviarAFret) {
     try {
       // ── Verificar si el pedido ya tiene externalId (ej: ID de Senby) ──
-      // Si lo tiene, no sobreescribir con el FR- de Fret.
       const fresh = await prisma.order.findUnique({
         where: { id: order.id },
         select: { externalId: true },
@@ -132,7 +130,7 @@ export async function createOrder(input: CreateOrderInput) {
       const preservarExternalId = !!fresh?.externalId;
 
       // ── PACK GROUPING: si es ML y ya existe otra orden con el mismo ──
-      // shipping_id que ya tiene FR-, no reenviar a Fret (es el mismo paquete).
+      // shipping_id, no reenviar a Fret (es el mismo paquete físico).
       const shippingId = (order.rawPayload as any)?.shipping?.id;
 
       if (order.platform === "MERCADOLIBRE" && shippingId) {
@@ -140,7 +138,6 @@ export async function createOrder(input: CreateOrderInput) {
           where: {
             id: { not: order.id },
             platform: "MERCADOLIBRE",
-            externalId: { not: null, startsWith: "FR-" },
             rawPayload: {
               path: ["shipping", "id"],
               equals: Number(shippingId),
@@ -149,8 +146,9 @@ export async function createOrder(input: CreateOrderInput) {
           select: { externalId: true, orderNumber: true },
         });
 
-        if (hermana?.externalId) {
-          if (!preservarExternalId) {
+        if (hermana) {
+          // Ya existe otra orden del mismo pack — no enviar a Fret
+          if (hermana.externalId?.startsWith("FR-") && !preservarExternalId) {
             await prisma.order.update({
               where: { id: order.id },
               data: { externalId: hermana.externalId },
@@ -159,11 +157,9 @@ export async function createOrder(input: CreateOrderInput) {
           console.log(
             "[Fret] 📦 Pack agrupado:",
             order.orderNumber,
-            "→ mismo FR que",
+            "→ mismo envío que",
             hermana.orderNumber,
-            "(",
-            hermana.externalId,
-            ")",
+            hermana.externalId ? `(${hermana.externalId})` : "(FR- pendiente)",
             preservarExternalId
               ? `(externalId preservado: ${fresh?.externalId})`
               : "",
