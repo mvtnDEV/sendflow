@@ -66,14 +66,12 @@ interface CreateOrderInput {
   createdBy?: string;
 }
 
-// ── Tiendas que NO van a Fret ──
-const TIENDAS_EXCLUIDAS_FRET = new Set<string>([]);
-
-// ── Senby: solo estas sub-tiendas van a Fret, el resto va a Now ──
-// El lunes cuando TODAS vayan a Fret, cambiar enviarAFret a:
-// const enviarAFret = !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
-const SENBY_STORE_ID = "cmpanvuns000053f2gbs46t83";
-const SENBY_SUBTIENDAS_FRET = new Set(["Tienda de Jacinta", "Jacinta tienda"]);
+// ── Tiendas que NO van a Fret (van a Now / app Moovex) ──
+const TIENDAS_EXCLUIDAS_FRET = new Set<string>([
+  "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess → Now
+  "cmouw23l60003thpe1q7f16r3", // Oasis verde → Now
+  "cmpbfadyd00032vgl7klna40b", // Fire Master → Now
+]);
 
 export async function createOrder(input: CreateOrderInput) {
   if (!isRegionPermitida(input.addressRegion)) {
@@ -121,18 +119,13 @@ export async function createOrder(input: CreateOrderInput) {
   });
 
   // ── Decidir si enviar a Fret ──
-  // Senby: solo sub-tiendas en SENBY_SUBTIENDAS_FRET van a Fret
-  // Resto: todas van a Fret excepto las excluidas
-  const esSenby = order.storeId === SENBY_STORE_ID;
-  const enviarAFret = esSenby
-    ? SENBY_SUBTIENDAS_FRET.has(order.subStoreName ?? "")
-    : !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
+  // Todas las tiendas van a Fret excepto las excluidas
+  const enviarAFret = !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
 
   if (enviarAFret) {
     try {
       // ── Verificar si el pedido ya tiene externalId (ej: ID de Senby) ──
       // Si lo tiene, no sobreescribir con el FR- de Fret.
-      // El webhook de Fret encuentra el pedido por orderNumber, no necesita el FR-.
       const fresh = await prisma.order.findUnique({
         where: { id: order.id },
         select: { externalId: true },
@@ -362,8 +355,6 @@ export async function listOrders(filters: OrderFilters) {
       { customerPhone: { contains: filters.search } },
       { sourceId: { contains: filters.search } },
       { subStoreName: { contains: filters.search, mode: "insensitive" } },
-      // Codigo del operador (FR-1234). Antes solo se podia buscar desde /fret.
-      { externalId: { contains: filters.search } },
     ];
   }
 
