@@ -2,8 +2,6 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/utils/auth";
 import { prisma } from "@/lib/db/prisma";
-import { clasificarZona } from "@/lib/utils/zonas";
-import { costoPorBulto, operadorDe, type Operador } from "@/lib/config/tarifas-operador";
 
 const TZ = "America/Santiago";
 const IVA_RATE = 0.19;
@@ -16,6 +14,35 @@ function getChileOffsetStr(): string {
   const offsetHours = offsetMs / (1000 * 60 * 60);
   const sign = offsetHours >= 0 ? "+" : "-";
   return `${sign}${String(Math.abs(offsetHours)).padStart(2, "0")}:00`;
+}
+
+const COMUNAS_EXTRA_URBANO = ["colina", "padre hurtado"];
+const COMUNAS_RURAL = [
+  "paine",
+  "pirque",
+  "til til",
+  "tiltil",
+  "melipilla",
+  "peñaflor",
+  "penaflor",
+  "isla de maipo",
+  "lampa",
+];
+
+function normalizarComuna(comuna: string): string {
+  return comuna
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function clasificarZona(comuna: string): "URBANA" | "EXTRA_URBANA" | "RURAL" {
+  const c = normalizarComuna(comuna);
+  if (COMUNAS_RURAL.some((r) => c.includes(r) || r.includes(c))) return "RURAL";
+  if (COMUNAS_EXTRA_URBANO.some((e) => c.includes(e) || e.includes(c)))
+    return "EXTRA_URBANA";
+  return "URBANA";
 }
 
 export async function GET(req: NextRequest) {
@@ -97,8 +124,6 @@ export async function GET(req: NextRequest) {
           status: true,
           bultos: true,
           platform: true,
-          externalId: true,
-          operator: true,
         },
       });
 
@@ -126,76 +151,8 @@ export async function GET(req: NextRequest) {
             : zona === "EXTRA_URBANA"
               ? tarifaExtraUrbana
               : tarifaUrbana;
-
-        // ── Costo del operador y margen. Se cobra POR BULTO, y la tarifa la
-        //    define la zona (misma logica para el precio y para el costo).
-        const operador = operadorDe(o.operator, o.externalId);
-        const costoUnit = costoPorBulto(operador, zona);
-        const bultos = o.bultos ?? 1;
-
-        // null = todavia no conocemos la tarifa de ese operador (hoy, Fret).
-        // Se deja en null y no en 0 para no inflar el margen con un costo falso.
-        const precio = tarifa * bultos;
-        const costo = costoUnit === null ? null : costoUnit * bultos;
-        const margen = costo === null ? null : precio - costo;
-
-        return {
-          ...o,
-          zona,
-          tarifa,
-          storeName: store.name,
-          operador,
-          costoUnit,
-          precio,
-          costo,
-          margen,
-        };
+        return { ...o, zona, tarifa, storeName: store.name };
       });
-
-      // ── Desglose por operador y zona: la tabla que se muestra en pantalla ──
-      const claves = new Map<string, { operador: Operador; zona: "URBANA" | "EXTRA_URBANA" | "RURAL" }>();
-      ordersConZona.forEach((o) =>
-        claves.set(o.operador + "|" + o.zona, { operador: o.operador, zona: o.zona }),
-      );
-
-      const desglose = [...claves.values()]
-        .map(({ operador, zona }) => {
-          const filas = ordersConZona.filter(
-            (o) => o.operador === operador && o.zona === zona,
-          );
-          const bultos = filas.reduce((a, o) => a + (o.bultos ?? 1), 0);
-          const ingreso = filas.reduce((a, o) => a + o.precio, 0);
-          const sinTarifa = filas.some((o) => o.costo === null);
-          const costo = sinTarifa ? null : filas.reduce((a, o) => a + (o.costo ?? 0), 0);
-          return {
-            operador,
-            zona,
-            pedidos: filas.length,
-            bultos,
-            tarifaMoovex: filas[0]?.tarifa ?? 0,
-            tarifaOperador: filas[0]?.costoUnit ?? null,
-            ingreso,
-            costo,
-            margen: costo === null ? null : ingreso - costo,
-          };
-        })
-        .sort((a, b) =>
-          a.operador === b.operador
-            ? a.zona.localeCompare(b.zona)
-            : a.operador.localeCompare(b.operador),
-        );
-
-      const conCosto = ordersConZona.filter((o) => o.costo !== null);
-      const resumenMargen = {
-        ingresoNeto: ordersConZona.reduce((a, o) => a + o.precio, 0),
-        costoNeto: conCosto.reduce((a, o) => a + (o.costo ?? 0), 0),
-        margenNeto: conCosto.reduce((a, o) => a + (o.margen ?? 0), 0),
-        bultos: ordersConZona.reduce((a, o) => a + (o.bultos ?? 1), 0),
-        pedidosConCosto: conCosto.length,
-        // Pedidos cuyo operador todavia no tiene tarifa cargada.
-        pedidosSinCosto: ordersConZona.length - conCosto.length,
-        desglose,
-      };
 
       function zonaResumen(
         zona: "URBANA" | "EXTRA_URBANA" | "RURAL",
@@ -238,7 +195,6 @@ export async function GET(req: NextRequest) {
         orders: ordersConZona,
         total: ordersConZona.length,
         resumenZonas,
-        resumenMargen,
         netoGeneral,
         ivaGeneral,
         totalGeneralConIva,

@@ -19,11 +19,6 @@ enum Platform {
   JUMPSELLER
   MANUAL
 }
-enum Operator {
-  NOW
-  FRET
-  MOOVEX
-}
 enum OrderStatus {
   PENDING
   RECEIVED
@@ -133,8 +128,6 @@ model Order {
   pendingNowEvidence  Json?
   pendingNowCheckedAt DateTime?
   mlShippedAt         DateTime?
-  // Quien mueve el pedido. Define que tarifa de COSTO se le aplica.
-  operator            Operator?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   store       Store             @relation(fields: [storeId], references: [id])
@@ -147,7 +140,6 @@ model Order {
   @@index([dataRetentionDate])
   @@index([storeId, createdAt(sort: Desc)], map: "orders_storeId_createdAt_idx")
   @@index([createdAt(sort: Desc)], map: "orders_createdAt_idx")
-  @@index([operator, createdAt])
   @@map("orders")
 }
 model OrderEvent {
