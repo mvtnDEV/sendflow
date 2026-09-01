@@ -147,7 +147,6 @@ export async function createOrder(input: CreateOrderInput) {
         });
 
         if (hermana) {
-          // Ya existe otra orden del mismo pack — no enviar a Fret
           if (hermana.externalId?.startsWith("FR-") && !preservarExternalId) {
             await prisma.order.update({
               where: { id: order.id },
@@ -186,14 +185,21 @@ export async function createOrder(input: CreateOrderInput) {
         subStoreName: order.subStoreName,
         rawPayload: order.rawPayload,
       });
-      const result = await createFretOrders([payload]);
-      if (result.ok && result.created[0]) {
+
+      // ── Helper para guardar el FR- de Fret ──
+      const guardarFR = async (orderCode: string) => {
         if (!preservarExternalId) {
           await prisma.order.update({
             where: { id: order.id },
-            data: { externalId: result.created[0].order_code },
+            data: { externalId: orderCode },
           });
         }
+      };
+
+      const result = await createFretOrders([payload]);
+
+      if (result.ok && result.created[0]) {
+        await guardarFR(result.created[0].order_code);
         console.log(
           "[Fret] ✅ Pedido creado:",
           order.orderNumber,
@@ -204,12 +210,7 @@ export async function createOrder(input: CreateOrderInput) {
             : "",
         );
       } else if (result.duplicated[0]) {
-        if (!preservarExternalId) {
-          await prisma.order.update({
-            where: { id: order.id },
-            data: { externalId: result.duplicated[0].order_code },
-          });
-        }
+        await guardarFR(result.duplicated[0].order_code);
         console.log(
           "[Fret] Duplicado:",
           order.orderNumber,
@@ -219,11 +220,47 @@ export async function createOrder(input: CreateOrderInput) {
             ? `(externalId preservado: ${fresh?.externalId})`
             : "",
         );
-      } else {
+      } else if (result.rejected?.[0]) {
         console.warn(
-          "[Fret] ❌ No se pudo crear:",
-          result.error ?? result.rejected?.[0]?.detail,
+          "[Fret] ❌ Rechazado:",
+          order.orderNumber,
+          "| campo:",
+          result.rejected[0].field,
+          "| detalle:",
+          result.rejected[0].detail,
         );
+      } else if (result.error) {
+        // ── REINTENTO: si Fret falló por timeout/conexión, reintentar 1 vez ──
+        console.warn(
+          "[Fret] ⚠️ Error, reintentando en 2s:",
+          order.orderNumber,
+          result.error,
+        );
+        await new Promise((r) => setTimeout(r, 2000));
+        const retry = await createFretOrders([payload]);
+        if (retry.ok && retry.created[0]) {
+          await guardarFR(retry.created[0].order_code);
+          console.log(
+            "[Fret] ✅ Pedido creado (reintento):",
+            order.orderNumber,
+            "→",
+            retry.created[0].order_code,
+          );
+        } else if (retry.duplicated[0]) {
+          await guardarFR(retry.duplicated[0].order_code);
+          console.log(
+            "[Fret] Duplicado (reintento):",
+            order.orderNumber,
+            "→",
+            retry.duplicated[0].order_code,
+          );
+        } else {
+          console.error(
+            "[Fret] ❌ Falló después de reintento:",
+            order.orderNumber,
+            retry.error ?? retry.rejected?.[0]?.detail,
+          );
+        }
       }
     } catch (err) {
       console.error("[Fret] Error enviando a Fret:", err);
