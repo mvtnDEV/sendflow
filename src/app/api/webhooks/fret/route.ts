@@ -145,6 +145,14 @@ async function propagarAPack(
   }
 }
 
+// ── Determina si el externalId del pedido es de un sistema externo (Senby) ──
+// y no debe sobreescribirse con el order_code de Fret.
+function esExternalIdExterno(externalId: string | null): boolean {
+  if (!externalId) return false;
+  if (externalId.startsWith("FR-")) return false; // Ya es de Fret
+  return true; // Es de Senby u otro sistema
+}
+
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signatureHeader = req.headers.get("x-fret-signature") ?? "";
@@ -168,314 +176,328 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const procesarWebhook = async () => {
-    let body: any;
-    try {
-      body = JSON.parse(rawBody);
-    } catch {
-      console.error("[Fret webhook] JSON inválido");
-      return;
-    }
+  // ── AWAIT el procesamiento para que Vercel no mate la función ──
+  try {
+    await procesarWebhook(rawBody, eventHeader);
+  } catch (err) {
+    console.error("[Fret webhook] Error procesando:", err);
+  }
 
-    const evento = eventHeader || body.event;
-    const { referencia, order_code, status, occurred_at, pod } =
-      body.data ?? {};
+  return NextResponse.json({ ok: true });
+}
 
-    if (!referencia) {
-      console.error("[Fret webhook] Falta referencia");
-      return;
-    }
+async function procesarWebhook(rawBody: string, eventHeader: string) {
+  let body: any;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    console.error("[Fret webhook] JSON inválido");
+    return;
+  }
 
-    // ══════════════════════════════════════════════════════════════
-    // EVENTO 1: order.pod_added — foto después de la entrega
-    // ══════════════════════════════════════════════════════════════
-    if (evento === "order.pod_added") {
-      const ev = extraerEvidencia(pod);
-      if (!ev.traeEvidencia) {
-        console.log(
-          "[Fret webhook] pod_added sin evidencia, ignorando:",
-          referencia,
-        );
-        return;
-      }
+  const evento = eventHeader || body.event;
+  const { referencia, order_code, status, occurred_at, pod } = body.data ?? {};
 
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const order = await buscarPedido(referencia, order_code);
-          if (!order) {
-            console.log(
-              "[Fret webhook] pod_added · pedido no encontrado:",
-              referencia,
-            );
-            return;
-          }
+  if (!referencia) {
+    console.error("[Fret webhook] Falta referencia");
+    return;
+  }
 
-          const yaTeniaEvidencia = !!(
-            order.evidencePhoto1 ||
-            order.evidencePhoto2 ||
-            order.receptorName ||
-            order.receptorRut
-          );
-
-          if (yaTeniaEvidencia) {
-            console.log(
-              "[Fret webhook] pod_added · ya tenía evidencia, ignorando:",
-              order.orderNumber,
-            );
-            return;
-          }
-
-          await prisma.order.update({
-            where: { id: order.id },
-            data: {
-              ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
-              ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
-              ...(ev.receptorName && { receptorName: ev.receptorName }),
-              ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
-              ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
-              events: {
-                create: {
-                  status: "DELIVERED",
-                  note: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
-                  createdBy: "fret-webhook",
-                },
-              },
-            },
-          });
-
-          await propagarAPack(order.id, order.externalId, {
-            status: "DELIVERED",
-            evidencePhoto1: ev.evidencePhoto1,
-            evidencePhoto2: ev.evidencePhoto2,
-            receptorName: ev.receptorName,
-            receptorRut: ev.receptorRut,
-            evidenceNote: ev.evidenceNote,
-            eventNote: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
-          });
-
-          console.log(
-            "[Fret webhook] 📸 Evidencia completada (pod_added):",
-            order.orderNumber,
-          );
-          return;
-        } catch (err: any) {
-          console.error(
-            `[Fret webhook] pod_added intento ${attempt}/3:`,
-            err.message,
-          );
-          if (attempt < 3)
-            await new Promise((r) => setTimeout(r, 1000 * attempt));
-        }
-      }
-      return;
-    }
-
-    // ══════════════════════════════════════════════════════════════
-    // EVENTO 2: order.status_changed — cambio de estado
-    // ══════════════════════════════════════════════════════════════
-    if (evento !== "order.status_changed") {
-      console.log("[Fret webhook] Evento ignorado:", evento);
-      return;
-    }
-
-    if (!status) {
-      console.error("[Fret webhook] Falta status");
-      return;
-    }
-
-    const newStatus = STATE_MAP[String(status).toLowerCase()];
-    if (!newStatus) {
-      console.log("[Fret webhook] Estado desconocido, ignorando:", status);
-      return;
-    }
-
+  // ══════════════════════════════════════════════════════════════
+  // EVENTO 1: order.pod_added — foto después de la entrega
+  // ══════════════════════════════════════════════════════════════
+  if (evento === "order.pod_added") {
     const ev = extraerEvidencia(pod);
+    if (!ev.traeEvidencia) {
+      console.log(
+        "[Fret webhook] pod_added sin evidencia, ignorando:",
+        referencia,
+      );
+      return;
+    }
 
-    let lastError: any;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const order = await buscarPedido(referencia, order_code);
-
         if (!order) {
-          console.log("[Fret webhook] Pedido no encontrado:", referencia);
-          return;
-        }
-
-        console.log(
-          "[Fret webhook] Pedido encontrado:",
-          order.orderNumber,
-          "| estado actual:",
-          order.status,
-          "| nuevo:",
-          newStatus,
-        );
-
-        // ── PROTECCIÓN: no cambiar estado de pedidos PENDING ──
-        // Solo aceptar RECEIVED (picked_up) o IN_TRANSIT sobre PENDING.
-        // Bloquear DELIVERED, INCIDENT, CANCELLED sobre pedidos no retirados.
-        if (
-          order.status === "PENDING" &&
-          !["RECEIVED", "IN_TRANSIT"].includes(newStatus)
-        ) {
           console.log(
-            "[Fret webhook] Ignorando",
-            newStatus,
-            "sobre PENDING (no fue retirado):",
-            order.orderNumber,
+            "[Fret webhook] pod_added · pedido no encontrado:",
+            referencia,
           );
           return;
         }
 
-        // ── CASO ESPECIAL: pedido ya DELIVERED pero SIN evidencia ──
-        const yaEstabaDelivered = order.status === "DELIVERED";
-        const noTeniaEvidencia = !(
+        const yaTeniaEvidencia = !!(
           order.evidencePhoto1 ||
           order.evidencePhoto2 ||
           order.receptorName ||
           order.receptorRut
         );
 
-        if (
-          newStatus === "DELIVERED" &&
-          yaEstabaDelivered &&
-          noTeniaEvidencia &&
-          ev.traeEvidencia
-        ) {
-          await prisma.order.update({
-            where: { id: order.id },
-            data: {
-              ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
-              ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
-              ...(ev.receptorName && { receptorName: ev.receptorName }),
-              ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
-              ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
-              events: {
-                create: {
-                  status: "DELIVERED",
-                  note: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
-                  createdBy: "fret-webhook",
-                },
-              },
-            },
-          });
-
-          await propagarAPack(order.id, order.externalId, {
-            status: "DELIVERED",
-            evidencePhoto1: ev.evidencePhoto1,
-            evidencePhoto2: ev.evidencePhoto2,
-            receptorName: ev.receptorName,
-            receptorRut: ev.receptorRut,
-            evidenceNote: ev.evidenceNote,
-            eventNote: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
-          });
-
+        if (yaTeniaEvidencia) {
           console.log(
-            "[Fret webhook] 📸 Evidencia completada (ya estaba entregado):",
+            "[Fret webhook] pod_added · ya tenía evidencia, ignorando:",
             order.orderNumber,
           );
           return;
         }
-
-        // ── Excepción: un pedido en INCIDENT puede recuperarse ──
-        const esRecuperacionDeIncidente = order.status === "INCIDENT";
-
-        if (
-          !esRecuperacionDeIncidente &&
-          (STATUS_PRIORITY[newStatus] ?? 0) <=
-            (STATUS_PRIORITY[order.status] ?? 0)
-        ) {
-          console.log(
-            "[Fret webhook] Estado ignorado por prioridad:",
-            order.orderNumber,
-            order.status,
-            "->",
-            newStatus,
-          );
-          return;
-        }
-
-        const previousStatus = order.status;
-        const now = occurred_at ? new Date(occurred_at) : new Date();
-
-        const updateData: any = {
-          status: newStatus as any,
-          ...(newStatus === "RECEIVED" && { receivedAt: now }),
-          ...(newStatus === "IN_TRANSIT" && { inTransitAt: now }),
-          ...(newStatus === "DELIVERED" && {
-            deliveredAt: now,
-            ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
-            ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
-            ...(ev.receptorName && { receptorName: ev.receptorName }),
-            ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
-            ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
-          }),
-          ...(order_code && { externalId: order_code }),
-          events: {
-            create: {
-              status: newStatus as any,
-              note: `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
-              createdBy: "fret-webhook",
-            },
-          },
-        };
 
         await prisma.order.update({
           where: { id: order.id },
-          data: updateData,
-        });
-
-        console.log(
-          "[Fret webhook] ✅ Actualizado:",
-          order.orderNumber,
-          "->",
-          newStatus,
-          pod ? "| con evidencia" : "",
-        );
-
-        // ── Propagar al pack ──
-        const eventNote = `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`;
-        await propagarAPack(order.id, order.externalId ?? order_code, {
-          status: newStatus,
-          ...(newStatus === "RECEIVED" && { receivedAt: now }),
-          ...(newStatus === "IN_TRANSIT" && { inTransitAt: now }),
-          ...(newStatus === "DELIVERED" && {
-            deliveredAt: now,
+          data: {
             ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
             ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
             ...(ev.receptorName && { receptorName: ev.receptorName }),
             ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
             ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
-          }),
-          eventNote,
+            events: {
+              create: {
+                status: "DELIVERED",
+                note: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+                createdBy: "fret-webhook",
+              },
+            },
+          },
         });
 
-        try {
-          const { notifyWebhooks } =
-            await import("@/lib/services/webhook.service");
-          await notifyWebhooks(order.id, newStatus, String(previousStatus));
-        } catch (err) {
-          console.error("[Fret webhook] Error notificando webhook:", err);
-        }
+        await propagarAPack(order.id, order.externalId, {
+          status: "DELIVERED",
+          evidencePhoto1: ev.evidencePhoto1,
+          evidencePhoto2: ev.evidencePhoto2,
+          receptorName: ev.receptorName,
+          receptorRut: ev.receptorRut,
+          evidenceNote: ev.evidenceNote,
+          eventNote: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+        });
 
+        console.log(
+          "[Fret webhook] 📸 Evidencia completada (pod_added):",
+          order.orderNumber,
+        );
         return;
       } catch (err: any) {
-        lastError = err;
         console.error(
-          `[Fret webhook] Intento ${attempt}/3 falló:`,
+          `[Fret webhook] pod_added intento ${attempt}/3:`,
           err.message,
         );
         if (attempt < 3)
           await new Promise((r) => setTimeout(r, 1000 * attempt));
       }
     }
-    console.error(
-      "[Fret webhook] Se agotaron los 3 intentos:",
-      lastError?.message,
-    );
-  };
+    return;
+  }
 
-  procesarWebhook().catch((err) =>
-    console.error("[Fret webhook] Error procesando:", err),
+  // ══════════════════════════════════════════════════════════════
+  // EVENTO 2: order.status_changed — cambio de estado
+  // ══════════════════════════════════════════════════════════════
+  if (evento !== "order.status_changed") {
+    console.log("[Fret webhook] Evento ignorado:", evento);
+    return;
+  }
+
+  if (!status) {
+    console.error("[Fret webhook] Falta status");
+    return;
+  }
+
+  const newStatus = STATE_MAP[String(status).toLowerCase()];
+  if (!newStatus) {
+    console.log("[Fret webhook] Estado desconocido, ignorando:", status);
+    return;
+  }
+
+  const ev = extraerEvidencia(pod);
+
+  let lastError: any;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const order = await buscarPedido(referencia, order_code);
+
+      if (!order) {
+        console.log("[Fret webhook] Pedido no encontrado:", referencia);
+        return;
+      }
+
+      console.log(
+        "[Fret webhook] Pedido encontrado:",
+        order.orderNumber,
+        "| estado actual:",
+        order.status,
+        "| nuevo:",
+        newStatus,
+      );
+
+      // ── PROTECCIÓN PENDING ──
+      // Sobre PENDING solo aceptar: RECEIVED, IN_TRANSIT, DELIVERED
+      // Bloquear: INCIDENT, CANCELLED sobre pedidos no retirados
+      if (
+        order.status === "PENDING" &&
+        !["RECEIVED", "IN_TRANSIT", "DELIVERED"].includes(newStatus)
+      ) {
+        console.log(
+          "[Fret webhook] Ignorando",
+          newStatus,
+          "sobre PENDING (no fue retirado):",
+          order.orderNumber,
+        );
+        return;
+      }
+
+      // ── CASO ESPECIAL: pedido ya DELIVERED pero SIN evidencia ──
+      const yaEstabaDelivered = order.status === "DELIVERED";
+      const noTeniaEvidencia = !(
+        order.evidencePhoto1 ||
+        order.evidencePhoto2 ||
+        order.receptorName ||
+        order.receptorRut
+      );
+
+      if (
+        newStatus === "DELIVERED" &&
+        yaEstabaDelivered &&
+        noTeniaEvidencia &&
+        ev.traeEvidencia
+      ) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
+            ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
+            ...(ev.receptorName && { receptorName: ev.receptorName }),
+            ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
+            ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
+            events: {
+              create: {
+                status: "DELIVERED",
+                note: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+                createdBy: "fret-webhook",
+              },
+            },
+          },
+        });
+
+        await propagarAPack(order.id, order.externalId, {
+          status: "DELIVERED",
+          evidencePhoto1: ev.evidencePhoto1,
+          evidencePhoto2: ev.evidencePhoto2,
+          receptorName: ev.receptorName,
+          receptorRut: ev.receptorRut,
+          evidenceNote: ev.evidenceNote,
+          eventNote: `Evidencia de entrega recibida${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+        });
+
+        console.log(
+          "[Fret webhook] 📸 Evidencia completada (ya estaba entregado):",
+          order.orderNumber,
+        );
+        return;
+      }
+
+      // ── Excepción: un pedido en INCIDENT puede recuperarse ──
+      const esRecuperacionDeIncidente = order.status === "INCIDENT";
+
+      if (
+        !esRecuperacionDeIncidente &&
+        (STATUS_PRIORITY[newStatus] ?? 0) <=
+          (STATUS_PRIORITY[order.status] ?? 0)
+      ) {
+        console.log(
+          "[Fret webhook] Estado ignorado por prioridad:",
+          order.orderNumber,
+          order.status,
+          "->",
+          newStatus,
+        );
+        return;
+      }
+
+      const previousStatus = order.status;
+      const now = occurred_at ? new Date(occurred_at) : new Date();
+
+      // ── Proteger externalId de sistemas externos (Senby) ──
+      // Solo setear order_code como externalId si el pedido no tiene uno externo
+      const debeSetearExternalId =
+        order_code && !esExternalIdExterno(order.externalId);
+
+      const updateData: any = {
+        status: newStatus as any,
+        ...(newStatus === "RECEIVED" && { receivedAt: now }),
+        ...(newStatus === "IN_TRANSIT" && { inTransitAt: now }),
+        ...(newStatus === "DELIVERED" && {
+          deliveredAt: now,
+          ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
+          ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
+          ...(ev.receptorName && { receptorName: ev.receptorName }),
+          ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
+          ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
+        }),
+        ...(debeSetearExternalId && { externalId: order_code }),
+        events: {
+          create: {
+            status: newStatus as any,
+            note: `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`,
+            createdBy: "fret-webhook",
+          },
+        },
+      };
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: updateData,
+      });
+
+      console.log(
+        "[Fret webhook] ✅ Actualizado:",
+        order.orderNumber,
+        "->",
+        newStatus,
+        pod ? "| con evidencia" : "",
+        !debeSetearExternalId && order_code
+          ? `| externalId preservado: ${order.externalId}`
+          : "",
+      );
+
+      // ── Propagar al pack ──
+      // Para propagación, buscar por FR- del order_code O del externalId actual
+      const frParaPropagar = order.externalId?.startsWith("FR-")
+        ? order.externalId
+        : order_code?.startsWith("FR-")
+          ? order_code
+          : null;
+
+      const eventNote = `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`;
+      await propagarAPack(order.id, frParaPropagar, {
+        status: newStatus,
+        ...(newStatus === "RECEIVED" && { receivedAt: now }),
+        ...(newStatus === "IN_TRANSIT" && { inTransitAt: now }),
+        ...(newStatus === "DELIVERED" && {
+          deliveredAt: now,
+          ...(ev.evidencePhoto1 && { evidencePhoto1: ev.evidencePhoto1 }),
+          ...(ev.evidencePhoto2 && { evidencePhoto2: ev.evidencePhoto2 }),
+          ...(ev.receptorName && { receptorName: ev.receptorName }),
+          ...(ev.receptorRut && { receptorRut: ev.receptorRut }),
+          ...(ev.evidenceNote && { evidenceNote: ev.evidenceNote }),
+        }),
+        eventNote,
+      });
+
+      try {
+        const { notifyWebhooks } =
+          await import("@/lib/services/webhook.service");
+        await notifyWebhooks(order.id, newStatus, String(previousStatus));
+      } catch (err) {
+        console.error("[Fret webhook] Error notificando webhook:", err);
+      }
+
+      return;
+    } catch (err: any) {
+      lastError = err;
+      console.error(`[Fret webhook] Intento ${attempt}/3 falló:`, err.message);
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+  console.error(
+    "[Fret webhook] Se agotaron los 3 intentos:",
+    lastError?.message,
   );
-  return NextResponse.json({ ok: true });
 }
