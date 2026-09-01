@@ -95,8 +95,6 @@ async function buscarPedido(referencia: string, order_code?: string) {
   });
 }
 
-// ── Propaga un cambio de estado a todos los pedidos del mismo pack ──
-// (pedidos con el mismo externalId FR- = mismo paquete físico en Fret)
 async function propagarAPack(
   orderId: string,
   externalId: string | null,
@@ -245,7 +243,6 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          // Propagar evidencia al pack
           await propagarAPack(order.id, order.externalId, {
             status: "DELIVERED",
             evidencePhoto1: ev.evidencePhoto1,
@@ -314,9 +311,12 @@ export async function POST(req: NextRequest) {
         );
 
         // ── PROTECCIÓN: no cambiar estado de pedidos PENDING ──
-        // Fret manda in_transit/cancelled sobre pedidos que no retiró.
-        // Si el pedido está PENDING, solo aceptamos picked_up (RECEIVED).
-        if (order.status === "PENDING" && newStatus !== "RECEIVED") {
+        // Solo aceptar RECEIVED (picked_up) o IN_TRANSIT sobre PENDING.
+        // Bloquear DELIVERED, INCIDENT, CANCELLED sobre pedidos no retirados.
+        if (
+          order.status === "PENDING" &&
+          !["RECEIVED", "IN_TRANSIT"].includes(newStatus)
+        ) {
           console.log(
             "[Fret webhook] Ignorando",
             newStatus,
@@ -432,7 +432,7 @@ export async function POST(req: NextRequest) {
           pod ? "| con evidencia" : "",
         );
 
-        // ── Propagar al pack (mismas órdenes con mismo FR-) ──
+        // ── Propagar al pack ──
         const eventNote = `Actualizado por Moovex · ${status}${ev.receptorName ? ` · Recibió: ${ev.receptorName}` : ""}`;
         await propagarAPack(order.id, order.externalId ?? order_code, {
           status: newStatus,
