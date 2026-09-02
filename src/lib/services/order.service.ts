@@ -68,6 +68,7 @@ interface CreateOrderInput {
 
 // ── Tiendas que NO van a Fret (van a Now / app Moovex) ──
 const TIENDAS_EXCLUIDAS_FRET = new Set<string>([
+  "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess → Now
   "cmouw23l60003thpe1q7f16r3", // Oasis verde → Now
   "cmpbfadyd00032vgl7klna40b", // Fire Master → Now
 ]);
