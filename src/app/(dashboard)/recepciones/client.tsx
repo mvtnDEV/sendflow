@@ -249,10 +249,19 @@ export default function RecepcionesClient({
   }
 
   async function recepcionarTodos() {
-    if (pendientes.length === 0) return;
+    const ids =
+      selected.size > 0
+        ? Array.from(selected).filter((id) =>
+            pendientes.some((o) => o.id === id),
+          )
+        : pendientes.map((o) => o.id);
+    if (ids.length === 0) {
+      alert("No hay pedidos PENDING para recepcionar");
+      return;
+    }
     if (
       !confirm(
-        `¿Recepcionar ${pendientes.length} pedido${pendientes.length !== 1 ? "s" : ""} creado${pendientes.length !== 1 ? "s" : ""}?\n\nEsto los enviará automáticamente a Envios Now.`,
+        `¿Recepcionar ${ids.length} pedido${ids.length !== 1 ? "s" : ""} y enviar a Now?`,
       )
     )
       return;
@@ -262,14 +271,15 @@ export default function RecepcionesClient({
       const res = await fetch("/api/orders/batch-receive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderIds: pendientes.map((o) => o.id) }),
+        body: JSON.stringify({ orderIds: ids }),
       });
       const data = await res.json();
       if (data.ok) {
         setResultado({
           ok: true,
-          msg: `✅ ${data.updated} pedido${data.updated !== 1 ? "s" : ""} recepcionado${data.updated !== 1 ? "s" : ""} correctamente`,
+          msg: `✅ ${data.updated} pedido${data.updated !== 1 ? "s" : ""} recepcionado${data.updated !== 1 ? "s" : ""} y enviado${data.updated !== 1 ? "s" : ""} a Now`,
         });
+        setSelected(new Set());
         setTimeout(() => router.refresh(), 1500);
       } else {
         setResultado({ ok: false, msg: `❌ Error: ${data.error}` });
@@ -432,7 +442,7 @@ export default function RecepcionesClient({
             >
               {loadingRecepcionar
                 ? `⏳ Recepcionando…`
-                : `📥 Recepcionar Now (${pendientes.length})`}
+                : `📥 Recepcionar Now (${selected.size > 0 ? selected.size : pendientes.length})`}
             </button>
             {isSuperAdmin && esSenby && (
               <button
