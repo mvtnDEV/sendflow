@@ -66,11 +66,12 @@ interface CreateOrderInput {
   createdBy?: string;
 }
 
-// ── Tiendas que NO van a Fret (van a Now / app Moovex) ──
+// ── Tiendas que NO van a Fret automáticamente ──
 const TIENDAS_EXCLUIDAS_FRET = new Set<string>([
   "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess → Now
   "cmouw23l60003thpe1q7f16r3", // Oasis verde → Now
   "cmpbfadyd00032vgl7klna40b", // Fire Master → Now
+  "cmpanvuns000053f2gbs46t83", // Senby → manual (Fret o Now según sub-tienda)
 ]);
 
 export async function createOrder(input: CreateOrderInput) {
@@ -187,7 +188,6 @@ export async function createOrder(input: CreateOrderInput) {
         rawPayload: order.rawPayload,
       });
 
-      // ── Helper para guardar el FR- de Fret ──
       const guardarFR = async (orderCode: string) => {
         if (!preservarExternalId) {
           await prisma.order.update({
@@ -231,7 +231,6 @@ export async function createOrder(input: CreateOrderInput) {
           result.rejected[0].detail,
         );
       } else if (result.error) {
-        // ── REINTENTO: si Fret falló por timeout/conexión, reintentar 1 vez ──
         console.warn(
           "[Fret] ⚠️ Error, reintentando en 2s:",
           order.orderNumber,
