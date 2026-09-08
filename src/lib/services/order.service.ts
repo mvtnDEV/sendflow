@@ -68,7 +68,6 @@ interface CreateOrderInput {
 
 // ── Tiendas que NO van a Fret automáticamente ──
 const TIENDAS_EXCLUIDAS_FRET = new Set<string>([
-  "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess → Now
   "cmpbfadyd00032vgl7klna40b", // Fire Master → Now
   "cmpanvuns000053f2gbs46t83", // Senby → manual (Fret o Now según sub-tienda)
 ]);
