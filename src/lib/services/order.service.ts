@@ -146,26 +146,35 @@ export async function createOrder(input: CreateOrderInput) {
           select: { externalId: true, orderNumber: true },
         });
 
-        if (hermana) {
-          if (hermana.externalId?.startsWith("FR-") && !preservarExternalId) {
-            await prisma.order.update({
-              where: { id: order.id },
-              data: { externalId: hermana.externalId },
-            });
+                if (hermana) {
+          // Si la hermana YA tiene FR-, agrupar y no enviar
+          if (hermana.externalId?.startsWith("FR-")) {
+            if (!preservarExternalId) {
+              await prisma.order.update({
+                where: { id: order.id },
+                data: { externalId: hermana.externalId },
+              });
+            }
+            console.log(
+              "[Fret] 📦 Pack agrupado:",
+              order.orderNumber,
+              "→ mismo FR que",
+              hermana.orderNumber,
+              `(${hermana.externalId})`,
+              preservarExternalId ? `(externalId preservado: ${fresh?.externalId})` : "",
+            );
+            return order;
           }
+          // Si la hermana NO tiene FR-, enviar ESTA orden a Fret
+          // (la hermana falló o aún no terminó — al menos una debe llegar)
           console.log(
-            "[Fret] 📦 Pack agrupado:",
-            order.orderNumber,
-            "→ mismo envío que",
+            "[Fret] 📦 Pack: hermana",
             hermana.orderNumber,
-            hermana.externalId ? `(${hermana.externalId})` : "(FR- pendiente)",
-            preservarExternalId
-              ? `(externalId preservado: ${fresh?.externalId})`
-              : "",
+            "sin FR- — enviando",
+            order.orderNumber,
+            "a Fret",
           );
-          return order;
         }
-      }
 
       const { toFretPayload, createFretOrders } =
         await import("./fret.service");
