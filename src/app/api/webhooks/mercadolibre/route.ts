@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     select: {
       id: true,
       storeId: true,
-      accessToken: true,
+      apiKeyEnc: true,
       store: { select: { name: true, puntoRetiroFret: true } },
     },
   });
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const mlRes = await fetch(
       `https://api.mercadolibre.com/orders/${orderId}`,
       {
-        headers: { Authorization: `Bearer ${integration.accessToken}` },
+        headers: { Authorization: `Bearer ${integration.apiKeyEnc}` },
       },
     );
 
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
         const shipRes = await fetch(
           `https://api.mercadolibre.com/shipments/${shippingId}`,
           {
-            headers: { Authorization: `Bearer ${integration.accessToken}` },
+            headers: { Authorization: `Bearer ${integration.apiKeyEnc}` },
           },
         );
         if (shipRes.ok) shipment = await shipRes.json();
