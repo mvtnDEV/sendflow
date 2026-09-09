@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 
 const TIENDAS_FRET = new Set([
@@ -11,64 +11,101 @@ const TIENDAS_FRET = new Set([
   "cmt2181g800072mm41q6pfsb9", // sigan jugando
 ]);
 
-export async function GET(req: Request) {
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  console.log("[ML webhook] body:", JSON.stringify(body).slice(0, 300));
+
+  const topic = body.topic;
+  const resource = body.resource;
+  const userId = body.user_id;
+
+  if (topic !== "orders_v2" || !resource) {
+    return NextResponse.json({ ok: true, ignored: true });
   }
 
-  const orders = await prisma.order.findMany({
+  const orderId = resource.replace("/orders/", "");
+
+  const integration = await prisma.storeIntegration.findFirst({
     where: {
       platform: "MERCADOLIBRE",
-      status: { in: ["PENDING", "RECEIVED", "IN_TRANSIT"] },
-      sourceId: { not: null },
+      externalStoreId: String(userId),
+      isActive: true,
     },
     select: {
       id: true,
-      orderNumber: true,
-      sourceId: true,
       storeId: true,
-      status: true,
-      externalId: true,
-      rawPayload: true,
+      apiKeyEnc: true,
+      store: { select: { name: true, puntoRetiroFret: true } },
     },
-    take: 30,
-    orderBy: { createdAt: "asc" },
   });
 
-  const results: any[] = [];
+  if (!integration) {
+    console.log("[ML webhook] Integración no encontrada para user:", userId);
+    return NextResponse.json({ ok: true, no_integration: true });
+  }
 
-  for (const order of orders) {
-    const integration = await prisma.storeIntegration.findFirst({
-      where: {
-        storeId: order.storeId,
-        platform: "MERCADOLIBRE",
-        isActive: true,
+  const token = integration.apiKeyEnc;
+
+  try {
+    const mlRes = await fetch(
+      `https://api.mercadolibre.com/orders/${orderId}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+
+    if (!mlRes.ok) {
+      console.error("[ML webhook] Error ML API:", mlRes.status);
+      return NextResponse.json({ ok: true, ml_error: mlRes.status });
+    }
+
+    const mlOrder = await mlRes.json();
+    const shippingId = mlOrder.shipping?.id;
+
+    // ── Obtener datos del shipment ──
+    let shipment: any = null;
+    if (shippingId) {
+      try {
+        const shipRes = await fetch(
+          `https://api.mercadolibre.com/shipments/${shippingId}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        if (shipRes.ok) shipment = await shipRes.json();
+      } catch {}
+    }
+
+    const shipmentStatus = shipment?.status ?? "unknown";
+    const shipmentSubstatus = shipment?.substatus ?? "unknown";
+    console.log(
+      "[ML webhook] Shipment status:",
+      shipmentStatus,
+      "| substatus:",
+      shipmentSubstatus,
+    );
+
+    // ── Buscar si ya existe el pedido ──
+    const existing = await prisma.order.findFirst({
+      where: { integrationId: integration.id, sourceId: orderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        storeId: true,
+        externalId: true,
+        rawPayload: true,
       },
     });
-    const token =
-      (integration as any)?.accessToken ?? (integration as any)?.apiKeyEnc;
-    if (!token) continue;
 
-    try {
-      const orderId = order.sourceId!;
-      const res = await fetch(
-        `https://api.mercadolibre.com/orders/${orderId}`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (!res.ok) continue;
-
-      const mlOrder = await res.json();
-      const mlStatus = mlOrder.shipping?.status ?? mlOrder.status;
-
-      if (mlStatus === "delivered") {
-        const shippingId = (order.rawPayload as any)?.shipping?.id;
+    if (existing) {
+      // ── Pedido existente: verificar si Flex lo cerró ──
+      if (shipmentStatus === "delivered" && existing.status !== "DELIVERED") {
         const deliveredDate =
-          mlOrder.shipping?.status_history?.date_delivered ??
-          new Date().toISOString();
+          shipment?.status_history?.date_delivered ?? new Date().toISOString();
 
         await prisma.order.update({
-          where: { id: order.id },
+          where: { id: existing.id },
           data: {
             status: "DELIVERED",
             deliveredAt: new Date(deliveredDate),
@@ -76,30 +113,30 @@ export async function GET(req: Request) {
             events: {
               create: {
                 status: "DELIVERED",
-                note: "Entrega confirmada por Moovex (respaldo Flex)",
-                createdBy: "ml-cron-check",
+                note: "Entrega confirmada por Moovex (Flex)",
+                createdBy: "ml-webhook",
               },
             },
           },
         });
 
-        // ── Notificar a Fret si la tienda es Fret o tiene FR- ──
+        // ── Notificar a Fret ──
         if (
-          TIENDAS_FRET.has(order.storeId) ||
-          order.externalId?.startsWith("FR-")
+          TIENDAS_FRET.has(existing.storeId) ||
+          existing.externalId?.startsWith("FR-")
         ) {
           try {
             const { notificarEntregaAFret } =
               await import("@/lib/services/fret.service");
             await notificarEntregaAFret({
-              referencia: order.orderNumber.replace("#", ""),
+              referencia: existing.orderNumber.replace("#", ""),
               shipmentId: shippingId ? String(shippingId) : null,
               fecha: deliveredDate,
             });
           } catch (err) {
             console.error(
-              "[ML cron] Error notificando a Fret:",
-              order.orderNumber,
+              "[ML webhook] Error notificando a Fret:",
+              existing.orderNumber,
               err,
             );
           }
@@ -108,28 +145,100 @@ export async function GET(req: Request) {
         try {
           const { notifyWebhooks } =
             await import("@/lib/services/webhook.service");
-          await notifyWebhooks(order.id, "DELIVERED", order.status);
+          await notifyWebhooks(existing.id, "DELIVERED", existing.status);
         } catch {}
 
-        results.push({
-          orderNumber: order.orderNumber,
-          status: "cerrado_por_flex",
-          mlStatus,
-        });
-      } else {
-        const esTiendaFret =
-          TIENDAS_FRET.has(order.storeId) ||
-          order.externalId?.startsWith("FR-");
-        results.push({
-          orderNumber: order.orderNumber,
-          status: esTiendaFret ? "fret_en_curso" : "now_en_curso",
-          mlStatus,
+        console.log("[ML webhook] ✅ Cerrado por Flex:", existing.orderNumber);
+        return NextResponse.json({ ok: true, closed_by_flex: true });
+      }
+
+      // ── Actualizar mlShippedAt si Flex escaneó ──
+      if (
+        shipmentStatus === "shipped" &&
+        shipmentSubstatus !== "creating_route" &&
+        shipmentSubstatus !== "ready_to_print"
+      ) {
+        await prisma.order.update({
+          where: { id: existing.id },
+          data: { mlShippedAt: new Date() },
         });
       }
-    } catch (err) {
-      console.error("[ML cron] Error:", order.orderNumber, err);
-    }
-  }
 
-  return NextResponse.json({ ok: true, checked: orders.length, results });
+      const esTiendaFret =
+        TIENDAS_FRET.has(existing.storeId) ||
+        existing.externalId?.startsWith("FR-");
+      console.log(
+        "[ML webhook]",
+        esTiendaFret ? "Tienda Fret" : "Tienda Now",
+        "· solo escaneo registrado (Flex no delivered):",
+        orderId,
+      );
+      return NextResponse.json({ ok: true, updated: true });
+    }
+
+    // ── Pedido nuevo: crear ──
+    if (
+      shipmentStatus === "cancelled" ||
+      shipmentSubstatus === "cancelled" ||
+      mlOrder.status === "cancelled"
+    ) {
+      console.log("[ML webhook] Pedido cancelado, ignorando:", orderId);
+      return NextResponse.json({ ok: true, cancelled: true });
+    }
+
+    // ── Extraer dirección ──
+    let addressStreet = "Sin dirección";
+    let addressComuna = "Sin comuna";
+    let addressRegion = "Región Metropolitana";
+    let addressNotes = "";
+
+    if (shipment?.receiver_address) {
+      const addr = shipment.receiver_address;
+      addressStreet = [addr.street_name, addr.street_number]
+        .filter(Boolean)
+        .join(" ");
+      addressComuna =
+        addr.city?.name ?? addr.municipality?.name ?? "Sin comuna";
+      addressRegion = addr.state?.name ?? "Región Metropolitana";
+      if (addr.comment) addressNotes = addr.comment;
+      console.log("[ML] Dirección obtenida del shipment:", shippingId);
+    }
+
+    const buyer = mlOrder.buyer ?? {};
+    const items = mlOrder.order_items ?? [];
+    const totalBultos = items.reduce(
+      (sum: number, item: any) => sum + (item.quantity ?? 1),
+      0,
+    );
+
+    const { createOrder } = await import("@/lib/services/order.service");
+    await createOrder({
+      storeId: integration.storeId,
+      integrationId: integration.id,
+      platform: "MERCADOLIBRE",
+      sourceId: orderId,
+      customerName:
+        `${buyer.first_name ?? ""} ${buyer.last_name ?? ""}`.trim() ||
+        "Cliente ML",
+      customerPhone: buyer.phone?.number ?? null,
+      customerEmail: buyer.email ?? null,
+      addressStreet,
+      addressComuna,
+      addressRegion,
+      addressNotes,
+      bultos: totalBultos || 1,
+      rawPayload: {
+        ...mlOrder,
+        shipping: shipment ?? mlOrder.shipping,
+        pack_id: mlOrder.pack_id,
+      },
+      createdBy: "webhook",
+    });
+
+    console.log("[ML webhook] ✅ Pedido creado:", orderId);
+    return NextResponse.json({ ok: true, created: true });
+  } catch (err: any) {
+    console.error("[ML webhook] Error:", err.message);
+    return NextResponse.json({ ok: true, error: err.message });
+  }
 }
