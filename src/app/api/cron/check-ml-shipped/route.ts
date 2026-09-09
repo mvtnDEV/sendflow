@@ -35,7 +35,6 @@ export async function GET(req: Request) {
         select: {
           integrations: {
             where: { platform: "MERCADOLIBRE", isActive: true },
-            select: { accessToken: true },
             take: 1,
           },
         },
