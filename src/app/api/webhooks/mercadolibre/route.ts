@@ -1,379 +1,242 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { decrypt, encrypt } from "@/lib/utils/crypto";
-import {
-  fetchMLOrder,
-  extractMLOrderId,
-  refreshMLToken,
-} from "@/lib/integrations/mercadolibre";
-import { upsertOrderFromWebhook } from "@/lib/services/order.service";
-import { notificarEntregaAFret } from "@/lib/services/fret.service";
 
-// ── Tiendas que operan con Fret ──
 const TIENDAS_FRET = new Set([
-  "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess
-  "cmouw44ej0004thpecq6bct35", // Eco pañal
-  "cmouw23l60003thpe1q7f16r3", // Oasis verde
-  "cmpbfadyd00032vgl7klna40b", // Fire Master
-  "cmovurlze000018duer7sffp4", // Protec
+  "cmouw44ej0004thpecq6bct35", // eco pañal
+  "cmouw23l60003thpe1q7f16r3", // oasis verde
+  "cmpbfadyd00032vgl7klna40b", // fire master
+  "cmpk7nslz0006r5e73du6f0kp", // comercial bess
+  "cmovurlze000018duer7sffp4", // protec
+  "cmt2181g800072mm41q6pfsb9", // sigan jugando
 ]);
 
-const SHIPMENT_NO_ENTREGADO = [
-  "not_delivered",
-  "returning",
-  "returned",
-  "lost",
-  "damaged",
-];
-const SUBSTATUS_NO_ENTREGADO = [
-  "receiver_absent",
-  "address_problem",
-  "first_attempt_failed",
-  "second_attempt_failed",
-  "out_of_delivery_hours",
-  "refused_delivery",
-  "stolen",
-];
-const ORDER_TAGS_NO_ENTREGADO = ["not_delivered", "returning", "returned"];
-
-function getMLStatus(order: any, shipment?: any): string | null {
-  const shipStatus = shipment?.status ?? null;
-  const substatus = shipment?.substatus ?? null;
-  const orderStatus = order?.status ?? null;
-  const orderTags = order?.tags ?? [];
-
-  if (shipStatus === "delivered") return "DELIVERED";
-  if (shipStatus === "shipped") return "IN_TRANSIT";
-  // Flex canceló → en Moovex se cierra como NO ENTREGADO (INCIDENT).
-  // "CANCELLED" queda reservado para cancelaciones nuestras o de la tienda.
-  if (shipStatus === "cancelled" || orderStatus === "cancelled")
-    return "INCIDENT";
-  if (SHIPMENT_NO_ENTREGADO.includes(shipStatus)) return "INCIDENT";
-  if (SUBSTATUS_NO_ENTREGADO.includes(substatus)) return "INCIDENT";
-  if (orderTags.some((t: string) => ORDER_TAGS_NO_ENTREGADO.includes(t)))
-    return "INCIDENT";
-
-  return null;
-}
-
 export async function POST(req: NextRequest) {
-  let body: any = null;
+  const body = await req.json();
+  console.log("[ML webhook] body:", JSON.stringify(body).slice(0, 300));
+
+  const topic = body.topic;
+  const resource = body.resource;
+  const userId = body.user_id;
+
+  if (topic !== "orders_v2" || !resource) {
+    return NextResponse.json({ ok: true, ignored: true });
+  }
+
+  const orderId = resource.replace("/orders/", "");
+
+  const integration = await prisma.storeIntegration.findFirst({
+    where: {
+      platform: "MERCADOLIBRE",
+      externalStoreId: String(userId),
+      isActive: true,
+    },
+    select: {
+      id: true,
+      storeId: true,
+      accessToken: true,
+      store: { select: { name: true, puntoRetiroFret: true } },
+    },
+  });
+
+  if (!integration) {
+    console.log("[ML webhook] Integración no encontrada para user:", userId);
+    return NextResponse.json({ ok: true, no_integration: true });
+  }
+
   try {
-    const raw = await req.text();
-    if (!raw || raw.trim() === "") {
-      console.log("[ML webhook] Body vacío, ignorando");
-      return NextResponse.json({ ok: true, skipped: true });
+    const mlRes = await fetch(
+      `https://api.mercadolibre.com/orders/${orderId}`,
+      {
+        headers: { Authorization: `Bearer ${integration.accessToken}` },
+      },
+    );
+
+    if (!mlRes.ok) {
+      console.error("[ML webhook] Error ML API:", mlRes.status);
+      return NextResponse.json({ ok: true, ml_error: mlRes.status });
     }
-    body = JSON.parse(raw);
-  } catch (parseErr) {
-    console.error("[ML webhook] Body no es JSON válido:", parseErr);
-    return NextResponse.json({ ok: true, skipped: true });
-  }
 
-  if (!body) return NextResponse.json({ ok: true, skipped: true });
+    const mlOrder = await mlRes.json();
+    const shippingId = mlOrder.shipping?.id;
 
-  console.log("[ML webhook] body:", JSON.stringify(body));
+    // ── Obtener datos del shipment ──
+    let shipment: any = null;
+    if (shippingId) {
+      try {
+        const shipRes = await fetch(
+          `https://api.mercadolibre.com/shipments/${shippingId}`,
+          {
+            headers: { Authorization: `Bearer ${integration.accessToken}` },
+          },
+        );
+        if (shipRes.ok) shipment = await shipRes.json();
+      } catch {}
+    }
 
-  if (body.topic !== "orders_v2") {
-    return NextResponse.json({ ok: true, skipped: true });
-  }
+    const shipmentStatus = shipment?.status ?? "unknown";
+    const shipmentSubstatus = shipment?.substatus ?? "unknown";
+    console.log(
+      "[ML webhook] Shipment status:",
+      shipmentStatus,
+      "| substatus:",
+      shipmentSubstatus,
+    );
 
-  const orderId = extractMLOrderId(body.resource);
-  if (!orderId) {
-    console.error("[ML webhook] resource inválido:", body.resource);
-    return NextResponse.json({ ok: true, skipped: true });
-  }
-
-  try {
-    const integration = await prisma.storeIntegration.findFirst({
-      where: {
-        platform: "MERCADOLIBRE",
-        externalStoreId: String(body.user_id),
-        isActive: true,
+    // ── Buscar si ya existe el pedido ──
+    const existing = await prisma.order.findFirst({
+      where: { integrationId: integration.id, sourceId: orderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        storeId: true,
+        externalId: true,
+        rawPayload: true,
       },
     });
 
-    if (!integration) {
-      console.error(
-        "[ML webhook] Integración no encontrada para user_id:",
-        body.user_id,
-      );
-      return NextResponse.json({ ok: true, skipped: true });
-    }
-
-    const creds = decrypt(integration.apiKeyEnc);
-    let accessToken: string;
-    let refreshToken: string;
-
-    if (creds.startsWith("{")) {
-      const parsed = JSON.parse(creds);
-      accessToken = parsed.accessToken;
-      refreshToken = parsed.refreshToken;
-    } else {
-      const [at, rt] = creds.split("|");
-      accessToken = at;
-      refreshToken = rt;
-    }
-
-    let token = accessToken;
-    let normalized: any;
-    let rawOrder: any;
-    let rawShipment: any;
-
-    try {
-      const res = await fetch(
-        `https://api.mercadolibre.com/orders/${orderId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        },
-      );
-      if (!res.ok) throw new Error(`ML API ${res.status}`);
-      rawOrder = await res.json();
-
-      if (!rawOrder.shipping?.id) {
-        console.log("[ML webhook] Pedido sin despacho, ignorando:", orderId);
-        return NextResponse.json({ ok: true, skipped: true });
-      }
-
-      const shipRes = await fetch(
-        `https://api.mercadolibre.com/shipments/${rawOrder.shipping.id}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        },
-      );
-      if (shipRes.ok) {
-        rawShipment = await shipRes.json();
-        console.log(
-          "[ML webhook] Shipment status:",
-          rawShipment.status,
-          "| substatus:",
-          rawShipment.substatus,
-        );
-      }
-
-      normalized = await fetchMLOrder(orderId, token);
-    } catch (err: any) {
-      if (err.message?.includes("401") || err.message?.includes("403")) {
-        console.log("[ML webhook] Token expirado, haciendo refresh...");
-        try {
-          const refreshed = await refreshMLToken(refreshToken);
-          token = refreshed.accessToken;
-          await prisma.storeIntegration.update({
-            where: { id: integration.id },
-            data: {
-              apiKeyEnc: encrypt(
-                `${refreshed.accessToken}|${refreshed.refreshToken}`,
-              ),
-            },
-          });
-          normalized = await fetchMLOrder(orderId, token);
-          if (!normalized)
-            return NextResponse.json({ ok: true, skipped: true });
-        } catch (refreshErr) {
-          console.error("[ML webhook] Error en refresh de token:", refreshErr);
-          return NextResponse.json({ ok: true, skipped: true });
-        }
-      } else {
-        console.error("[ML webhook] Error consultando ML API:", err);
-        return NextResponse.json({ ok: true, skipped: true });
-      }
-    }
-
-    if (normalized) {
-      try {
-        await upsertOrderFromWebhook(
-          integration.storeId,
-          integration.id,
-          normalized,
-        );
-      } catch (err: any) {
-        if (err.message?.includes("fuera de zona de despacho")) {
-          console.log(
-            "[ML webhook] Pedido fuera de RM, ignorado:",
-            orderId,
-            "·",
-            err.message.split(":")[1]?.trim(),
-          );
-          return NextResponse.json({
-            ok: true,
-            skipped: true,
-            reason: "fuera_de_zona",
-          });
-        }
-        throw err;
-      }
-    }
-
-    const esTiendaFret = TIENDAS_FRET.has(integration.storeId);
-    const newStatus = getMLStatus(rawOrder, rawShipment);
-
-    // ── LÓGICA PARA TIENDAS FRET ──
-    // Flex cierra entregas (delivered) como respaldo y cierra como no entregado
-    // cuando CANCELA. Los demás no-entregados no tocan el estado: los controla
-    // el operador.
-    if (esTiendaFret) {
-      const existing = await prisma.order.findFirst({
-        where: { integrationId: integration.id, sourceId: String(orderId) },
-        select: { id: true, status: true, orderNumber: true },
-      });
-
-      if (existing) {
-        const dateShipped = rawShipment?.status_history?.date_shipped ?? null;
-        const now = new Date();
-
-        // Registrar escaneo Flex siempre que exista
-        if (dateShipped) {
-          await prisma.order.update({
-            where: { id: existing.id },
-            data: { mlShippedAt: new Date(dateShipped) },
-          });
-        }
-
-        // ── RESPALDO: si Flex dice DELIVERED y el pedido aún no está cerrado → cerrar ──
-        if (newStatus === "DELIVERED" && existing.status !== "DELIVERED") {
-          const fechaEntrega = new Date();
-          await prisma.order.update({
-            where: { id: existing.id },
-            data: {
-              status: "DELIVERED",
-              deliveredAt: fechaEntrega,
-              events: {
-                create: {
-                  status: "DELIVERED",
-                  note: "Flex confirmó entrega (respaldo — Fret no había cerrado)",
-                  createdBy: "ml-webhook",
-                },
-              },
-            },
-          });
-          console.log(
-            "[ML webhook] Tienda Fret · CERRADO por respaldo Flex:",
-            orderId,
-          );
-
-          // ── Avisar a Fret que Flex entregó, para que cierren en su sistema ──
-          const referencia = (existing.orderNumber ?? "").replace("#", "");
-          const shippingId = rawOrder?.shipping?.id;
-          if (referencia) {
-            const fretResp = await notificarEntregaAFret({
-              referencia,
-              shipmentId: shippingId ? String(shippingId) : undefined,
-              fecha: fechaEntrega.toISOString(),
-            });
-            console.log(
-              "[ML webhook] Notificación a Fret:",
-              referencia,
-              "| ok:",
-              fretResp.ok,
-              fretResp.ok ? "" : `| error: ${fretResp.error}`,
-            );
-          }
-        } else if (
-          (rawShipment?.status === "cancelled" ||
-            rawOrder?.status === "cancelled") &&
-          !["DELIVERED", "INCIDENT"].includes(existing.status)
-        ) {
-          // ── Flex CANCELÓ: se cierra como no entregado, aunque sea tienda Fret ──
-          await prisma.order.update({
-            where: { id: existing.id },
-            data: {
-              status: "INCIDENT",
-              events: {
-                create: {
-                  status: "INCIDENT",
-                  note: "ML Flex canceló el envío",
-                  createdBy: "ml-webhook",
-                },
-              },
-            },
-          });
-          console.log(
-            "[ML webhook] Tienda Fret · CERRADO como no entregado (Flex canceló):",
-            orderId,
-          );
-        } else {
-          console.log(
-            "[ML webhook] Tienda Fret · solo escaneo registrado (Flex no delivered):",
-            orderId,
-          );
-        }
-      }
-
-      await prisma.storeIntegration.update({
-        where: { id: integration.id },
-        data: { lastSyncAt: new Date() },
-      });
-      return NextResponse.json({ ok: true });
-    }
-
-    // ── LÓGICA PARA TIENDAS NOW (resto) — sin cambios ──
-    if (
-      newStatus &&
-      ["DELIVERED", "INCIDENT", "CANCELLED"].includes(newStatus)
-    ) {
-      const existing = await prisma.order.findFirst({
-        where: { integrationId: integration.id, sourceId: String(orderId) },
-        select: { id: true, status: true },
-      });
-
-      if (
-        existing &&
-        existing.status !== newStatus &&
-        existing.status !== "DELIVERED"
-      ) {
-        const now = new Date();
-        const dateShipped = rawShipment?.status_history?.date_shipped ?? null;
-        const motivo =
-          rawShipment?.substatus ??
-          rawOrder?.tags?.find((t: string) =>
-            ORDER_TAGS_NO_ENTREGADO.includes(t),
-          ) ??
-          newStatus;
+    if (existing) {
+      // ── Pedido existente: verificar si Flex lo cerró ──
+      if (shipmentStatus === "delivered" && existing.status !== "DELIVERED") {
+        const deliveredDate =
+          shipment?.status_history?.date_delivered ?? new Date().toISOString();
 
         await prisma.order.update({
           where: { id: existing.id },
           data: {
-            status: newStatus as any,
-            ...(newStatus === "DELIVERED" && { deliveredAt: now }),
-            ...(dateShipped && { mlShippedAt: new Date(dateShipped) }),
+            status: "DELIVERED",
+            deliveredAt: new Date(deliveredDate),
+            mlShippedAt: new Date(),
             events: {
               create: {
-                status: newStatus as any,
-                note:
-                  rawShipment?.status === "cancelled" ||
-                  rawOrder?.status === "cancelled"
-                    ? "ML Flex canceló el envío"
-                    : newStatus === "INCIDENT"
-                      ? `ML Flex · No entregado · ${motivo}`
-                      : `ML Flex · Estado actualizado a ${newStatus}`,
+                status: "DELIVERED",
+                note: "Entrega confirmada por Moovex (Flex)",
                 createdBy: "ml-webhook",
               },
             },
           },
         });
-        console.log(
-          "[ML webhook] Estado actualizado:",
-          orderId,
-          "->",
-          newStatus,
-          "| motivo:",
-          motivo,
-        );
+
+        // ── Notificar a Fret ──
+        if (
+          TIENDAS_FRET.has(existing.storeId) ||
+          existing.externalId?.startsWith("FR-")
+        ) {
+          try {
+            const { notificarEntregaAFret } =
+              await import("@/lib/services/fret.service");
+            await notificarEntregaAFret({
+              referencia: existing.orderNumber.replace("#", ""),
+              shipmentId: shippingId ? String(shippingId) : null,
+              fecha: deliveredDate,
+            });
+          } catch (err) {
+            console.error(
+              "[ML webhook] Error notificando a Fret:",
+              existing.orderNumber,
+              err,
+            );
+          }
+        }
+
+        try {
+          const { notifyWebhooks } =
+            await import("@/lib/services/webhook.service");
+          await notifyWebhooks(existing.id, "DELIVERED", existing.status);
+        } catch {}
+
+        console.log("[ML webhook] ✅ Cerrado por Flex:", existing.orderNumber);
+        return NextResponse.json({ ok: true, closed_by_flex: true });
       }
+
+      // ── Actualizar mlShippedAt si Flex escaneó ──
+      if (
+        shipmentStatus === "shipped" &&
+        shipmentSubstatus !== "creating_route" &&
+        shipmentSubstatus !== "ready_to_print"
+      ) {
+        await prisma.order.update({
+          where: { id: existing.id },
+          data: { mlShippedAt: new Date() },
+        });
+      }
+
+      const esTiendaFret =
+        TIENDAS_FRET.has(existing.storeId) ||
+        existing.externalId?.startsWith("FR-");
+      console.log(
+        "[ML webhook]",
+        esTiendaFret ? "Tienda Fret" : "Tienda Now",
+        "· solo escaneo registrado (Flex no delivered):",
+        orderId,
+      );
+      return NextResponse.json({ ok: true, updated: true });
     }
 
-    await prisma.storeIntegration.update({
-      where: { id: integration.id },
-      data: { lastSyncAt: new Date() },
+    // ── Pedido nuevo: crear ──
+    if (
+      shipmentStatus === "cancelled" ||
+      shipmentSubstatus === "cancelled" ||
+      mlOrder.status === "cancelled"
+    ) {
+      console.log("[ML webhook] Pedido cancelado, ignorando:", orderId);
+      return NextResponse.json({ ok: true, cancelled: true });
+    }
+
+    // ── Extraer dirección ──
+    let addressStreet = "Sin dirección";
+    let addressComuna = "Sin comuna";
+    let addressRegion = "Región Metropolitana";
+    let addressNotes = "";
+
+    if (shipment?.receiver_address) {
+      const addr = shipment.receiver_address;
+      addressStreet = [addr.street_name, addr.street_number]
+        .filter(Boolean)
+        .join(" ");
+      addressComuna =
+        addr.city?.name ?? addr.municipality?.name ?? "Sin comuna";
+      addressRegion = addr.state?.name ?? "Región Metropolitana";
+      if (addr.comment) addressNotes = addr.comment;
+      console.log("[ML] Dirección obtenida del shipment:", shippingId);
+    }
+
+    const buyer = mlOrder.buyer ?? {};
+    const items = mlOrder.order_items ?? [];
+    const totalBultos = items.reduce(
+      (sum: number, item: any) => sum + (item.quantity ?? 1),
+      0,
+    );
+
+    const { createOrder } = await import("@/lib/services/order.service");
+    await createOrder({
+      storeId: integration.storeId,
+      integrationId: integration.id,
+      platform: "MERCADOLIBRE",
+      sourceId: orderId,
+      customerName:
+        `${buyer.first_name ?? ""} ${buyer.last_name ?? ""}`.trim() ||
+        "Cliente ML",
+      customerPhone: buyer.phone?.number ?? null,
+      customerEmail: buyer.email ?? null,
+      addressStreet,
+      addressComuna,
+      addressRegion,
+      addressNotes,
+      bultos: totalBultos || 1,
+      rawPayload: {
+        ...mlOrder,
+        shipping: shipment ?? mlOrder.shipping,
+        pack_id: mlOrder.pack_id,
+      },
+      createdBy: "webhook",
     });
 
-    return NextResponse.json({ ok: true });
+    console.log("[ML webhook] ✅ Pedido creado:", orderId);
+    return NextResponse.json({ ok: true, created: true });
   } catch (err: any) {
-    console.error("[ML webhook] Error interno:", err);
-    return NextResponse.json({ ok: true, error: "handled" });
+    console.error("[ML webhook] Error:", err.message);
+    return NextResponse.json({ ok: true, error: err.message });
   }
 }
-
