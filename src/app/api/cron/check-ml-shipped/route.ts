@@ -31,14 +31,6 @@ export async function GET(req: Request) {
       status: true,
       externalId: true,
       rawPayload: true,
-      store: {
-        select: {
-          integrations: {
-            where: { platform: "MERCADOLIBRE", isActive: true },
-            take: 1,
-          },
-        },
-      },
     },
     take: 30,
     orderBy: { createdAt: "asc" },
@@ -47,7 +39,15 @@ export async function GET(req: Request) {
   const results: any[] = [];
 
   for (const order of orders) {
-    const token = order.store?.integrations?.[0]?.accessToken;
+    const integration = await prisma.storeIntegration.findFirst({
+      where: {
+        storeId: order.storeId,
+        platform: "MERCADOLIBRE",
+        isActive: true,
+      },
+    });
+    const token =
+      (integration as any)?.accessToken ?? (integration as any)?.apiKeyEnc;
     if (!token) continue;
 
     try {
