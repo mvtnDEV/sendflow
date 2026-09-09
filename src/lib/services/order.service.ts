@@ -146,7 +146,7 @@ export async function createOrder(input: CreateOrderInput) {
           select: { externalId: true, orderNumber: true },
         });
 
-                if (hermana) {
+        if (hermana) {
           // Si la hermana YA tiene FR-, agrupar y no enviar
           if (hermana.externalId?.startsWith("FR-")) {
             if (!preservarExternalId) {
@@ -161,7 +161,9 @@ export async function createOrder(input: CreateOrderInput) {
               "→ mismo FR que",
               hermana.orderNumber,
               `(${hermana.externalId})`,
-              preservarExternalId ? `(externalId preservado: ${fresh?.externalId})` : "",
+              preservarExternalId
+                ? `(externalId preservado: ${fresh?.externalId})`
+                : "",
             );
             return order;
           }
@@ -175,6 +177,7 @@ export async function createOrder(input: CreateOrderInput) {
             "a Fret",
           );
         }
+      }
 
       const { toFretPayload, createFretOrders } =
         await import("./fret.service");
