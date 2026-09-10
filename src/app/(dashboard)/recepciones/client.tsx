@@ -444,7 +444,7 @@ export default function RecepcionesClient({
                 ? `⏳ Recepcionando…`
                 : `📥 Recepcionar Now (${selected.size > 0 ? selected.size : pendientes.length})`}
             </button>
-            {isSuperAdmin && esSenby && (
+            {isSuperAdmin && pendientes.length > 0 && (
               <button
                 onClick={enviarAFretSeleccionados}
                 disabled={loadingFret}
