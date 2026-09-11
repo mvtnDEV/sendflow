@@ -146,7 +146,6 @@ export async function createOrder(input: CreateOrderInput) {
         });
 
         if (hermana) {
-          // Si la hermana YA tiene FR-, agrupar y no enviar
           if (hermana.externalId?.startsWith("FR-")) {
             if (!preservarExternalId) {
               await prisma.order.update({
@@ -160,21 +159,18 @@ export async function createOrder(input: CreateOrderInput) {
               "→ mismo FR que",
               hermana.orderNumber,
               `(${hermana.externalId})`,
-              preservarExternalId
-                ? `(externalId preservado: ${fresh?.externalId})`
-                : "",
             );
             return order;
           }
-          // Si la hermana NO tiene FR-, enviar ESTA orden a Fret
-          // (la hermana falló o aún no terminó — al menos una debe llegar)
+          // Hermana sin FR- — no enviar, el retry-fret lo resolverá con bultos sumados
           console.log(
-            "[Fret] 📦 Pack: hermana",
-            hermana.orderNumber,
-            "sin FR- — enviando",
+            "[Fret] 📦 Pack:",
             order.orderNumber,
-            "a Fret",
+            "— hermana",
+            hermana.orderNumber,
+            "sin FR-, esperando retry-fret",
           );
+          return order;
         }
       }
 

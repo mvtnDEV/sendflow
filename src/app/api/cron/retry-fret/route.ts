@@ -45,7 +45,7 @@ export async function GET(req: Request) {
   const { toFretPayload, createFretOrders } =
     await import("@/lib/services/fret.service");
   const results: any[] = [];
-  const shippingEnviados = new Set<string>();
+  const shippingProcesados = new Set<string>();
 
   for (const order of orders) {
     try {
@@ -56,9 +56,12 @@ export async function GET(req: Request) {
 
       // ── Pack grouping ──
       if (shippingId && order.platform === "MERCADOLIBRE") {
-        if (shippingEnviados.has(String(shippingId))) {
+        const shippingKey = String(shippingId);
+
+        // Ya procesamos este shipping en este batch
+        if (shippingProcesados.has(shippingKey)) {
           const hermanaResult = results.find(
-            (r) => r.shippingId === String(shippingId) && r.fr,
+            (r) => r.shippingId === shippingKey && r.fr,
           );
           if (hermanaResult && !preservar) {
             await prisma.order.update({
@@ -74,9 +77,9 @@ export async function GET(req: Request) {
           continue;
         }
 
-        const hermana = await prisma.order.findFirst({
+        // Verificar si ya existe hermana con FR- en la base
+        const hermanaConFR = await prisma.order.findFirst({
           where: {
-            id: { not: order.id },
             platform: "MERCADOLIBRE",
             externalId: { startsWith: "FR-" },
             rawPayload: {
@@ -87,24 +90,126 @@ export async function GET(req: Request) {
           select: { externalId: true },
         });
 
-        if (hermana?.externalId) {
+        if (hermanaConFR?.externalId) {
           if (!preservar) {
             await prisma.order.update({
               where: { id: order.id },
-              data: { externalId: hermana.externalId },
+              data: { externalId: hermanaConFR.externalId },
             });
           }
           results.push({
             orderNumber: order.orderNumber,
             status: "pack_existente",
-            fr: hermana.externalId,
+            fr: hermanaConFR.externalId,
           });
           continue;
         }
 
-        shippingEnviados.add(String(shippingId));
+        // ── Sumar bultos de todo el pack ──
+        const packOrders = await prisma.order.findMany({
+          where: {
+            platform: "MERCADOLIBRE",
+            rawPayload: {
+              path: ["shipping", "id"],
+              equals: Number(shippingId),
+            },
+          },
+          select: { id: true, orderNumber: true, bultos: true },
+        });
+
+        const bultosTotal = packOrders.reduce((sum, o) => sum + o.bultos, 0);
+        shippingProcesados.add(shippingKey);
+
+        console.log(
+          "[Retry Fret] 📦 Pack detectado:",
+          shippingKey,
+          "→",
+          packOrders.length,
+          "ventas,",
+          bultosTotal,
+          "bultos totales, enviando como 1 pedido",
+        );
+
+        // ── Enviar 1 solo pedido a Fret con bultos sumados ──
+        const payload = toFretPayload({
+          orderNumber: order.orderNumber,
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          customerEmail: order.customerEmail,
+          addressStreet: order.addressStreet,
+          addressComuna: order.addressComuna,
+          addressNotes: order.addressNotes,
+          bultos: bultosTotal,
+          qrCode: order.qrCode,
+          sourceId: order.sourceId,
+          platform: String(order.platform),
+          puntoRetiroFret: order.store?.puntoRetiroFret ?? null,
+          subStoreName: order.subStoreName,
+          rawPayload: order.rawPayload,
+        });
+
+        const result = await createFretOrders([payload]);
+
+        if (result.ok && (result.created[0] || result.duplicated[0])) {
+          const frCode =
+            result.created[0]?.order_code ?? result.duplicated[0]?.order_code;
+
+          // Propagar FR- a TODAS las órdenes del pack
+          await prisma.order.updateMany({
+            where: {
+              platform: "MERCADOLIBRE",
+              rawPayload: {
+                path: ["shipping", "id"],
+                equals: Number(shippingId),
+              },
+              OR: [
+                { externalId: null },
+                { externalId: { not: { startsWith: "FR-" } } },
+              ],
+            },
+            data: { externalId: frCode },
+          });
+
+          console.log(
+            "[Retry Fret] ✅ Pack enviado:",
+            order.orderNumber,
+            "→",
+            frCode,
+            `(${packOrders.length} ventas, ${bultosTotal} bultos)`,
+          );
+
+          // Registrar resultado para cada orden del pack
+          for (const po of packOrders) {
+            results.push({
+              orderNumber: po.orderNumber,
+              status:
+                po.id === order.id
+                  ? result.created[0]
+                    ? "created"
+                    : "duplicated"
+                  : "pack_agrupado",
+              fr: frCode,
+              tienda: order.store?.name,
+              shippingId: shippingKey,
+              bultosTotal,
+            });
+          }
+        } else {
+          console.warn(
+            "[Retry Fret] ❌ Pack falló:",
+            order.orderNumber,
+            result.error ?? result.rejected?.[0]?.detail,
+          );
+          results.push({
+            orderNumber: order.orderNumber,
+            status: "error",
+            detail: result.error ?? result.rejected?.[0]?.detail,
+          });
+        }
+        continue;
       }
 
+      // ── Pedido individual (no pack) ──
       const payload = toFretPayload({
         orderNumber: order.orderNumber,
         customerName: order.customerName,
@@ -142,7 +247,6 @@ export async function GET(req: Request) {
           status: "created",
           fr: result.created[0].order_code,
           tienda: order.store?.name,
-          shippingId: shippingId ? String(shippingId) : null,
         });
       } else if (result.duplicated[0]) {
         if (!preservar) {
@@ -184,7 +288,9 @@ export async function GET(req: Request) {
     sent: results.filter(
       (r) => r.status === "created" || r.status === "duplicated",
     ).length,
-    packs: results.filter((r) => r.status.startsWith("pack_")).length,
+    packs: results.filter(
+      (r) => r.status === "pack_agrupado" || r.status === "pack_existente",
+    ).length,
     results,
   });
 }
