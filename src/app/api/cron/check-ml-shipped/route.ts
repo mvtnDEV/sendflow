@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { decrypt } from "@/lib/utils/crypto";
 
 const TIENDAS_FRET = new Set([
   "cmouw44ej0004thpecq6bct35", // eco pañal
@@ -47,7 +48,14 @@ export async function GET(req: Request) {
       },
     });
     if (!integration) continue;
-    const token = (integration as any).apiKeyEnc;
+
+    // ── Desencriptar token ──
+    let token: string;
+    try {
+      token = decrypt((integration as any).apiKeyEnc);
+    } catch {
+      token = (integration as any).apiKeyEnc;
+    }
     if (!token) continue;
 
     try {
@@ -64,7 +72,6 @@ export async function GET(req: Request) {
       const mlOrder = await res.json();
       const shippingId = (order.rawPayload as any)?.shipping?.id;
 
-      // ── Obtener shipment para status más preciso ──
       let shipment: any = null;
       if (shippingId) {
         try {
@@ -99,7 +106,6 @@ export async function GET(req: Request) {
           },
         });
 
-        // ── Notificar a Fret ──
         if (
           TIENDAS_FRET.has(order.storeId) ||
           order.externalId?.startsWith("FR-")
@@ -135,7 +141,6 @@ export async function GET(req: Request) {
           mlStatus,
         });
       } else if (mlStatus === "shipped") {
-        // ── Actualizar mlShippedAt si no estaba ──
         await prisma.order.update({
           where: { id: order.id },
           data: { mlShippedAt: new Date() },

@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { decrypt } from "@/lib/utils/crypto";
 
 const TIENDAS_FRET = new Set([
   "cmouw44ej0004thpecq6bct35", // eco pañal
@@ -44,27 +45,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, no_integration: true });
   }
 
-  // ── Obtener token ──
-  let token = integration.apiKeyEnc;
-
-  // Si el token está encriptado (no empieza con APP_USR-), intentar desencriptar
-  if (!token.startsWith("APP_USR-")) {
-    try {
-      const { decrypt } = await import("@/lib/utils/crypto");
-      const decrypted = decrypt(token);
-      // Puede ser JSON con accessToken o string directo
-      if (decrypted.startsWith("{")) {
-        const parsed = JSON.parse(decrypted);
-        token = parsed.accessToken ?? parsed.access_token ?? decrypted;
-      } else if (decrypted.includes("|")) {
-        token = decrypted.split("|")[0];
-      } else {
-        token = decrypted;
-      }
-    } catch {
-      // Si falla decrypt, usar el token tal cual
-      console.log("[ML webhook] Token sin decrypt, usando directo");
-    }
+  // ── Desencriptar token ──
+  let token: string;
+  try {
+    token = decrypt(integration.apiKeyEnc);
+  } catch {
+    token = integration.apiKeyEnc;
+    console.warn("[ML webhook] No se pudo desencriptar token, usando directo");
   }
 
   try {
@@ -88,7 +75,6 @@ export async function POST(req: NextRequest) {
     const mlOrder = await mlRes.json();
     const shippingId = mlOrder.shipping?.id;
 
-    // ── Obtener datos del shipment ──
     let shipment: any = null;
     if (shippingId) {
       try {
@@ -111,7 +97,6 @@ export async function POST(req: NextRequest) {
       shipmentSubstatus,
     );
 
-    // ── Buscar si ya existe el pedido ──
     const existing = await prisma.order.findFirst({
       where: { integrationId: integration.id, sourceId: orderId },
       select: {
@@ -125,7 +110,6 @@ export async function POST(req: NextRequest) {
     });
 
     if (existing) {
-      // ── Pedido existente: verificar si Flex lo cerró ──
       if (shipmentStatus === "delivered" && existing.status !== "DELIVERED") {
         const deliveredDate =
           shipment?.status_history?.date_delivered ?? new Date().toISOString();
@@ -146,7 +130,6 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        // ── Notificar a Fret ──
         if (
           TIENDAS_FRET.has(existing.storeId) ||
           existing.externalId?.startsWith("FR-")
@@ -182,7 +165,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, closed_by_flex: true });
       }
 
-      // ── Actualizar mlShippedAt si Flex escaneó ──
       if (
         shipmentStatus === "shipped" &&
         shipmentSubstatus !== "creating_route" &&
@@ -206,7 +188,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, updated: true });
     }
 
-    // ── Pedido nuevo: crear ──
     if (
       shipmentStatus === "cancelled" ||
       shipmentSubstatus === "cancelled" ||
@@ -216,7 +197,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, cancelled: true });
     }
 
-    // ── Extraer dirección ──
     let addressStreet = "Sin dirección";
     let addressComuna = "Sin comuna";
     let addressRegion = "Región Metropolitana";
