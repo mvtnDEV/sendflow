@@ -72,7 +72,6 @@ model Store {
   integrations       StoreIntegration[]
   orders             Order[]
   apiKeys            ApiKey[]
-  refreshToken       String?
   @@map("stores")
 }
 model StoreIntegration {
@@ -90,6 +89,7 @@ model StoreIntegration {
   syncLogs SyncLog[]
   @@unique([storeId, platform])
   @@map("store_integrations")
+    refreshToken       String?
 }
 model Order {
   id              String      @id @default(cuid())
