@@ -72,6 +72,7 @@ model Store {
   integrations       StoreIntegration[]
   orders             Order[]
   apiKeys            ApiKey[]
+  refreshToken       String?
   @@map("stores")
 }
 model StoreIntegration {
