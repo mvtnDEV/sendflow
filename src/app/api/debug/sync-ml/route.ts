@@ -22,7 +22,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "decrypt failed" });
   }
 
-  // ── Verificar token ──
   const testRes = await fetch("https://api.mercadolibre.com/users/me", {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -31,7 +30,6 @@ export async function GET(req: NextRequest) {
   }
   const mlUser = await testRes.json();
 
-  // ── Buscar órdenes recientes de ML ──
   const dateFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const results: any[] = [];
   let offset = 0;
@@ -55,24 +53,30 @@ export async function GET(req: NextRequest) {
     for (const mlOrder of orders) {
       const orderId = String(mlOrder.id);
 
-      // ── Verificar si ya existe ──
       const existing = await prisma.order.findFirst({
         where: { integrationId: integration.id, sourceId: orderId },
-        select: { id: true, orderNumber: true },
+        select: { id: true, orderNumber: true, customerName: true, addressStreet: true, addressComuna: true, externalId: true, status: true },
       });
 
       if (existing) {
-        results.push({ orderId, status: "ya_existe", orderNumber: existing.orderNumber });
+        results.push({
+          orderId,
+          status: "ya_existe",
+          orderNumber: existing.orderNumber,
+          cliente: existing.customerName,
+          direccion: existing.addressStreet,
+          comuna: existing.addressComuna,
+          fret: existing.externalId,
+          estado: existing.status,
+        });
         continue;
       }
 
-      // ── Verificar si está cancelado ──
       if (mlOrder.status === "cancelled") {
         results.push({ orderId, status: "cancelado" });
         continue;
       }
 
-      // ── Obtener shipment ──
       const shippingId = mlOrder.shipping?.id;
       let shipment: any = null;
       if (shippingId) {
@@ -91,7 +95,6 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // ── Extraer dirección ──
       let addressStreet = "Sin dirección";
       let addressComuna = "Sin comuna";
       let addressRegion = "Región Metropolitana";
@@ -140,6 +143,7 @@ export async function GET(req: NextRequest) {
           status: "creado",
           orderNumber: order.orderNumber,
           cliente: order.customerName,
+          direccion: addressStreet,
           comuna: addressComuna,
         });
       } catch (err: any) {
