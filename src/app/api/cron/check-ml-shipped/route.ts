@@ -18,11 +18,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const tresDiasAtras = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+
   const orders = await prisma.order.findMany({
     where: {
       platform: "MERCADOLIBRE",
       status: { in: ["PENDING", "RECEIVED", "IN_TRANSIT"] },
       sourceId: { not: null },
+      createdAt: { gte: tresDiasAtras },
     },
     select: {
       id: true,
