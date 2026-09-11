@@ -1,16 +1,58 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { decrypt } from "@/lib/utils/crypto";
+import { decrypt, encrypt } from "@/lib/utils/crypto";
+import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 
 const TIENDAS_FRET = new Set([
-  "cmouw44ej0004thpecq6bct35", // eco pañal
-  "cmouw23l60003thpe1q7f16r3", // oasis verde
-  "cmpbfadyd00032vgl7klna40b", // fire master
-  "cmpk7nslz0006r5e73du6f0kp", // comercial bess
-  "cmovurlze000018duer7sffp4", // protec
-  "cmt2181g800072mm41q6pfsb9", // sigan jugando
+  "cmouw44ej0004thpecq6bct35",
+  "cmouw23l60003thpe1q7f16r3",
+  "cmpbfadyd00032vgl7klna40b",
+  "cmpk7nslz0006r5e73du6f0kp",
+  "cmovurlze000018duer7sffp4",
+  "cmt2181g800072mm41q6pfsb9",
 ]);
+
+async function getToken(integration: {
+  id: string;
+  apiKeyEnc: string;
+}): Promise<string> {
+  const creds = decrypt(integration.apiKeyEnc);
+  let accessToken: string;
+  let refreshToken: string;
+
+  if (creds.startsWith("{")) {
+    const parsed = JSON.parse(creds);
+    accessToken = parsed.accessToken;
+    refreshToken = parsed.refreshToken;
+  } else {
+    [accessToken, refreshToken] = creds.split("|");
+  }
+
+  // Verificar si funciona
+  const test = await fetch("https://api.mercadolibre.com/users/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (test.status === 401 || test.status === 403) {
+    // Renovar
+    const refreshed = await refreshMLToken(refreshToken);
+    await prisma.storeIntegration.update({
+      where: { id: integration.id },
+      data: {
+        apiKeyEnc: encrypt(
+          `${refreshed.accessToken}|${refreshed.refreshToken}`,
+        ),
+        refreshToken: refreshed.refreshToken,
+        lastSyncAt: new Date(),
+      },
+    });
+    console.log("[ML webhook] 🔄 Token renovado automáticamente");
+    return refreshed.accessToken;
+  }
+
+  return accessToken;
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -45,33 +87,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, no_integration: true });
   }
 
-  // ── Desencriptar token ──
   let token: string;
   try {
-    const decrypted = decrypt(integration.apiKeyEnc);
-    token = decrypted.includes("|") ? decrypted.split("|")[0] : decrypted;
-    console.log(
-      "[ML webhook] Token OK, empieza:",
-      token.substring(0, 8),
-      "| tienda:",
-      integration.store?.name,
-    );
+    token = await getToken(integration);
   } catch (err: any) {
-    token = integration.apiKeyEnc;
     console.error(
-      "[ML webhook] ❌ DECRYPT FALLÓ:",
-      err.message,
-      "| tienda:",
+      "[ML webhook] ❌ Error obteniendo token:",
       integration.store?.name,
+      err.message,
     );
+    return NextResponse.json({ ok: true, token_error: err.message });
   }
 
   try {
     const mlRes = await fetch(
       `https://api.mercadolibre.com/orders/${orderId}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
+      { headers: { Authorization: `Bearer ${token}` } },
     );
 
     if (!mlRes.ok) {
@@ -92,9 +123,7 @@ export async function POST(req: NextRequest) {
       try {
         const shipRes = await fetch(
           `https://api.mercadolibre.com/shipments/${shippingId}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         if (shipRes.ok) shipment = await shipRes.json();
       } catch {}

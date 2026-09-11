@@ -1,16 +1,71 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { decrypt } from "@/lib/utils/crypto";
+import { decrypt, encrypt } from "@/lib/utils/crypto";
+import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 
 const TIENDAS_FRET = new Set([
-  "cmouw44ej0004thpecq6bct35", // eco pañal
-  "cmouw23l60003thpe1q7f16r3", // oasis verde
-  "cmpbfadyd00032vgl7klna40b", // fire master
-  "cmpk7nslz0006r5e73du6f0kp", // comercial bess
-  "cmovurlze000018duer7sffp4", // protec
-  "cmt2181g800072mm41q6pfsb9", // sigan jugando
+  "cmouw44ej0004thpecq6bct35",
+  "cmouw23l60003thpe1q7f16r3",
+  "cmpbfadyd00032vgl7klna40b",
+  "cmpk7nslz0006r5e73du6f0kp",
+  "cmovurlze000018duer7sffp4",
+  "cmt2181g800072mm41q6pfsb9",
 ]);
+
+// Cache de tokens ya renovados en esta ejecución
+const tokenCache = new Map<string, string>();
+
+async function getTokenForStore(storeId: string): Promise<string | null> {
+  if (tokenCache.has(storeId)) return tokenCache.get(storeId)!;
+
+  const integration = await prisma.storeIntegration.findFirst({
+    where: { storeId, platform: "MERCADOLIBRE", isActive: true },
+  });
+  if (!integration) return null;
+
+  const creds = decrypt(integration.apiKeyEnc);
+  let accessToken: string;
+  let refreshToken: string;
+
+  if (creds.startsWith("{")) {
+    const parsed = JSON.parse(creds);
+    accessToken = parsed.accessToken;
+    refreshToken = parsed.refreshToken;
+  } else {
+    [accessToken, refreshToken] = creds.split("|");
+  }
+
+  // Test token
+  const test = await fetch("https://api.mercadolibre.com/users/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (test.status === 401 || test.status === 403) {
+    try {
+      const refreshed = await refreshMLToken(refreshToken);
+      await prisma.storeIntegration.update({
+        where: { id: integration.id },
+        data: {
+          apiKeyEnc: encrypt(
+            `${refreshed.accessToken}|${refreshed.refreshToken}`,
+          ),
+          refreshToken: refreshed.refreshToken,
+          lastSyncAt: new Date(),
+        },
+      });
+      console.log("[ML cron] 🔄 Token renovado para storeId:", storeId);
+      tokenCache.set(storeId, refreshed.accessToken);
+      return refreshed.accessToken;
+    } catch (err: any) {
+      console.error("[ML cron] ❌ Refresh falló:", storeId, err.message);
+      return null;
+    }
+  }
+
+  tokenCache.set(storeId, accessToken);
+  return accessToken;
+}
 
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization");
@@ -43,30 +98,7 @@ export async function GET(req: Request) {
   const results: any[] = [];
 
   for (const order of orders) {
-    const integration = await prisma.storeIntegration.findFirst({
-      where: {
-        storeId: order.storeId,
-        platform: "MERCADOLIBRE",
-        isActive: true,
-      },
-    });
-    if (!integration) continue;
-
-    // ── Desencriptar token ──
-    let token: string;
-    try {
-      const decrypted = decrypt((integration as any).apiKeyEnc);
-      token = decrypted.includes("|") ? decrypted.split("|")[0] : decrypted;
-      console.log(
-        "[ML cron] Token OK:",
-        order.orderNumber,
-        "empieza:",
-        token.substring(0, 8),
-      );
-    } catch (err: any) {
-      token = (integration as any).apiKeyEnc;
-      console.error("[ML cron] ❌ DECRYPT FALLÓ:", err.message);
-    }
+    const token = await getTokenForStore(order.storeId);
     if (!token) continue;
 
     try {
