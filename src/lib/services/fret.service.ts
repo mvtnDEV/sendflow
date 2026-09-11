@@ -1,11 +1,8 @@
 const FRET_API_BASE =
   "https://bqdrjwyqptqdidyjumdv.supabase.co/functions/v1/merchant-api";
 
-// ── Ya no se usa mapeo por sub-tienda ──
-// Todas las sub-tiendas de Senby usan el puntoRetiroFret de la tienda ('sendby')
 const SUBSTORENAME_TO_PUNTO_RETIRO: Record<string, string> = {};
 
-// ── Puntos de retiro que ya tienen pedidos en bodega (no requieren retiro) ──
 const PUNTOS_EN_BODEGA = new Set(["sendby"]);
 
 function getFretApiKey(): string {
@@ -65,9 +62,6 @@ export function toFretPayload(order: {
       ? `+56${rawPhone}`
       : "+56912345678";
 
-  // ── QR que escaneará el conductor de Fret ──
-  // ML Flex: usa shipment_id (shipping.id).
-  // Resto: usa qrCode interno de Moovex (mn_XXXXXXXX).
   const shippingId = (order.rawPayload as any)?.shipping?.id;
   const qr_code =
     order.platform === "MERCADOLIBRE"
@@ -76,15 +70,11 @@ export function toFretPayload(order: {
         : (order.sourceId ?? order.qrCode)
       : order.qrCode;
 
-  // ── Punto de retiro ──
-  // Prioridad: puntoRetiroFret de la tienda > subStoreName mapping
-  // Senby siempre usa 'sendby' porque tiene puntoRetiroFret seteado.
   const punto_retiro =
     order.puntoRetiroFret ||
     (order.subStoreName && SUBSTORENAME_TO_PUNTO_RETIRO[order.subStoreName]) ||
     undefined;
 
-  // ── en_bodega: true para puntos que ya tienen los pedidos en bodega ──
   const esBodega = !!(punto_retiro && PUNTOS_EN_BODEGA.has(punto_retiro));
 
   return {
@@ -93,7 +83,7 @@ export function toFretPayload(order: {
     telefono: phone,
     direccion: order.addressStreet,
     comuna: order.addressComuna,
-    ...(order.bultos === 1 && qr_code ? { qr_code } : {}),
+    ...(qr_code ? { qr_code } : {}),
     bultos: order.bultos,
     ...(punto_retiro && { punto_retiro }),
     ...(esBodega && { en_bodega: true }),
@@ -155,7 +145,6 @@ export async function createFretOrders(
   }
 }
 
-// ── Notificar a Fret que Flex cerró la entrega ──
 export async function notificarEntregaAFret(params: {
   referencia: string;
   shipmentId?: string | null;
