@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { decrypt, encrypt } from "@/lib/utils/crypto";
 
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization");
@@ -17,9 +18,25 @@ export async function GET(req: Request) {
 
   for (const int of integrations) {
     try {
-      // Verificar si el token actual funciona
+      // ── Desencriptar y extraer access_token ──
+      let accessToken: string;
+      let refreshToken: string | null = int.refreshToken ?? null;
+
+      try {
+        const decrypted = decrypt(int.apiKeyEnc);
+        if (decrypted.includes("|")) {
+          accessToken = decrypted.split("|")[0];
+          if (!refreshToken) refreshToken = decrypted.split("|")[1] ?? null;
+        } else {
+          accessToken = decrypted;
+        }
+      } catch {
+        accessToken = int.apiKeyEnc;
+      }
+
+      // ── Verificar si el token actual funciona ──
       const testRes = await fetch("https://api.mercadolibre.com/users/me", {
-        headers: { Authorization: `Bearer ${int.apiKeyEnc}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
 
       if (testRes.ok) {
@@ -27,8 +44,7 @@ export async function GET(req: Request) {
         continue;
       }
 
-      // Token expirado — intentar refresh
-      const refreshToken = (int as any).refreshToken;
+      // ── Token expirado — intentar refresh ──
       if (!refreshToken) {
         console.warn(
           "[ML Refresh] ⚠️ Token expirado SIN refresh_token:",
@@ -40,20 +56,22 @@ export async function GET(req: Request) {
 
       const res = await fetch("https://api.mercadolibre.com/oauth/token", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
           grant_type: "refresh_token",
-          client_id: process.env.ML_APP_ID,
-          client_secret: process.env.ML_APP_SECRET,
+          client_id: process.env.ML_CLIENT_ID!,
+          client_secret: process.env.ML_CLIENT_SECRET!,
           refresh_token: refreshToken,
         }),
       });
 
       if (!res.ok) {
+        const err = await res.text();
         console.error(
           "[ML Refresh] ❌ Error renovando:",
           int.store.name,
           res.status,
+          err,
         );
         results.push({
           store: int.store.name,
@@ -64,10 +82,13 @@ export async function GET(req: Request) {
       }
 
       const data = await res.json();
+      const newCredentials = `${data.access_token}|${data.refresh_token}`;
+
       await prisma.storeIntegration.update({
         where: { id: int.id },
         data: {
-          apiKeyEnc: data.access_token,
+          apiKeyEnc: encrypt(newCredentials),
+          refreshToken: data.refresh_token ?? refreshToken,
           lastSyncAt: new Date(),
         },
       });
@@ -75,6 +96,7 @@ export async function GET(req: Request) {
       console.log("[ML Refresh] ✅ Token renovado:", int.store.name);
       results.push({ store: int.store.name, status: "renovado" });
     } catch (err: any) {
+      console.error("[ML Refresh] Error:", int.store.name, err.message);
       results.push({
         store: int.store.name,
         status: "error",

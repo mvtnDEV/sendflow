@@ -48,7 +48,8 @@ export async function POST(req: NextRequest) {
   // ── Desencriptar token ──
   let token: string;
   try {
-    token = decrypt(integration.apiKeyEnc);
+    const decrypted = decrypt(integration.apiKeyEnc);
+    token = decrypted.includes("|") ? decrypted.split("|")[0] : decrypted;
     console.log(
       "[ML webhook] Token OK, empieza:",
       token.substring(0, 8),

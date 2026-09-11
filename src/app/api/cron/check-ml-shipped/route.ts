@@ -55,7 +55,8 @@ export async function GET(req: Request) {
     // ── Desencriptar token ──
     let token: string;
     try {
-      token = decrypt((integration as any).apiKeyEnc);
+      const decrypted = decrypt((integration as any).apiKeyEnc);
+      token = decrypted.includes("|") ? decrypted.split("|")[0] : decrypted;
       console.log(
         "[ML cron] Token OK:",
         order.orderNumber,
