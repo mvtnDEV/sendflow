@@ -53,8 +53,15 @@ export async function GET(req: Request) {
     let token: string;
     try {
       token = decrypt((integration as any).apiKeyEnc);
-    } catch {
+      console.log(
+        "[ML cron] Token OK:",
+        order.orderNumber,
+        "empieza:",
+        token.substring(0, 8),
+      );
+    } catch (err: any) {
       token = (integration as any).apiKeyEnc;
+      console.error("[ML cron] ❌ DECRYPT FALLÓ:", err.message);
     }
     if (!token) continue;
 

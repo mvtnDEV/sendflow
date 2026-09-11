@@ -49,9 +49,20 @@ export async function POST(req: NextRequest) {
   let token: string;
   try {
     token = decrypt(integration.apiKeyEnc);
-  } catch {
+    console.log(
+      "[ML webhook] Token OK, empieza:",
+      token.substring(0, 8),
+      "| tienda:",
+      integration.store?.name,
+    );
+  } catch (err: any) {
     token = integration.apiKeyEnc;
-    console.warn("[ML webhook] No se pudo desencriptar token, usando directo");
+    console.error(
+      "[ML webhook] ❌ DECRYPT FALLÓ:",
+      err.message,
+      "| tienda:",
+      integration.store?.name,
+    );
   }
 
   try {
