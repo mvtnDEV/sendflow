@@ -44,16 +44,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, no_integration: true });
   }
 
+  // ── Obtener token ──
+  let token = integration.apiKeyEnc;
+
+  // Si el token está encriptado (no empieza con APP_USR-), intentar desencriptar
+  if (!token.startsWith("APP_USR-")) {
+    try {
+      const { decrypt } = await import("@/lib/utils/crypto");
+      const decrypted = decrypt(token);
+      // Puede ser JSON con accessToken o string directo
+      if (decrypted.startsWith("{")) {
+        const parsed = JSON.parse(decrypted);
+        token = parsed.accessToken ?? parsed.access_token ?? decrypted;
+      } else if (decrypted.includes("|")) {
+        token = decrypted.split("|")[0];
+      } else {
+        token = decrypted;
+      }
+    } catch {
+      // Si falla decrypt, usar el token tal cual
+      console.log("[ML webhook] Token sin decrypt, usando directo");
+    }
+  }
+
   try {
     const mlRes = await fetch(
       `https://api.mercadolibre.com/orders/${orderId}`,
       {
-        headers: { Authorization: `Bearer ${integration.apiKeyEnc}` },
+        headers: { Authorization: `Bearer ${token}` },
       },
     );
 
     if (!mlRes.ok) {
-      console.error("[ML webhook] Error ML API:", mlRes.status);
+      console.error(
+        "[ML webhook] Error ML API:",
+        mlRes.status,
+        "| tienda:",
+        integration.store?.name,
+      );
       return NextResponse.json({ ok: true, ml_error: mlRes.status });
     }
 
@@ -67,7 +95,7 @@ export async function POST(req: NextRequest) {
         const shipRes = await fetch(
           `https://api.mercadolibre.com/shipments/${shippingId}`,
           {
-            headers: { Authorization: `Bearer ${integration.apiKeyEnc}` },
+            headers: { Authorization: `Bearer ${token}` },
           },
         );
         if (shipRes.ok) shipment = await shipRes.json();
@@ -131,6 +159,10 @@ export async function POST(req: NextRequest) {
               shipmentId: shippingId ? String(shippingId) : null,
               fecha: deliveredDate,
             });
+            console.log(
+              "[ML webhook] ✅ Notificado a Fret:",
+              existing.orderNumber,
+            );
           } catch (err) {
             console.error(
               "[ML webhook] Error notificando a Fret:",
