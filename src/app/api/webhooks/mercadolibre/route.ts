@@ -262,6 +262,21 @@ export async function POST(req: NextRequest) {
       0,
     );
 
+    // ── Anti-duplicado: verificar una vez más antes de crear ──
+    const dobleCheck = await prisma.order.findFirst({
+      where: { sourceId: orderId, storeId: integration.storeId },
+      select: { id: true, orderNumber: true },
+    });
+    if (dobleCheck) {
+      console.log(
+        "[ML webhook] Anti-duplicado: ya existe",
+        dobleCheck.orderNumber,
+        "para sourceId:",
+        orderId,
+      );
+      return NextResponse.json({ ok: true, already_exists: true });
+    }
+
     const { createOrder } = await import("@/lib/services/order.service");
     await createOrder({
       storeId: integration.storeId,
