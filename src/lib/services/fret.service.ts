@@ -56,11 +56,13 @@ export function toFretPayload(order: {
   rawPayload?: any;
 }): FretOrder {
   const rawPhone = order.customerPhone?.replace(/\D/g, "") ?? "";
-  const phone = rawPhone.startsWith("56")
-    ? `+56${rawPhone.slice(2)}`
-    : rawPhone.startsWith("9") && rawPhone.length === 9
-      ? `+56${rawPhone}`
-      : "+56912345678";
+  let phone = "+56912345678";
+  if (rawPhone.length >= 9) {
+    const last9 = rawPhone.slice(-9);
+    if (last9.startsWith("9") && last9.length === 9) {
+      phone = `+56${last9}`;
+    }
+  }
 
   const shippingId = (order.rawPayload as any)?.shipping?.id;
   const qr_code =
