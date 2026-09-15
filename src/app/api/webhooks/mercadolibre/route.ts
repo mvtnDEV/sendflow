@@ -278,31 +278,39 @@ export async function POST(req: NextRequest) {
     }
 
     const { createOrder } = await import("@/lib/services/order.service");
-    await createOrder({
-      storeId: integration.storeId,
-      integrationId: integration.id,
-      platform: "MERCADOLIBRE",
-      sourceId: orderId,
-      customerName:
-        `${buyer.first_name ?? ""} ${buyer.last_name ?? ""}`.trim() ||
-        "Cliente ML",
-      customerPhone: buyer.phone?.number ?? null,
-      customerEmail: buyer.email ?? null,
-      addressStreet,
-      addressComuna,
-      addressRegion,
-      addressNotes,
-      bultos: totalBultos || 1,
-      rawPayload: {
-        ...mlOrder,
-        shipping: shipment ?? mlOrder.shipping,
-        pack_id: mlOrder.pack_id,
-      },
-      createdBy: "webhook",
-    });
+    try {
+      await createOrder({
+        storeId: integration.storeId,
+        integrationId: integration.id,
+        platform: "MERCADOLIBRE",
+        sourceId: orderId,
+        customerName:
+          `${buyer.first_name ?? ""} ${buyer.last_name ?? ""}`.trim() ||
+          "Cliente ML",
+        customerPhone: buyer.phone?.number ?? null,
+        customerEmail: buyer.email ?? null,
+        addressStreet,
+        addressComuna,
+        addressRegion,
+        addressNotes,
+        bultos: totalBultos || 1,
+        rawPayload: {
+          ...mlOrder,
+          shipping: shipment ?? mlOrder.shipping,
+          pack_id: mlOrder.pack_id,
+        },
+        createdBy: "webhook",
+      });
 
-    console.log("[ML webhook] ✅ Pedido creado:", orderId);
-    return NextResponse.json({ ok: true, created: true });
+      console.log("[ML webhook] ✅ Pedido creado:", orderId);
+      return NextResponse.json({ ok: true, created: true });
+    } catch (createErr: any) {
+      if (createErr.code === "P2002") {
+        console.log("[ML webhook] Anti-duplicado (DB):", orderId);
+        return NextResponse.json({ ok: true, already_exists: true });
+      }
+      throw createErr;
+    }
   } catch (err: any) {
     console.error("[ML webhook] Error:", err.message);
     return NextResponse.json({ ok: true, error: err.message });
