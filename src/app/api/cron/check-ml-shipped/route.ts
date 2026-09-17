@@ -13,7 +13,6 @@ const TIENDAS_FRET = new Set([
   "cmt2181g800072mm41q6pfsb9",
 ]);
 
-// Cache de tokens ya renovados en esta ejecución
 const tokenCache = new Map<string, string>();
 
 async function getTokenForStore(storeId: string): Promise<string | null> {
@@ -36,7 +35,6 @@ async function getTokenForStore(storeId: string): Promise<string | null> {
     [accessToken, refreshToken] = creds.split("|");
   }
 
-  // Test token
   const test = await fetch("https://api.mercadolibre.com/users/me", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -90,45 +88,52 @@ export async function GET(req: Request) {
       status: true,
       externalId: true,
       rawPayload: true,
+      mlShippedAt: true,
     },
-    take: 30,
     orderBy: { createdAt: "asc" },
   });
 
+  console.log(`[ML cron] Revisando ${orders.length} pedidos ML activos`);
+
   const results: any[] = [];
+  let cerrados = 0;
+  let escaneados = 0;
+  let errores = 0;
 
   for (const order of orders) {
     const token = await getTokenForStore(order.storeId);
-    if (!token) continue;
+    if (!token) {
+      errores++;
+      continue;
+    }
 
     try {
-      const orderId = order.sourceId!;
-      const res = await fetch(
-        `https://api.mercadolibre.com/orders/${orderId}`,
+      const shippingId = (order.rawPayload as any)?.shipping?.id;
+      if (!shippingId) continue;
+
+      // Consultar shipment directo (más rápido que consultar la orden)
+      const shipRes = await fetch(
+        `https://api.mercadolibre.com/shipments/${shippingId}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      if (!res.ok) {
-        console.error("[ML cron] Error API:", order.orderNumber, res.status);
+
+      if (!shipRes.ok) {
+        if (shipRes.status !== 404) {
+          console.error(
+            "[ML cron] Error shipment:",
+            order.orderNumber,
+            shipRes.status,
+          );
+          errores++;
+        }
         continue;
       }
 
-      const mlOrder = await res.json();
-      const shippingId = (order.rawPayload as any)?.shipping?.id;
+      const shipment = await shipRes.json();
+      const mlStatus = shipment?.status;
+      const dateShipped = shipment?.status_history?.date_shipped;
 
-      let shipment: any = null;
-      if (shippingId) {
-        try {
-          const shipRes = await fetch(
-            `https://api.mercadolibre.com/shipments/${shippingId}`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          );
-          if (shipRes.ok) shipment = await shipRes.json();
-        } catch {}
-      }
-
-      const mlStatus =
-        shipment?.status ?? mlOrder.shipping?.status ?? mlOrder.status;
-
+      // ── DELIVERED: cerrar pedido ──
       if (mlStatus === "delivered") {
         const deliveredDate =
           shipment?.status_history?.date_delivered ?? new Date().toISOString();
@@ -138,7 +143,7 @@ export async function GET(req: Request) {
           data: {
             status: "DELIVERED",
             deliveredAt: new Date(deliveredDate),
-            mlShippedAt: new Date(),
+            mlShippedAt: dateShipped ? new Date(dateShipped) : new Date(),
             events: {
               create: {
                 status: "DELIVERED",
@@ -158,7 +163,7 @@ export async function GET(req: Request) {
               await import("@/lib/services/fret.service");
             await notificarEntregaAFret({
               referencia: order.orderNumber.replace("#", ""),
-              shipmentId: shippingId ? String(shippingId) : null,
+              shipmentId: String(shippingId),
               fecha: deliveredDate,
             });
             console.log("[ML cron] ✅ Notificado a Fret:", order.orderNumber);
@@ -177,37 +182,90 @@ export async function GET(req: Request) {
           await notifyWebhooks(order.id, "DELIVERED", order.status);
         } catch {}
 
-        console.log("[ML cron] ✅ Cerrado:", order.orderNumber);
+        cerrados++;
         results.push({
           orderNumber: order.orderNumber,
           status: "cerrado_por_flex",
           mlStatus,
         });
-      } else if (mlStatus === "shipped") {
+
+        // ── SHIPPED: registrar escaneo ──
+      } else if (mlStatus === "shipped" && !order.mlShippedAt) {
         await prisma.order.update({
           where: { id: order.id },
-          data: { mlShippedAt: new Date() },
+          data: {
+            mlShippedAt: dateShipped ? new Date(dateShipped) : new Date(),
+          },
         });
-
-        const esTiendaFret =
-          TIENDAS_FRET.has(order.storeId) ||
-          order.externalId?.startsWith("FR-");
+        escaneados++;
         results.push({
           orderNumber: order.orderNumber,
-          status: esTiendaFret ? "fret_en_curso" : "now_en_curso",
+          status: "escaneo_registrado",
+          mlStatus,
+        });
+
+        // ── CANCELLED / NOT_DELIVERED: cerrar como INCIDENT ──
+      } else if (mlStatus === "cancelled" || mlStatus === "not_delivered") {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: "INCIDENT",
+            events: {
+              create: {
+                status: "INCIDENT",
+                note:
+                  mlStatus === "cancelled"
+                    ? "ML Flex canceló el envío"
+                    : "ML Flex no pudo entregar",
+                createdBy: "ml-cron-check",
+              },
+            },
+          },
+        });
+
+        try {
+          const { raiseAlert } = await import("@/lib/services/alert.service");
+          await raiseAlert({
+            type: "FLEX_CANCELLED",
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            storeId: order.storeId,
+            title: `${order.orderNumber} · Flex ${mlStatus === "cancelled" ? "canceló" : "no entregó"}`,
+            detail: `Pedido marcado como ${mlStatus} por ML Flex.`,
+          });
+        } catch {}
+
+        results.push({
+          orderNumber: order.orderNumber,
+          status: "incident",
           mlStatus,
         });
       } else {
-        results.push({
-          orderNumber: order.orderNumber,
-          status: "sin_cambio",
-          mlStatus,
-        });
+        // Sin cambio — solo registrar mlShippedAt si tiene fecha
+        if (dateShipped && !order.mlShippedAt) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { mlShippedAt: new Date(dateShipped) },
+          });
+          escaneados++;
+        }
       }
     } catch (err: any) {
       console.error("[ML cron] Error:", order.orderNumber, err.message);
+      errores++;
     }
   }
 
-  return NextResponse.json({ ok: true, checked: orders.length, results });
+  console.log(
+    `[ML cron] Terminado: ${orders.length} revisados, ${cerrados} cerrados, ${escaneados} escaneados, ${errores} errores`,
+  );
+
+  return NextResponse.json({
+    ok: true,
+    checked: orders.length,
+    cerrados,
+    escaneados,
+    errores,
+    results: results.slice(0, 50),
+  });
 }
