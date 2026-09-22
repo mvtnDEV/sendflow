@@ -90,7 +90,10 @@ export async function GET(req: Request) {
       rawPayload: true,
       mlShippedAt: true,
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: [
+      { mlShippedAt: { sort: "asc", nulls: "first" } },
+      { createdAt: "asc" },
+    ],
   });
 
   console.log(`[ML cron] Revisando ${orders.length} pedidos ML activos`);
