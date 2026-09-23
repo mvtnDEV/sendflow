@@ -2,14 +2,10 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 
-const TIENDAS_FRET = new Set([
-  "cmouw44ej0004thpecq6bct35",
-  "cmouw23l60003thpe1q7f16r3",
-  "cmpbfadyd00032vgl7klna40b",
-  "cmpk7nslz0006r5e73du6f0kp",
-  "cmovurlze000018duer7sffp4",
-  "cmt2181g800072mm41q6pfsb9",
-]);
+import { TIENDAS_FRET_ACTIVAS } from "@/lib/config/operadores";
+
+// Usa la misma lista que batch-receive: una sola fuente de verdad.
+const TIENDAS_FRET = TIENDAS_FRET_ACTIVAS;
 
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization");
