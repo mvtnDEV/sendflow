@@ -1,7 +1,10 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { createEnviosNowDelivery } from "@/lib/services/enviosnow.service";
+import {
+  toEnviosNowPayload,
+  createEnviosNowDelivery,
+} from "@/lib/services/enviosnow.service";
 
 export async function POST(req: NextRequest) {
   const { orderIds } = await req.json();
@@ -17,22 +20,25 @@ export async function POST(req: NextRequest) {
 
   for (const order of orders) {
     try {
-      const result = await createEnviosNowDelivery(order);
-      if (result?.externalId) {
+      const payload = toEnviosNowPayload(order);
+      const result = await createEnviosNowDelivery(payload);
+      if (result.ok && result.id && result.id !== "duplicate") {
         await prisma.order.update({
           where: { id: order.id },
-          data: { externalId: result.externalId },
+          data: { externalId: String(result.id) },
         });
         results.push({
           orderNumber: order.orderNumber,
           status: "enviado",
-          nowId: result.externalId,
+          nowId: result.id,
         });
+      } else if (result.id === "duplicate") {
+        results.push({ orderNumber: order.orderNumber, status: "duplicado" });
       } else {
         results.push({
           orderNumber: order.orderNumber,
           status: "error",
-          detail: result,
+          detail: result.error,
         });
       }
     } catch (err: any) {
