@@ -1,15 +1,11 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import {
-  toEnviosNowPayload,
-  createEnviosNowDelivery,
-} from "@/lib/services/enviosnow.service";
+import { toEnviosNowPayload, createEnviosNowDelivery } from "@/lib/services/enviosnow.service";
 
 export async function POST(req: NextRequest) {
   const { orderIds } = await req.json();
-  if (!Array.isArray(orderIds))
-    return NextResponse.json({ error: "orderIds requerido" }, { status: 400 });
+  if (!Array.isArray(orderIds)) return NextResponse.json({ error: "orderIds requerido" }, { status: 400 });
 
   const orders = await prisma.order.findMany({
     where: { id: { in: orderIds } },
@@ -17,9 +13,57 @@ export async function POST(req: NextRequest) {
   });
 
   const results: any[] = [];
+  const shippingEnviados = new Map<string, string>();
 
   for (const order of orders) {
     try {
+      const shippingId = (order.rawPayload as any)?.shipping?.id;
+      if (shippingId && order.platform === "MERCADOLIBRE") {
+        const key = String(shippingId);
+
+        if (shippingEnviados.has(key)) {
+          const nowId = shippingEnviados.get(key)!;
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { externalId: nowId },
+          });
+          results.push({ orderNumber: order.orderNumber, status: "pack_agrupado", nowId });
+          continue;
+        }
+
+        const packOrders = await prisma.order.findMany({
+          where: {
+            id: { in: orderIds },
+            platform: "MERCADOLIBRE",
+            rawPayload: { path: ["shipping", "id"], equals: Number(shippingId) },
+          },
+          select: { id: true, bultos: true },
+        });
+        const bultosTotal = packOrders.reduce((s, o) => s + o.bultos, 0);
+
+        const payload = toEnviosNowPayload({ ...order, bultos: bultosTotal });
+        const result = await createEnviosNowDelivery(payload);
+
+        if (result.ok && result.id && result.id !== "duplicate") {
+          const nowId = String(result.id);
+          shippingEnviados.set(key, nowId);
+
+          await prisma.order.updateMany({
+            where: {
+              id: { in: packOrders.map(o => o.id) },
+            },
+            data: { externalId: nowId },
+          });
+
+          results.push({ orderNumber: order.orderNumber, status: "enviado", nowId, bultos: bultosTotal, pack: packOrders.length });
+        } else if (result.id === "duplicate") {
+          results.push({ orderNumber: order.orderNumber, status: "duplicado" });
+        } else {
+          results.push({ orderNumber: order.orderNumber, status: "error", detail: result.error });
+        }
+        continue;
+      }
+
       const payload = toEnviosNowPayload(order);
       const result = await createEnviosNowDelivery(payload);
       if (result.ok && result.id && result.id !== "duplicate") {
@@ -27,33 +71,22 @@ export async function POST(req: NextRequest) {
           where: { id: order.id },
           data: { externalId: String(result.id) },
         });
-        results.push({
-          orderNumber: order.orderNumber,
-          status: "enviado",
-          nowId: result.id,
-        });
+        results.push({ orderNumber: order.orderNumber, status: "enviado", nowId: result.id });
       } else if (result.id === "duplicate") {
         results.push({ orderNumber: order.orderNumber, status: "duplicado" });
       } else {
-        results.push({
-          orderNumber: order.orderNumber,
-          status: "error",
-          detail: result.error,
-        });
+        results.push({ orderNumber: order.orderNumber, status: "error", detail: result.error });
       }
     } catch (err: any) {
-      results.push({
-        orderNumber: order.orderNumber,
-        status: "error",
-        detail: err.message,
-      });
+      results.push({ orderNumber: order.orderNumber, status: "error", detail: err.message });
     }
   }
 
   return NextResponse.json({
     ok: true,
     total: orders.length,
-    enviados: results.filter((r) => r.status === "enviado").length,
+    enviados: results.filter(r => r.status === "enviado").length,
+    packs: results.filter(r => r.status === "pack_agrupado").length,
     results,
   });
 }
