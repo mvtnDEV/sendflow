@@ -118,7 +118,11 @@ export async function createOrder(input: CreateOrderInput) {
   });
 
   // ── Decidir si enviar a Fret ──
-  const enviarAFret = !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
+  // Desde el 24-sep-2026 nada se envía a Fret al crear: todo va a Envios Now
+  // (al escanear en bodega, o automático para Senby). Para volver a Fret,
+  // restaurar la línea comentada.
+  // const enviarAFret = !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
+  const enviarAFret = false as boolean;
 
   if (enviarAFret) {
     try {

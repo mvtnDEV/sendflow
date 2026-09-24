@@ -17,10 +17,6 @@
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/cron/retry-fret",
-      "schedule": "*/10 * * * *"
-    },
-    {
       "path": "/api/cron/refresh-ml-tokens",
       "schedule": "0 */4 * * *"
     }

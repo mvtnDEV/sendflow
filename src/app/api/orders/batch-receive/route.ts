@@ -3,12 +3,10 @@ export const maxDuration = 300;
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/utils/auth";
 import { batchTransitionOrders } from "@/lib/services/order-batch.service";
-import { createEnviosNowDeliveriesBatch } from "@/lib/services/enviosnow.service";
-import { filtrarParaNow } from "@/lib/config/operadores";
+import { enviarPedidosANow } from "@/lib/services/now-dispatch.service";
 import { deferAfterResponse } from "@/lib/utils/defer";
-import { prisma } from "@/lib/db/prisma";
 
-// POST /api/orders/batch-receive — recepcionar múltiples pedidos desde el sistema web
+// POST /api/orders/batch-receive — recepcionar múltiples pedidos desde el panel web
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
   if (!user)
@@ -35,7 +33,7 @@ export async function POST(req: NextRequest) {
     const result = await batchTransitionOrders({
       orderIds,
       toStatus: "RECEIVED",
-      fromStatuses: ["PENDING"], // ya recepcionado, skip silencioso
+      fromStatuses: ["PENDING"],
       eventNote: "Recepcionado en bodega (batch web)",
       createdBy: user.id,
       restrictToStoreId:
@@ -45,36 +43,13 @@ export async function POST(req: NextRequest) {
     });
 
     let enviadosNow = 0;
+    let erroresNow: { orderNumber: string; error: string }[] = [];
 
     if (result.updated.length > 0) {
-      // ── Solo van a Now los que no son de tiendas Fret ni tienen FR- ──
-      const paraNow = await filtrarParaNow(result.updated);
-      const saltados = result.updated.length - paraNow.length;
-      if (saltados > 0) {
-        console.log(
-          `[batch-receive] ${saltados} pedido(s) no se envían a Now (tienda Fret o ya con FR-)`,
-        );
-      }
+      const now = await enviarPedidosANow(result.updated.map((o) => o.id));
+      enviadosNow = now.okIds.length;
+      erroresNow = now.errores;
 
-      if (paraNow.length > 0) {
-        const successes = await createEnviosNowDeliveriesBatch(paraNow);
-        enviadosNow = successes.length;
-        if (successes.length > 0) {
-          await prisma.$transaction(
-            successes.map((s) =>
-              prisma.order.update({
-                where: { id: s.orderId },
-                data: { externalId: s.externalId },
-              }),
-            ),
-          );
-        }
-        console.log(
-          `[batch-receive] Now: ${successes.length}/${paraNow.length} enviados`,
-        );
-      }
-
-      // ── Webhooks en segundo plano (no bloquean la respuesta) ──
       const { notifyWebhooksBatch } =
         await import("@/lib/services/webhook.service");
       deferAfterResponse(
@@ -94,10 +69,11 @@ export async function POST(req: NextRequest) {
       ok: true,
       updated: result.updated.length,
       enviadosNow,
+      erroresNow,
       errors: result.errors,
     });
   } catch (err: any) {
-    console.error("[batch-receive] Error en batch:", err);
+    console.error("[batch-receive] Error:", err);
     return NextResponse.json(
       { ok: false, error: "Error recepcionando pedidos" },
       { status: 500 },

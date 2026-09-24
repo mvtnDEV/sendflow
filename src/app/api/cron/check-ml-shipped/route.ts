@@ -4,14 +4,10 @@ import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 
-const TIENDAS_FRET = new Set([
-  "cmouw44ej0004thpecq6bct35",
-  "cmouw23l60003thpe1q7f16r3",
-  "cmpbfadyd00032vgl7klna40b",
-  "cmpk7nslz0006r5e73du6f0kp",
-  "cmovurlze000018duer7sffp4",
-  "cmt2181g800072mm41q6pfsb9",
-]);
+// ── Desde el 24-sep-2026 ninguna tienda nueva va a Fret. ──
+// Los pedidos viejos que tienen FR- se siguen notificando a Fret
+// por la condición externalId?.startsWith("FR-").
+const TIENDAS_FRET = new Set<string>([]);
 
 const tokenCache = new Map<string, string>();
 

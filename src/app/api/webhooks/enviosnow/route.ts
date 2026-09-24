@@ -7,9 +7,8 @@ import { checkMLShipmentStatus } from "@/lib/integrations/mercadolibre-status";
 const STATE_MAP: Record<string, string> = {
   entregado: "DELIVERED",
   cancelado: "CANCELLED",
-  // ── 'por entregar' eliminado — Now lo manda automáticamente al crear el envío ──
-  // El IN_TRANSIT solo debe venir de la app del conductor al apretar "Salir a ruta"
-  // Senby ya tiene los pedidos recepcionados — no necesita el IN_TRANSIT de Now
+  // ── 'por entregar' no se mapea: Now lo manda al crear el envío.
+  // El IN_TRANSIT lo pone la app Moovex con "Salir a ruta" (o el despacho automático de Senby).
   pendiente: "INCIDENT",
   "no entregado": "INCIDENT",
   fallido: "INCIDENT",
@@ -42,7 +41,7 @@ export async function POST(req: NextRequest) {
       deliveries = [body.data];
     else if (typeof body === "object") deliveries = [body];
 
-    const results = [];
+    const results: any[] = [];
 
     for (const delivery of deliveries) {
       const externalId = delivery.externalId ?? delivery.external_id ?? null;
@@ -76,40 +75,58 @@ export async function POST(req: NextRequest) {
         orConditions.push({ orderNumber: String(externalId) });
         orConditions.push({ orderNumber: `#${externalId}` });
       }
-      if (nowId) {
-        orConditions.push({ externalId: nowId });
-      }
+      if (nowId) orConditions.push({ externalId: nowId });
 
-      const order = await prisma.order.findFirst({
+      // ── findMany: un pack de ML (varias ventas) es UN solo envío en Now,
+      // así que un webhook debe actualizar TODAS las ventas del pack ──
+      const encontrados = await prisma.order.findMany({
         where: { OR: orConditions },
-        select: { id: true, orderNumber: true, status: true, platform: true },
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          platform: true,
+          rawPayload: true,
+        },
       });
 
+      // Sumar hermanas del pack que no tengan el ID de Now (por si alguna quedó sin propagar)
+      const ordenes = [...encontrados];
+      const vistos = new Set(ordenes.map((o) => o.id));
+      for (const o of encontrados) {
+        const shipId = (o.rawPayload as any)?.shipping?.id;
+        if (o.platform !== "MERCADOLIBRE" || !shipId) continue;
+        const hermanas = await prisma.order.findMany({
+          where: {
+            id: { notIn: [...vistos] },
+            platform: "MERCADOLIBRE",
+            rawPayload: { path: ["shipping", "id"], equals: Number(shipId) },
+          },
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            platform: true,
+            rawPayload: true,
+          },
+        });
+        for (const h of hermanas) {
+          vistos.add(h.id);
+          ordenes.push(h);
+        }
+      }
+
       console.log(
-        "[EnviosNow] Pedido:",
-        order ? order.orderNumber : "NO ENCONTRADO",
+        "[EnviosNow] Pedidos:",
+        ordenes.length
+          ? ordenes.map((o) => o.orderNumber).join(", ")
+          : "NO ENCONTRADO",
         "| extId buscado:",
         extId,
       );
 
-      if (!order) {
+      if (ordenes.length === 0) {
         results.push({ externalId, nowId, status: "not_found" });
-        continue;
-      }
-
-      const isDeliveredFromIncident =
-        newStatus === "DELIVERED" && order.status === "INCIDENT";
-      if (
-        !isDeliveredFromIncident &&
-        (STATUS_PRIORITY[newStatus] ?? 0) <=
-          (STATUS_PRIORITY[order.status] ?? 0)
-      ) {
-        results.push({
-          externalId,
-          nowId,
-          status: "skipped",
-          reason: "lower_priority",
-        });
         continue;
       }
 
@@ -124,7 +141,6 @@ export async function POST(req: NextRequest) {
         delivery.receiverRut && delivery.receiverRut !== "No da rut"
           ? delivery.receiverRut
           : null;
-
       const evidenceNote =
         [
           receiverName ? `Recibió: ${receiverName}` : null,
@@ -133,90 +149,115 @@ export async function POST(req: NextRequest) {
           .filter(Boolean)
           .join(" · ") || null;
 
-      if (
-        order.platform === "MERCADOLIBRE" &&
-        (newStatus === "DELIVERED" || newStatus === "INCIDENT")
-      ) {
-        const mlCheck = await checkMLShipmentStatus(order.id);
-        if (!mlCheck || !mlCheck.isDelivered) {
-          await prisma.order.update({
-            where: { id: order.id },
-            data: {
-              pendingNowEvidence: {
-                images,
-                evidenceNote,
-                attemptedStatus: newStatus,
-                receivedFromNowAt: now.toISOString(),
-              },
-              pendingNowCheckedAt: now,
-            },
-          });
-          console.log(
-            "[EnviosNow] ML Flex aún no confirma entrega, esperando:",
-            order.orderNumber,
-          );
+      for (const order of ordenes) {
+        const isDeliveredFromIncident =
+          newStatus === "DELIVERED" && order.status === "INCIDENT";
+        if (
+          !isDeliveredFromIncident &&
+          (STATUS_PRIORITY[newStatus] ?? 0) <=
+            (STATUS_PRIORITY[order.status] ?? 0)
+        ) {
           results.push({
-            externalId,
-            nowId,
-            status: "waiting_ml_confirmation",
-            mlShipmentStatus: mlCheck?.shipmentStatus ?? null,
+            orderNumber: order.orderNumber,
+            status: "skipped",
+            reason: "lower_priority",
           });
           continue;
         }
-        console.log(
-          "[EnviosNow] ML Flex confirma entrega, cerrando pedido:",
-          order.orderNumber,
-        );
-      }
 
-      const esFlexEntregado =
-        order.platform === "MERCADOLIBRE" && newStatus === "DELIVERED";
-      const previousStatus = order.status;
+        // ── Flex: esperar que ML confirme la entrega antes de cerrar ──
+        if (
+          order.platform === "MERCADOLIBRE" &&
+          (newStatus === "DELIVERED" || newStatus === "INCIDENT")
+        ) {
+          const mlCheck = await checkMLShipmentStatus(order.id);
+          if (!mlCheck || !mlCheck.isDelivered) {
+            await prisma.order.update({
+              where: { id: order.id },
+              data: {
+                pendingNowEvidence: {
+                  images,
+                  evidenceNote,
+                  attemptedStatus: newStatus,
+                  receivedFromNowAt: now.toISOString(),
+                },
+                pendingNowCheckedAt: now,
+              },
+            });
+            console.log(
+              "[EnviosNow] ML Flex aún no confirma, esperando:",
+              order.orderNumber,
+            );
+            results.push({
+              orderNumber: order.orderNumber,
+              status: "waiting_ml_confirmation",
+              mlShipmentStatus: mlCheck?.shipmentStatus ?? null,
+            });
+            continue;
+          }
+          console.log(
+            "[EnviosNow] ML Flex confirma entrega, cerrando:",
+            order.orderNumber,
+          );
+        }
 
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          status: newStatus as any,
-          ...(newStatus === "DELIVERED" && { deliveredAt: now }),
-          ...(newStatus === "RECEIVED" && { receivedAt: now }),
-          ...(images?.[0] && { evidencePhoto1: images[0] }),
-          ...(images?.[1] && { evidencePhoto2: images[1] }),
-          evidenceNote,
-          pendingNowEvidence: Prisma.JsonNull,
-          pendingNowCheckedAt: null,
-          events: {
-            create: {
-              status: newStatus as any,
-              note: `Envios Now · ${note}${receiverName ? ` · Recibió: ${receiverName}` : ""}`,
-              createdBy: "enviosnow-webhook",
+        const esFlexEntregado =
+          order.platform === "MERCADOLIBRE" && newStatus === "DELIVERED";
+        const previousStatus = order.status;
+
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: newStatus as any,
+            ...(newStatus === "DELIVERED" && { deliveredAt: now }),
+            ...(images?.[0] && { evidencePhoto1: images[0] }),
+            ...(images?.[1] && { evidencePhoto2: images[1] }),
+            evidenceNote,
+            pendingNowEvidence: Prisma.JsonNull,
+            pendingNowCheckedAt: null,
+            events: {
+              create: {
+                status: newStatus as any,
+                note: `Envios Now · ${note}${receiverName ? ` · Recibió: ${receiverName}` : ""}`,
+                createdBy: "enviosnow-webhook",
+              },
             },
           },
-        },
-      });
-
-      if (esFlexEntregado) {
-        const current = await prisma.order.findUnique({
-          where: { id: order.id },
-          select: { mlShippedAt: true, inTransitAt: true },
         });
-        if (!current?.mlShippedAt) {
-          await prisma.order.update({
+
+        if (esFlexEntregado) {
+          const current = await prisma.order.findUnique({
             where: { id: order.id },
-            data: { mlShippedAt: current?.inTransitAt ?? now },
+            select: { mlShippedAt: true, inTransitAt: true },
           });
+          if (!current?.mlShippedAt) {
+            await prisma.order.update({
+              where: { id: order.id },
+              data: { mlShippedAt: current?.inTransitAt ?? now },
+            });
+          }
         }
-      }
 
-      try {
-        const { notifyWebhooks } =
-          await import("@/lib/services/webhook.service");
-        await notifyWebhooks(order.id, newStatus, previousStatus);
-      } catch (err) {
-        console.error("[EnviosNow] Error notificando webhook:", err);
-      }
+        try {
+          const { notifyWebhooks } =
+            await import("@/lib/services/webhook.service");
+          await notifyWebhooks(order.id, newStatus, previousStatus);
+        } catch (err) {
+          console.error("[EnviosNow] Error notificando webhook:", err);
+        }
 
-      console.log("[EnviosNow] Actualizado:", extId, "->", newStatus);
-      results.push({ externalId, nowId, status: "updated", newStatus });
+        console.log(
+          "[EnviosNow] Actualizado:",
+          order.orderNumber,
+          "->",
+          newStatus,
+        );
+        results.push({
+          orderNumber: order.orderNumber,
+          status: "updated",
+          newStatus,
+        });
+      }
     }
 
     console.log("[EnviosNow] Resultados:", JSON.stringify(results));

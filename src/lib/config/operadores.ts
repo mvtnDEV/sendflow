@@ -1,39 +1,27 @@
-import { prisma } from "@/lib/db/prisma";
+// ─────────────────────────────────────────────────────────────────────────────
+// Configuración central de operadores logísticos
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Tiendas que SIGUEN con Fret ──
-// Todo lo que NO esté acá y se recepcione en bodega se envía a Envios Now.
-// El jueves, cuando todas pasen a Now, se vacía este Set y listo.
-export const TIENDAS_FRET_ACTIVAS = new Set<string>([
-  "cmouw44ej0004thpecq6bct35", // Eco pañal
-  "cmouw23l60003thpe1q7f16r3", // Oasis verde
-  "cmpbfadyd00032vgl7klna40b", // Fire Master
-  "cmovurlze000018duer7sffp4", // Protec
-  "cmt2181g800072mm41q6pfsb9", // Sigan Jugando
-  // Comercial Bess salió de Fret → Now
-]);
+/** Tienda Senby (integra por API con su propio ID en externalId). */
+export const SENBY_STORE_ID = "cmpanvuns000053f2gbs46t83";
 
 /**
- * De una lista de pedidos recién recepcionados, devuelve solo los que
- * deben ir a Envios Now:
- *  - la tienda NO está en TIENDAS_FRET_ACTIVAS
- *  - el pedido NO tiene ya un código FR- (esos siguen su curso en Fret)
+ * Tiendas que SIGUEN con Fret.
+ * Vacío desde el 24-sep-2026: todo va a Envios Now.
+ * Los pedidos viejos que ya tienen FR- se siguen cerrando en Fret igual.
  */
-export async function filtrarParaNow<T extends { id: string }>(
-  pedidos: T[],
-): Promise<T[]> {
-  if (pedidos.length === 0) return [];
+export const TIENDAS_FRET_ACTIVAS = new Set<string>([]);
 
-  const info = await prisma.order.findMany({
-    where: { id: { in: pedidos.map((p) => p.id) } },
-    select: { id: true, storeId: true, externalId: true },
-  });
-  const byId = new Map(info.map((o) => [o.id, o]));
+/**
+ * Tiendas con despacho automático:
+ * al crearse el pedido → RECEIVED → se envía a Now → IN_TRANSIT,
+ * sin pasar por el escaneo de bodega.
+ */
+export const TIENDAS_AUTO_NOW = new Set<string>([SENBY_STORE_ID]);
 
-  return pedidos.filter((p) => {
-    const o = byId.get(p.id);
-    if (!o) return false;
-    if (TIENDAS_FRET_ACTIVAS.has(o.storeId)) return false;
-    if (o.externalId?.startsWith("FR-")) return false;
-    return true;
-  });
-}
+/**
+ * Tiendas cuyo externalId es el ID del cliente (ej: Senby) y NUNCA
+ * se debe pisar con el ID de Now. El webhook de Now igual encuentra
+ * estos pedidos por el número de pedido.
+ */
+export const TIENDAS_PRESERVAN_EXTERNAL_ID = new Set<string>([SENBY_STORE_ID]);
