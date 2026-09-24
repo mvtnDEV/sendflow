@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       timestampField: "receivedAt",
     });
 
-    // ── Enviar a Now los que no son de tiendas Fret activas ──
+    // ── Todo lo escaneado que NO sea de tiendas Fret activas va a Now (tenga FR- o no) ──
     const todosIds = [
       ...new Set([...result.updated.map((o) => o.id), ...orderIds]),
     ];
@@ -63,101 +63,107 @@ export async function POST(req: NextRequest) {
       include: { store: { select: { name: true } } },
     });
 
-    if (pedidosParaNow.length > 0) {
-      const shippingEnviados = new Map<string, string>();
+    const shippingEnviados = new Map<string, string>();
 
-      for (const order of pedidosParaNow) {
-        try {
-          const shippingId = (order.rawPayload as any)?.shipping?.id;
+    for (const order of pedidosParaNow) {
+      try {
+        const shippingId = (order.rawPayload as any)?.shipping?.id;
 
-          // ── Pack grouping ──
-          if (shippingId && order.platform === "MERCADOLIBRE") {
-            const key = String(shippingId);
+        // ── Pack ML: 1 solo envío a Now por shipping_id ──
+        if (shippingId && order.platform === "MERCADOLIBRE") {
+          const key = String(shippingId);
 
-            if (shippingEnviados.has(key)) {
-              const nowId = shippingEnviados.get(key)!;
-              await prisma.order.update({
-                where: { id: order.id },
-                data: { externalId: nowId },
-              });
-              console.log(
-                "[driver batch-receive] Pack agrupado:",
-                order.orderNumber,
-                "→",
-                nowId,
-              );
-              continue;
-            }
-
-            const packOrders = await prisma.order.findMany({
-              where: {
-                id: { in: todosIds },
-                platform: "MERCADOLIBRE",
-                rawPayload: {
-                  path: ["shipping", "id"],
-                  equals: Number(shippingId),
-                },
-              },
-              select: { id: true, bultos: true },
+          if (shippingEnviados.has(key)) {
+            const nowId = shippingEnviados.get(key)!;
+            await prisma.order.update({
+              where: { id: order.id },
+              data: { externalId: nowId },
             });
-            const bultosTotal = packOrders.reduce((s, o) => s + o.bultos, 0);
-
-            const payload = toEnviosNowPayload({
-              ...order,
-              bultos: bultosTotal,
-            });
-            const nowResult = await createEnviosNowDelivery(payload);
-
-            if (nowResult.ok && nowResult.id && nowResult.id !== "duplicate") {
-              const nowId = String(nowResult.id);
-              shippingEnviados.set(key, nowId);
-              enviadosNow++;
-
-              await prisma.order.updateMany({
-                where: { id: { in: packOrders.map((o) => o.id) } },
-                data: { externalId: nowId },
-              });
-              console.log(
-                "[driver batch-receive] Now pack:",
-                order.orderNumber,
-                "→",
-                nowId,
-                `(${packOrders.length} ventas, ${bultosTotal} bultos)`,
-              );
-            }
+            console.log(
+              "[driver batch-receive] Pack agrupado:",
+              order.orderNumber,
+              "→",
+              nowId,
+            );
             continue;
           }
 
-          // ── Pedido individual ──
-          const payload = toEnviosNowPayload(order);
-          const nowResult = await createEnviosNowDelivery(payload);
+          const packOrders = await prisma.order.findMany({
+            where: {
+              id: { in: todosIds },
+              platform: "MERCADOLIBRE",
+              rawPayload: {
+                path: ["shipping", "id"],
+                equals: Number(shippingId),
+              },
+            },
+            select: { id: true },
+          });
+
+          const nowResult = await createEnviosNowDelivery(
+            toEnviosNowPayload(order),
+          );
 
           if (nowResult.ok && nowResult.id && nowResult.id !== "duplicate") {
-            await prisma.order.update({
-              where: { id: order.id },
-              data: { externalId: String(nowResult.id) },
-            });
+            const nowId = String(nowResult.id);
+            shippingEnviados.set(key, nowId);
             enviadosNow++;
+            await prisma.order.updateMany({
+              where: { id: { in: packOrders.map((o) => o.id) } },
+              data: { externalId: nowId },
+            });
             console.log(
-              "[driver batch-receive] Now:",
+              "[driver batch-receive] Now pack:",
               order.orderNumber,
               "→",
-              nowResult.id,
+              nowId,
+              `(${packOrders.length} ventas)`,
+            );
+          } else if (!nowResult.ok) {
+            console.warn(
+              "[driver batch-receive] Now rechazó:",
+              order.orderNumber,
+              nowResult.error,
             );
           }
-        } catch (err: any) {
-          console.error(
-            "[driver batch-receive] Error Now:",
+          continue;
+        }
+
+        // ── Pedido individual ──
+        const nowResult = await createEnviosNowDelivery(
+          toEnviosNowPayload(order),
+        );
+        if (nowResult.ok && nowResult.id && nowResult.id !== "duplicate") {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { externalId: String(nowResult.id) },
+          });
+          enviadosNow++;
+          console.log(
+            "[driver batch-receive] Now:",
             order.orderNumber,
-            err.message,
+            "→",
+            nowResult.id,
+          );
+        } else if (!nowResult.ok) {
+          console.warn(
+            "[driver batch-receive] Now rechazó:",
+            order.orderNumber,
+            nowResult.error,
           );
         }
+      } catch (err: any) {
+        console.error(
+          "[driver batch-receive] Error Now:",
+          order.orderNumber,
+          err.message,
+        );
       }
-
-      console.log(
-        `[driver batch-receive] Now: ${enviadosNow}/${pedidosParaNow.length} enviados`,
-      );
     }
+
+    console.log(
+      `[driver batch-receive] Now: ${enviadosNow} envíos creados de ${pedidosParaNow.length} pedidos`,
+    );
 
     return NextResponse.json({
       ok: true,
