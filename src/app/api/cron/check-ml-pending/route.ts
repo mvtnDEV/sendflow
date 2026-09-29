@@ -3,8 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
 import { checkMLShipmentStatus } from "@/lib/integrations/mercadolibre-status";
+import { classifyFlex, closeFlexNotDelivered } from "@/lib/services/flex-close.service";
 
-// ── Tiendas Fret: no marcar INCIDENT (Fret maneja). Flex delivered ya lo cubre check-ml-shipped ──
+// ── Tiendas que eran de Fret: los "no entregado" genéricos (ausente, dirección, etc.)
+// no se marcan INCIDENT aquí. OJO: Flex CANCELADO o REPROGRAMADO sí se cierra en TODAS
+// las tiendas (regla del negocio, 28-09-2026) — ver closeFlexNotDelivered.
 const TIENDAS_FRET = new Set([
   "cmpk7nslz0006r5e73du6f0kp", // Comercial Bess
   "cmouw44ej0004thpecq6bct35", // Eco pañal
@@ -68,6 +71,11 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
+    const flexOutcome = classifyFlex({
+      shipmentStatus: mlCheck.shipmentStatus,
+      shipmentSubstatus: mlCheck.shipmentSubstatus,
+    });
+
     if (mlCheck.isDelivered) {
       const pending = order.pendingNowEvidence as any;
       await prisma.order.update({
@@ -97,27 +105,19 @@ export async function GET(req: NextRequest) {
         orderNumber: order.orderNumber,
         status: "closed_delivered",
       });
-    } else if (mlCheck.isCancelled) {
-      // Flex canceló → en Moovex se cierra como NO ENTREGADO, no como Cancelado.
-      // "Cancelado" queda reservado para cancelaciones nuestras o de la tienda.
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          status: "INCIDENT",
-          pendingNowEvidence: Prisma.JsonNull,
-          pendingNowCheckedAt: now,
-          events: {
-            create: {
-              status: "INCIDENT",
-              note: "ML Flex canceló el envío",
-              createdBy: "ml-cron-check",
-            },
-          },
-        },
+    } else if (flexOutcome === "cancelled" || flexOutcome === "rescheduled") {
+      // Flex canceló o reprogramó → en Moovex se cierra como NO ENTREGADO, no como
+      // Cancelado ("Cancelado" queda para cancelaciones nuestras o de la tienda).
+      // La función compartida además levanta la alerta y avisa por webhook.
+      await closeFlexNotDelivered({
+        orderId: order.id,
+        outcome: flexOutcome,
+        source: "ml-cron-check",
+        substatus: mlCheck.shipmentSubstatus,
       });
       results.push({
         orderNumber: order.orderNumber,
-        status: "closed_incident_cancelado",
+        status: `closed_incident_${flexOutcome}`,
       });
     } else {
       const esTiendaFret = TIENDAS_FRET.has(order.storeId);

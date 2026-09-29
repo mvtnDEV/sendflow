@@ -93,15 +93,45 @@ export async function GET(req: NextRequest) {
       ),
     };
 
-    // ── 3. DELIVERY_FAILED: pedidos en INCIDENT ──
-    const noEntregados = await prisma.order.findMany({
-      where: {
-        status: "INCIDENT",
-        createdAt: { gte: new Date(ahora - 7 * 24 * HORA) },
-      },
-      select,
-      take: 500,
+    // ── 3. FLEX_CANCELLED: las levanta closeFlexNotDelivered (webhook y crons de ML).
+    // Aquí solo se resuelven solas cuando el pedido ya no está en "No entregado"
+    // (por ejemplo, se reintentó y se entregó). Antes se le pasaban sus propios IDs
+    // a autoResolveMissing y nunca se resolvía ninguna.
+    const flexActivas = await prisma.alert.findMany({
+      where: { type: "FLEX_CANCELLED", status: "ACTIVE", orderId: { not: null } },
+      select: { orderId: true },
     });
+    const flexIds = flexActivas.map((a) => a.orderId as string);
+    const flexSiguenNoEntregadas = flexIds.length
+      ? (
+          await prisma.order.findMany({
+            where: { id: { in: flexIds }, status: "INCIDENT" },
+            select: { id: true },
+          })
+        ).map((o) => o.id)
+      : [];
+
+    resumen.FLEX_CANCELLED = {
+      levantadas: 0,
+      autoResueltas: flexIds.length
+        ? await autoResolveMissing("FLEX_CANCELLED", flexSiguenNoEntregadas)
+        : 0,
+    };
+
+    // ── 4. DELIVERY_FAILED: pedidos en INCIDENT ──
+    // Se excluyen los que ya tienen alerta de Flex, para no mostrar el mismo
+    // pedido dos veces ("Flex canceló" + "No fue entregado").
+    const conAlertaFlex = new Set(flexSiguenNoEntregadas);
+    const noEntregados = (
+      await prisma.order.findMany({
+        where: {
+          status: "INCIDENT",
+          createdAt: { gte: new Date(ahora - 7 * 24 * HORA) },
+        },
+        select,
+        take: 500,
+      })
+    ).filter((o) => !conAlertaFlex.has(o.id));
 
     for (const o of noEntregados) {
       await raiseAlert({
@@ -122,24 +152,11 @@ export async function GET(req: NextRequest) {
       ),
     };
 
-    // ── 4. FLEX_CANCELLED: detectados por check-ml-shipped ──
-    // No se barren acá, se levantan desde check-ml-shipped.
-    // Solo auto-resolver las que ya no aplican.
-    const flexCancelled = await prisma.alert.findMany({
-      where: { type: "FLEX_CANCELLED", status: "ACTIVE" },
-      select: { orderId: true },
+    // ── 5. Limpieza: alertas resueltas hace más de 90 días ──
+    const limpieza = await prisma.alert.deleteMany({
+      where: { status: "RESOLVED", resolvedAt: { lt: new Date(ahora - 90 * 24 * HORA) } },
     });
-    const flexCancelledIds = flexCancelled
-      .map((a) => a.orderId)
-      .filter(Boolean) as string[];
-
-    resumen.FLEX_CANCELLED = {
-      levantadas: 0,
-      autoResueltas:
-        flexCancelledIds.length > 0
-          ? await autoResolveMissing("FLEX_CANCELLED", flexCancelledIds)
-          : 0,
-    };
+    resumen.LIMPIEZA = { levantadas: 0, autoResueltas: limpieza.count };
 
     console.log("[Cron Alertas] Terminado.", JSON.stringify(resumen));
     return NextResponse.json({ ok: true, resumen });

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
+import { classifyFlex, closeFlexNotDelivered } from "@/lib/services/flex-close.service";
 
 // ── Desde el 24-sep-2026 ninguna tienda nueva va a Fret. ──
 // Los pedidos viejos que tienen FR- se siguen notificando a Fret
@@ -160,7 +161,10 @@ export async function POST(req: NextRequest) {
             events: {
               create: {
                 status: "DELIVERED",
-                note: "Entrega confirmada por Moovex (Flex)",
+                note:
+                  existing.status === "INCIDENT"
+                    ? "ML Flex entregó después de reprogramar/cancelar · pasa de No entregado a Entregado"
+                    : "Entrega confirmada por Moovex (Flex)",
                 createdBy: "ml-webhook",
               },
             },
@@ -200,6 +204,22 @@ export async function POST(req: NextRequest) {
 
         console.log("[ML webhook] ✅ Cerrado por Flex:", existing.orderNumber);
         return NextResponse.json({ ok: true, closed_by_flex: true });
+      }
+
+      // ── Flex canceló, reprogramó o no entregó: cerrar ESTE pedido como no entregado ──
+      const outcome = classifyFlex({
+        shipmentStatus,
+        shipmentSubstatus,
+        orderStatus: mlOrder.status,
+      });
+      if (outcome && outcome !== "delivered") {
+        const closed = await closeFlexNotDelivered({
+          orderId: existing.id,
+          outcome,
+          source: "ml-webhook",
+          substatus: shipmentSubstatus,
+        });
+        return NextResponse.json({ ok: true, flex_not_delivered: outcome, closed });
       }
 
       if (

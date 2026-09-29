@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
+import { classifyFlex, closeFlexNotDelivered, FLEX_RECHECK_WHERE } from "@/lib/services/flex-close.service";
 
 // ── Desde el 24-sep-2026 ninguna tienda nueva va a Fret. ──
 // Los pedidos viejos que tienen FR- se siguen notificando a Fret
@@ -67,14 +68,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const tresDiasAtras = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  // Corre cada 5 min sobre los últimos 7 días (antes 3). Los pedidos abiertos más
+  // antiguos (hasta 30 días) los revisa una vez al día /api/cron/flex-sweep.
+  const ventana = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const orders = await prisma.order.findMany({
     where: {
       platform: "MERCADOLIBRE",
-      status: { in: ["PENDING", "RECEIVED", "IN_TRANSIT"] },
+      ...FLEX_RECHECK_WHERE, // abiertos + cerrados por Flex (por si ML entrega después)
       sourceId: { not: null },
-      createdAt: { gte: tresDiasAtras },
+      createdAt: { gte: ventana },
     },
     select: {
       id: true,
@@ -130,10 +133,14 @@ export async function GET(req: Request) {
 
       const shipment = await shipRes.json();
       const mlStatus = shipment?.status;
+      const mlSubstatus = shipment?.substatus ?? null;
       const dateShipped = shipment?.status_history?.date_shipped;
+      // Se clasifica ANTES de mirar "shipped": un envío reprogramado sigue en
+      // status "shipped" (con substatus de reprogramación).
+      const outcome = classifyFlex({ shipmentStatus: mlStatus, shipmentSubstatus: mlSubstatus });
 
       // ── DELIVERED: cerrar pedido ──
-      if (mlStatus === "delivered") {
+      if (outcome === "delivered") {
         const deliveredDate =
           shipment?.status_history?.date_delivered ?? new Date().toISOString();
 
@@ -146,7 +153,10 @@ export async function GET(req: Request) {
             events: {
               create: {
                 status: "DELIVERED",
-                note: "Entrega confirmada por Moovex (respaldo Flex)",
+                note:
+                  order.status === "INCIDENT"
+                    ? "ML Flex entregó después de reprogramar/cancelar · pasa de No entregado a Entregado"
+                    : "Entrega confirmada por Moovex (respaldo Flex)",
                 createdBy: "ml-cron-check",
               },
             },
@@ -188,6 +198,19 @@ export async function GET(req: Request) {
           mlStatus,
         });
 
+        // ── CANCELADO / REPROGRAMADO / NO ENTREGADO: cerrar como no entregado ──
+      } else if (outcome) {
+        const closed = await closeFlexNotDelivered({
+          orderId: order.id,
+          outcome,
+          source: "ml-cron-check",
+          substatus: mlSubstatus,
+        });
+        if (closed) {
+          cerrados++;
+          results.push({ orderNumber: order.orderNumber, status: "no_entregado", mlStatus, mlSubstatus });
+        }
+
         // ── SHIPPED: registrar escaneo ──
       } else if (mlStatus === "shipped" && !order.mlShippedAt) {
         await prisma.order.update({
@@ -203,42 +226,6 @@ export async function GET(req: Request) {
           mlStatus,
         });
 
-        // ── CANCELLED / NOT_DELIVERED: cerrar como INCIDENT ──
-      } else if (mlStatus === "cancelled" || mlStatus === "not_delivered") {
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            status: "INCIDENT",
-            events: {
-              create: {
-                status: "INCIDENT",
-                note:
-                  mlStatus === "cancelled"
-                    ? "ML Flex canceló el envío"
-                    : "ML Flex no pudo entregar",
-                createdBy: "ml-cron-check",
-              },
-            },
-          },
-        });
-
-        try {
-          const { raiseAlert } = await import("@/lib/services/alert.service");
-          await raiseAlert({
-            type: "FLEX_CANCELLED",
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            storeId: order.storeId,
-            title: `${order.orderNumber} · Flex ${mlStatus === "cancelled" ? "canceló" : "no entregó"}`,
-            detail: `Pedido marcado como ${mlStatus} por ML Flex.`,
-          });
-        } catch {}
-
-        results.push({
-          orderNumber: order.orderNumber,
-          status: "incident",
-          mlStatus,
-        });
       } else {
         // Sin cambio — solo registrar mlShippedAt si tiene fecha
         if (dateShipped && !order.mlShippedAt) {

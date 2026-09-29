@@ -122,7 +122,7 @@ export async function countActiveAlerts(): Promise<number> {
 }
 
 export const ALERT_TYPE_LABEL: Record<AlertType, string> = {
-  FLEX_CANCELLED: "Flex canceló",
+  FLEX_CANCELLED: "Flex canceló / reprogramó",
   STUCK_IN_TRANSIT: "Aún en camino (+24 h)",
   STUCK_RECEIVED: "Recepcionado sin avanzar (+12 h)",
   DELIVERY_FAILED: "No entregado",

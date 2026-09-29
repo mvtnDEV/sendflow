@@ -27,7 +27,7 @@ interface AlertRow {
 }
 
 const TYPE_LABEL: Record<AlertType, string> = {
-  FLEX_CANCELLED: "Flex canceló",
+  FLEX_CANCELLED: "Flex canceló / reprogramó",
   STUCK_IN_TRANSIT: "Aún en camino",
   STUCK_RECEIVED: "Recepcionado",
   DELIVERY_FAILED: "No entregado",
