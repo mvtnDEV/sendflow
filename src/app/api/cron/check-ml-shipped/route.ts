@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
@@ -68,8 +69,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Corre cada 5 min sobre los últimos 7 días (antes 3). Los pedidos abiertos más
-  // antiguos (hasta 30 días) los revisa una vez al día /api/cron/flex-sweep.
+  // Corre cada 5 min sobre los últimos 7 días (antes 3), los más nuevos primero.
+  // Los pedidos abiertos más antiguos (hasta 30 días) los revisa una vez al día
+  // /api/cron/flex-sweep.
   const ventana = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const orders = await prisma.order.findMany({
@@ -91,7 +93,10 @@ export async function GET(req: Request) {
     },
     orderBy: [
       { mlShippedAt: { sort: "asc", nulls: "first" } },
-      { createdAt: "asc" },
+      // Los más nuevos primero: son los que hay que escanear hoy. Antes iban los más
+      // antiguos primero y, con la ventana de 7 días, la corrida se acababa antes de
+      // llegar a los pedidos del día.
+      { createdAt: "desc" },
     ],
   });
 
@@ -102,16 +107,16 @@ export async function GET(req: Request) {
   let escaneados = 0;
   let errores = 0;
 
-  for (const order of orders) {
+  const procesar = async (order: (typeof orders)[number]) => {
     const token = await getTokenForStore(order.storeId);
     if (!token) {
       errores++;
-      continue;
+      return;
     }
 
     try {
       const shippingId = (order.rawPayload as any)?.shipping?.id;
-      if (!shippingId) continue;
+      if (!shippingId) return;
 
       // Consultar shipment directo (más rápido que consultar la orden)
       const shipRes = await fetch(
@@ -128,7 +133,7 @@ export async function GET(req: Request) {
           );
           errores++;
         }
-        continue;
+        return;
       }
 
       const shipment = await shipRes.json();
@@ -240,6 +245,18 @@ export async function GET(req: Request) {
       console.error("[ML cron] Error:", order.orderNumber, err.message);
       errores++;
     }
+  };
+
+  // Tokens primero, uno por tienda y en orden: ML invalida el refresh token al usarlo,
+  // así que no se debe renovar dos veces en paralelo.
+  for (const storeId of new Set(orders.map((o) => o.storeId))) {
+    await getTokenForStore(storeId);
+  }
+
+  // Lotes en paralelo para que la corrida alcance a revisar todos los pedidos.
+  const LOTE = 8;
+  for (let i = 0; i < orders.length; i += LOTE) {
+    await Promise.all(orders.slice(i, i + LOTE).map(procesar));
   }
 
   console.log(
