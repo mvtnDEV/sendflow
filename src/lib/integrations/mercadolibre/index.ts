@@ -72,7 +72,7 @@ export async function fetchMLOrder(
   orderId:     string,
   accessToken: string,
 ): Promise<NormalizedOrder> {
-  const res = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, {
+  const res = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, { cache: "no-store",
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!res.ok) {
@@ -89,7 +89,7 @@ export async function fetchMLOrder(
   let shipment: MLShipment | undefined
   if (!order.shipping?.receiver_address) {
     try {
-      const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${order.shipping.id}`, {
+      const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${order.shipping.id}`, { cache: "no-store",
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (shipRes.ok) {
@@ -109,7 +109,7 @@ export async function refreshMLToken(refreshToken: string): Promise<{
   refreshToken: string
   expiresIn:    number
 }> {
-  const res = await fetch('https://api.mercadolibre.com/oauth/token', {
+  const res = await fetch('https://api.mercadolibre.com/oauth/token', { cache: "no-store",
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body:    new URLSearchParams({

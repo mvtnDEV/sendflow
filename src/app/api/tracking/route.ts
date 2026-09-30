@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic'
+export const fetchCache = "force-no-store"; // nunca usar la caché de datos de Next con APIs externas (ML)
 import { NextRequest, NextResponse } from 'next/server'
 import { getPublicTracking }         from '@/lib/services/tracking.service'
 import { checkRateLimit, clientIp }  from '@/lib/utils/rate-limit'

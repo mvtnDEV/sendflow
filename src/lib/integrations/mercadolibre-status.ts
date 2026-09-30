@@ -44,7 +44,7 @@ export async function checkMLShipmentStatus(orderId: string): Promise<MLShipment
   }
 
   async function fetchShipment(token: string) {
-    return fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, {
+    return fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, { cache: "no-store",
       headers: { Authorization: `Bearer ${token}` },
     })
   }

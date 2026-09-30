@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store"; // nunca usar la caché de datos de Next con APIs externas (ML)
 export const maxDuration = 300;
 import { NextResponse } from "next/server";
 import type { OrderStatus } from "@prisma/client";
