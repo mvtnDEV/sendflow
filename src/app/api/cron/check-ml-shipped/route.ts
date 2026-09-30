@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 import { NextResponse } from "next/server";
+import type { OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
@@ -69,17 +70,26 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Corre cada 5 min sobre los últimos 7 días (antes 3), los más nuevos primero.
-  // Los pedidos abiertos más antiguos (hasta 30 días) los revisa una vez al día
+  // Corre cada 5 min y se enfoca en lo del día: los pedidos que Moovex ya tiene en
+  // ruta (aunque sean de días anteriores, hasta 30) y los creados en los últimos
+  // 3 días. El resto de los abiertos (3 a 30 días) los revisa una vez al día
   // /api/cron/flex-sweep.
-  const ventana = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const DIA = 24 * 60 * 60 * 1000;
+  const EN_RUTA: OrderStatus[] = ["DISPATCHED", "PICKED_UP", "IN_TRANSIT"];
 
   const orders = await prisma.order.findMany({
     where: {
       platform: "MERCADOLIBRE",
-      ...FLEX_RECHECK_WHERE, // abiertos + cerrados por Flex (por si ML entrega después)
       sourceId: { not: null },
-      createdAt: { gte: ventana },
+      AND: [
+        FLEX_RECHECK_WHERE, // abiertos + cerrados por Flex (por si ML entrega después)
+        {
+          OR: [
+            { createdAt: { gte: new Date(Date.now() - 3 * DIA) } },
+            { status: { in: EN_RUTA }, createdAt: { gte: new Date(Date.now() - 30 * DIA) } },
+          ],
+        },
+      ],
     },
     select: {
       id: true,
@@ -91,14 +101,14 @@ export async function GET(req: Request) {
       rawPayload: true,
       mlShippedAt: true,
     },
-    orderBy: [
-      { mlShippedAt: { sort: "asc", nulls: "first" } },
-      // Los más nuevos primero: son los que hay que escanear hoy. Antes iban los más
-      // antiguos primero y, con la ventana de 7 días, la corrida se acababa antes de
-      // llegar a los pedidos del día.
-      { createdAt: "desc" },
-    ],
+    orderBy: { createdAt: "desc" },
   });
+
+  // Prioridad: 1) en ruta en Moovex y sin escaneo de Flex, 2) sin escaneo,
+  // 3) el resto. Dentro de cada grupo, los más nuevos primero (sort estable).
+  const prioridad = (o: (typeof orders)[number]) =>
+    (o.mlShippedAt ? 2 : 0) + (EN_RUTA.includes(o.status) ? 0 : 1);
+  orders.sort((a, b) => prioridad(a) - prioridad(b));
 
   console.log(`[ML cron] Revisando ${orders.length} pedidos ML activos`);
 

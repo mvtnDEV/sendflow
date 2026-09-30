@@ -13,8 +13,8 @@ const MAX_POR_CORRIDA = 300;
  * GET /api/cron/flex-sweep — una vez al día (ver vercel.json).
  *
  * Revisa contra ML los pedidos Flex abiertos (o cerrados por Flex como no entregados)
- * que tienen entre 7 y 30 días (los más recientes los cubre check-ml-shipped cada
- * 5 min). Cierra como
+ * que tienen entre 3 y 30 días (los más recientes y los que están en ruta los cubre
+ * check-ml-shipped cada 5 min). Cierra como
  * "No entregado" los que ML canceló o reprogramó, y como entregados los que ML
  * ya entregó (también si antes se habían cerrado como no entregados). La primera
  * corrida sirve también para sanear lo que quedó abierto.
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       platform: "MERCADOLIBRE",
       ...FLEX_RECHECK_WHERE,
       sourceId: { not: null },
-      createdAt: { gte: new Date(ahora - 30 * DIA), lt: new Date(ahora - 7 * DIA) },
+      createdAt: { gte: new Date(ahora - 30 * DIA), lt: new Date(ahora - 3 * DIA) },
     },
     select: { id: true, orderNumber: true, status: true },
     orderBy: { createdAt: "asc" },
