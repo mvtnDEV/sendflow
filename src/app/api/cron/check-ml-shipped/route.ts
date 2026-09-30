@@ -70,11 +70,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Corre cada 5 min y se enfoca en lo del día: los pedidos que Moovex ya tiene en
-  // ruta (aunque sean de días anteriores, hasta 30) y los creados en los últimos
-  // 3 días. El resto de los abiertos (3 a 30 días) los revisa una vez al día
-  // /api/cron/flex-sweep.
+  // Corre cada 5 min. Revisa dos grupos:
+  // 1) ESCANEO: los pedidos que Moovex puso en ruta en las últimas 24 h y que Flex
+  //    todavía no marca como escaneados (mlShippedAt vacío). Nada más antiguo.
+  // 2) CIERRE: los pedidos de los últimos 3 días, para detectar entregados,
+  //    cancelados o reprogramados (como antes del 28-09). Lo de 3 a 30 días lo
+  //    revisa una vez al día /api/cron/flex-sweep.
   const DIA = 24 * 60 * 60 * 1000;
+  const hace24h = new Date(Date.now() - DIA);
   const EN_RUTA: OrderStatus[] = ["DISPATCHED", "PICKED_UP", "IN_TRANSIT"];
 
   const orders = await prisma.order.findMany({
@@ -85,8 +88,12 @@ export async function GET(req: Request) {
         FLEX_RECHECK_WHERE, // abiertos + cerrados por Flex (por si ML entrega después)
         {
           OR: [
+            {
+              status: { in: EN_RUTA },
+              mlShippedAt: null,
+              OR: [{ inTransitAt: { gte: hace24h } }, { updatedAt: { gte: hace24h } }],
+            },
             { createdAt: { gte: new Date(Date.now() - 3 * DIA) } },
-            { status: { in: EN_RUTA }, createdAt: { gte: new Date(Date.now() - 30 * DIA) } },
           ],
         },
       ],
@@ -103,12 +110,6 @@ export async function GET(req: Request) {
     },
     orderBy: { createdAt: "desc" },
   });
-
-  // Prioridad: 1) en ruta en Moovex y sin escaneo de Flex, 2) sin escaneo,
-  // 3) el resto. Dentro de cada grupo, los más nuevos primero (sort estable).
-  const prioridad = (o: (typeof orders)[number]) =>
-    (o.mlShippedAt ? 2 : 0) + (EN_RUTA.includes(o.status) ? 0 : 1);
-  orders.sort((a, b) => prioridad(a) - prioridad(b));
 
   console.log(`[ML cron] Revisando ${orders.length} pedidos ML activos`);
 
@@ -263,11 +264,10 @@ export async function GET(req: Request) {
     await getTokenForStore(storeId);
   }
 
-  // Se revisan TODOS los pedidos; LOTE es solo cuántos se consultan a ML a la vez.
-  const LOTE = 20;
-  for (let i = 0; i < orders.length; i += LOTE) {
-    await Promise.all(orders.slice(i, i + LOTE).map(procesar));
-  }
+  // Todos a la vez: primero los en ruta sin escaneo de Flex, luego el resto.
+  const esEscaneo = (o: (typeof orders)[number]) => !o.mlShippedAt && EN_RUTA.includes(o.status);
+  await Promise.all(orders.filter(esEscaneo).map(procesar));
+  await Promise.all(orders.filter((o) => !esEscaneo(o)).map(procesar));
 
   console.log(
     `[ML cron] Terminado: ${orders.length} revisados, ${cerrados} cerrados, ${escaneados} escaneados, ${errores} errores`,
