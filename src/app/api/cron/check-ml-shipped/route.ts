@@ -253,8 +253,8 @@ export async function GET(req: Request) {
     await getTokenForStore(storeId);
   }
 
-  // Lotes en paralelo para que la corrida alcance a revisar todos los pedidos.
-  const LOTE = 8;
+  // Se revisan TODOS los pedidos; LOTE es solo cuántos se consultan a ML a la vez.
+  const LOTE = 20;
   for (let i = 0; i < orders.length; i += LOTE) {
     await Promise.all(orders.slice(i, i + LOTE).map(procesar));
   }
