@@ -14,7 +14,7 @@ const REGIONES_PERMITIDAS = [
   "metropolitana de santiago",
 ];
 
-function isRegionPermitida(region: string): boolean {
+export function isRegionPermitida(region: string): boolean {
   const r = region.toLowerCase().trim();
   return REGIONES_PERMITIDAS.some(
     (allowed) => r.includes(allowed) || allowed.includes(r),
@@ -284,11 +284,15 @@ export async function upsertOrderFromWebhook(
   storeId: string,
   integrationId: string,
   data: NormalizedOrder,
+  opts: { createIfMissing?: boolean } = {},
 ) {
-  const existing = await prisma.order.findFirst({
-    where: { integrationId, sourceId: data.externalId },
-    select: { id: true },
-  });
+  const findExisting = () =>
+    prisma.order.findFirst({
+      where: { integrationId, sourceId: data.externalId },
+      select: { id: true },
+    });
+
+  const existing = await findExisting();
   if (existing) {
     return prisma.order.update({
       where: { id: existing.id },
@@ -303,21 +307,33 @@ export async function upsertOrderFromWebhook(
       },
     });
   }
-  return createOrder({
-    storeId,
-    integrationId,
-    platform: data.platform,
-    sourceId: data.externalId,
-    customerName: data.customerName,
-    customerPhone: data.customerPhone,
-    customerEmail: data.customerEmail,
-    addressStreet: data.addressStreet,
-    addressComuna: data.addressComuna,
-    addressRegion: data.addressRegion,
-    bultos: data.bultos,
-    rawPayload: data.rawPayload as any,
-    createdBy: "webhook",
-  });
+  if (opts.createIfMissing === false) return null;
+
+  try {
+    return await createOrder({
+      storeId,
+      integrationId,
+      platform: data.platform,
+      sourceId: data.externalId,
+      customerName: data.customerName,
+      customerPhone: data.customerPhone,
+      customerEmail: data.customerEmail,
+      addressStreet: data.addressStreet,
+      addressComuna: data.addressComuna,
+      addressRegion: data.addressRegion,
+      bultos: data.bultos,
+      rawPayload: data.rawPayload as any,
+      createdBy: "webhook",
+    });
+  } catch (err) {
+    // Dos entregas simultáneas del mismo pedido: el índice único
+    // (integrationId, sourceId) frena la segunda. Devolver el que ganó.
+    if ((err as { code?: string })?.code === "P2002") {
+      const ganador = await findExisting();
+      if (ganador) return ganador;
+    }
+    throw err;
+  }
 }
 
 const STATUS_TIMESTAMP: Partial<Record<OrderStatus, string>> = {

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 type Tab = 'SHOPIFY' | 'WOOCOMMERCE' | 'JUMPSELLER' | 'MERCADOLIBRE' | 'APIKEYS'
 
@@ -13,11 +14,11 @@ const PLATFORMS: { key: Tab; label: string; color: string; bg: string; border: s
 
 const STEPS: Record<Exclude<Tab,'APIKEYS'>, string[]> = {
   SHOPIFY: [
-    'Shopify Admin → Settings → Notifications → Webhooks',
-    'Create webhook → Evento: "Order creation"',
-    'URL de entrega: https://TU-DOMINIO/api/webhooks/shopify',
-    'Copia el "Signing secret" y pégalo abajo',
-    'Para el Access Token: Apps → Develop apps → tu app → Access tokens',
+    'Entra al Dev Dashboard de Shopify (dev.shopify.com) con la misma cuenta dueña de tu tienda y crea una app (ej: "SendFlow")',
+    'En la app, crea una versión con el permiso read_orders y publícala',
+    'Instala la app en tu tienda',
+    'En la configuración de la app copia el Client ID y el Client secret, y pégalos aquí junto a tu dominio .myshopify.com',
+    'Presiona "Conectar Shopify": verificamos todo y creamos los webhooks por ti — no tienes que configurar nada más',
   ],
   WOOCOMMERCE: [
     'WooCommerce → Settings → Advanced → REST API → Add key',
@@ -43,7 +44,7 @@ const STEPS: Record<Exclude<Tab,'APIKEYS'>, string[]> = {
 
 interface Store {
   id: string; name: string
-  integrations: { id: string; platform: string; isActive: boolean; lastSyncAt: Date | null }[]
+  integrations: { id: string; platform: string; isActive: boolean; lastSyncAt: Date | null; externalStoreId: string | null }[]
 }
 
 interface ApiKey {
@@ -203,6 +204,7 @@ function ApiKeysTab() {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function IntegracionesClient({ stores }: { stores: Store[] }) {
+  const router = useRouter()
   const [storeId, setStoreId] = useState(stores[0]?.id ?? '')
   const [tab,     setTab]     = useState<Tab>('SHOPIFY')
   const [form,    setForm]    = useState({ key1:'', key2:'', key3:'', secret:'' })
@@ -210,6 +212,7 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
   const [saved,   setSaved]   = useState(false)
   const [copied,  setCopied]  = useState(false)
   const [testOk,  setTestOk]  = useState<boolean|null>(null)
+  const [shopifyMsg, setShopifyMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const set  = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
   const plat = PLATFORMS.find(p => p.key === tab)!
@@ -248,6 +251,28 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
         body:    JSON.stringify({ platform: tab, credentials, externalStoreId }),
       })
       if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500) }
+    } finally { setSaving(false) }
+  }
+
+  async function connectShopify() {
+    if (!storeId) return
+    setSaving(true); setShopifyMsg(null)
+    try {
+      const res  = await fetch(`/api/stores/${storeId}/integrations/shopify`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ domain: form.key1, clientId: form.key2, clientSecret: form.secret }),
+      })
+      const json = await res.json().catch(() => null)
+      if (res.ok && json?.ok) {
+        setShopifyMsg({ ok: true, text: `Conectado a ${json.data.shopName} (${json.data.domain}). Los pedidos nuevos llegarán automáticamente.` })
+        setForm({ key1:'', key2:'', key3:'', secret:'' })
+        router.refresh()
+      } else {
+        setShopifyMsg({ ok: false, text: json?.error ?? 'No se pudo conectar. Intenta de nuevo.' })
+      }
+    } catch {
+      setShopifyMsg({ ok: false, text: 'Sin conexión con el servidor. Revisa tu internet e intenta de nuevo.' })
     } finally { setSaving(false) }
   }
 
@@ -330,31 +355,41 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
             </div>
 
             {tab === 'SHOPIFY' && (<>
+              {integration?.isActive && integration.externalStoreId && (
+                <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:10, padding:'12px 14px', marginBottom:16, fontSize:12, color:'#166534', lineHeight:1.5 }}>
+                  ✅ Conectada a <strong>{integration.externalStoreId}</strong>
+                  {integration.lastSyncAt && <> · último pedido recibido {new Date(integration.lastSyncAt).toLocaleString('es-CL', { timeZone:'America/Santiago', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</>}
+                  <div style={{ color:'#16A34A', marginTop:2 }}>Para cambiar de app o reconectar, vuelve a ingresar los datos.</div>
+                </div>
+              )}
               <div style={{ marginBottom:13 }}>
                 <label style={lbl}>Dominio de la tienda</label>
-                <input style={inp} placeholder="mi-tienda.myshopify.com" value={form.key1} onChange={e=>set('key1',e.target.value)}/>
-                <div style={hint}>Sin https:// ni barra final</div>
+                <input style={inp} placeholder="mi-tienda.myshopify.com" value={form.key1} onChange={e=>set('key1',e.target.value)} autoComplete="off"/>
+                <div style={hint}>El dominio .myshopify.com (no tu dominio .cl). Lo ves en Configuración → Dominios.</div>
               </div>
               <div style={{ marginBottom:13 }}>
-                <label style={lbl}>Admin API Access Token</label>
-                <input style={inp} type="password" placeholder="shpat_xxxxx" value={form.key2} onChange={e=>set('key2',e.target.value)}/>
-                <div style={hint}>Apps → Develop apps → Access tokens</div>
+                <label style={lbl}>Client ID</label>
+                <input style={inp} placeholder="Client ID de la app" value={form.key2} onChange={e=>set('key2',e.target.value)} autoComplete="off"/>
               </div>
               <div style={{ marginBottom:13 }}>
-                <label style={lbl}>Webhook Signing Secret</label>
-                <input style={inp} type="password" placeholder="Secret generado por Shopify" value={form.secret} onChange={e=>set('secret',e.target.value)}/>
+                <label style={lbl}>Client secret</label>
+                <input style={inp} type="password" placeholder="Client secret de la app" value={form.secret} onChange={e=>set('secret',e.target.value)} autoComplete="new-password"/>
+                <div style={hint}>Dev Dashboard → tu app → Configuración → Credenciales</div>
               </div>
-              <div style={{ display:'flex', gap:8, marginTop:18 }}>
-                <button onClick={handleTest}
-                  style={{ padding:'9px 16px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, background:'white', cursor:'pointer',
-                    color: testOk === true ? '#166534' : testOk === false ? '#9F1239' : '#374151' }}>
-                  {testOk === true ? '✓ Conexión OK' : testOk === false ? '✗ Error' : 'Probar conexión'}
-                </button>
-                <button onClick={handleSave} disabled={saving}
-                  style={{ flex:1, padding:'9px', background:saving?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:saving?'not-allowed':'pointer' }}>
-                  {saving ? 'Guardando...' : 'Guardar credenciales'}
-                </button>
-              </div>
+              {shopifyMsg && (
+                <div role="status" style={{ marginTop:4, padding:'10px 12px', borderRadius:8, fontSize:12, lineHeight:1.5,
+                  background: shopifyMsg.ok ? '#F0FDF4' : '#FFF1F2',
+                  color:      shopifyMsg.ok ? '#166534' : '#9F1239',
+                  border:     `1px solid ${shopifyMsg.ok ? '#BBF7D0' : '#FECDD3'}` }}>
+                  {shopifyMsg.ok ? '✓ ' : '✗ '}{shopifyMsg.text}
+                </div>
+              )}
+              <button onClick={connectShopify} disabled={saving || !form.key1 || !form.key2 || !form.secret}
+                style={{ width:'100%', marginTop:16, padding:'11px', border:'none', borderRadius:8, fontSize:13, fontWeight:500, color:'white',
+                  background: saving || !form.key1 || !form.key2 || !form.secret ? '#93C5FD' : '#2563EB',
+                  cursor: saving ? 'wait' : (!form.key1 || !form.key2 || !form.secret) ? 'not-allowed' : 'pointer' }}>
+                {saving ? 'Verificando con Shopify…' : integration?.isActive ? 'Reconectar Shopify' : 'Conectar Shopify'}
+              </button>
             </>)}
 
             {tab === 'WOOCOMMERCE' && (<>
@@ -456,13 +491,12 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
 
           {/* Instrucciones */}
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            {tab !== 'MERCADOLIBRE' && (
+            {tab !== 'MERCADOLIBRE' && tab !== 'SHOPIFY' && (
               <div style={{ background:'white', border:`1px solid ${plat.border}`, borderRadius:12, padding:20 }}>
                 <div style={{ fontSize:13, fontWeight:500, marginBottom:6 }}>URL del Webhook</div>
                 <div style={{ fontSize:12, color:'#6B7280', marginBottom:10 }}>Copia esta URL y configúrala en {plat.label}</div>
                 <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:8, padding:'10px 14px', fontFamily:'monospace', fontSize:11, color:'#374151', wordBreak:'break-all', marginBottom:10 }}>
                   {typeof window !== 'undefined' ? window.location.origin : 'https://tu-dominio.vercel.app'}
-                  {tab === 'SHOPIFY'      && '/api/webhooks/shopify'}
                   {tab === 'WOOCOMMERCE' && '/api/webhooks/woocommerce'}
                   {tab === 'JUMPSELLER'  && `/api/webhooks/jumpseller?token=${form.secret || 'TU_TOKEN'}`}
                 </div>
