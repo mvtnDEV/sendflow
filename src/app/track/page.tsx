@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { sanitizeCode } from '@/lib/services/tracking.service'
+import s from './track.module.css'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,56 +19,41 @@ export default function TrackSearchPage({
   if (codigo) redirect(`/track/${encodeURIComponent(codigo)}`)
 
   return (
-    <div
-      style={{
-        background: '#111F35',
-        border: '1px solid #1E2F4A',
-        borderRadius: 14,
-        padding: 24,
-      }}
-    >
-      <div style={{ fontSize: 15, fontWeight: 500, color: 'white' }}>Busca tu pedido</div>
-      <p style={{ fontSize: 13, color: '#94A3B8', margin: '6px 0 18px', lineHeight: 1.5 }}>
+    <section className={s.hero}>
+      <span className={s.eyebrow}>Seguimiento de envíos</span>
+      <h1 className={s.searchTitle}>
+        ¿Dónde está <em>tu pedido</em>?
+      </h1>
+      <p className={s.help}>
         Ingresa el número de pedido o el código que aparece en la etiqueta del paquete.
       </p>
 
-      <form action="/track" method="get" style={{ display: 'flex', gap: 8 }}>
+      <form action="/track" method="get" className={s.searchForm}>
+        <label htmlFor="codigo" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+          Número de pedido o código
+        </label>
         <input
+          id="codigo"
           name="codigo"
           required
           autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
           placeholder="Ej: SH-00042"
-          style={{
-            flex: 1,
-            padding: '12px 14px',
-            border: '1px solid #2A3E5C',
-            background: '#0B1628',
-            color: '#E2E8F0',
-            borderRadius: 10,
-            fontSize: 15,
-            outline: 'none',
-            fontFamily: 'inherit',
-            minWidth: 0,
-          }}
+          className={`${s.input} ${s.mono}`}
         />
-        <button
-          type="submit"
-          style={{
-            padding: '12px 18px',
-            background: '#2563EB',
-            color: 'white',
-            border: 'none',
-            borderRadius: 10,
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Buscar
+        <button type="submit" className={s.btn}>
+          Buscar pedido
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+          </svg>
         </button>
       </form>
-    </div>
+
+      <ul className={s.hintList}>
+        <li>Si la tienda te envió un link de seguimiento, ábrelo directo.</li>
+        <li>O escanea el código QR de la etiqueta con la cámara de tu celular.</li>
+      </ul>
+    </section>
   )
 }
