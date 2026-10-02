@@ -449,6 +449,7 @@ export async function listOrders(filters: OrderFilters) {
       select: {
         id: true,
         orderNumber: true,
+        qrCode: true,
         platform: true,
         status: true,
         customerName: true,

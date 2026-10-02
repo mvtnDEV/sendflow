@@ -5,6 +5,7 @@ import { getSessionUser, canAccessStore } from '@/lib/utils/auth'
 import { prisma } from '@/lib/db/prisma'
 import Link from 'next/link'
 import OrderActions from '@/components/orders/OrderActions'
+import ShareTrackingButton from '@/components/orders/ShareTrackingButton'
 
 const TZ = 'America/Santiago'
 const fmt = (d: Date | string) => new Date(d).toLocaleString('es-CL', { timeZone: TZ, day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
@@ -52,6 +53,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   if (!canAccessStore(user!, order.storeId)) redirect('/recepciones')
 
   const isStoreAdmin = user?.role === 'STORE_ADMIN'
+  const canShareTracking = user?.role === 'SUPER_ADMIN' || isStoreAdmin
 
   const statusBadge: Record<string, { bg: string; color: string }> = {
     PENDING:    { bg: '#FFFBEB', color: '#92400E' },
@@ -228,6 +230,16 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               🖨 Imprimir etiqueta
             </a>
           </div>
+
+          {canShareTracking && (
+            <ShareTrackingButton
+              variant="card"
+              qrCode={order.qrCode}
+              orderNumber={order.orderNumber}
+              customerName={order.customerName}
+              customerPhone={order.customerPhone}
+            />
+          )}
 
           {/* Estado + Acciones */}
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>

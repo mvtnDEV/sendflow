@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import ShareTrackingButton from "@/components/orders/ShareTrackingButton";
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   PENDING: { bg: "#FFFBEB", color: "#92400E" },
@@ -111,6 +112,7 @@ export default function RecepcionesClient({
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const isStoreAdmin = userRole === "STORE_ADMIN";
+  const canShareTracking = userRole === "SUPER_ADMIN" || isStoreAdmin;
   const isSuperAdmin = userRole === "SUPER_ADMIN";
   const esSenby = searchParams.storeId === SENBY_STORE_ID;
 
@@ -1220,21 +1222,31 @@ export default function RecepcionesClient({
                           boxShadow: "-3px 0 8px rgba(0,0,0,0.06)",
                         }}
                       >
-                        <Link
-                          href={`/recepciones/${order.id}`}
-                          style={{
-                            color: "#2563EB",
-                            fontSize: 18,
-                            textDecoration: "none",
-                            fontWeight: 700,
-                            padding: "4px 8px",
-                            background: "#EFF6FF",
-                            borderRadius: 6,
-                            display: "inline-block",
-                          }}
-                        >
-                          →
-                        </Link>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {canShareTracking && order.qrCode && (
+                            <ShareTrackingButton
+                              qrCode={order.qrCode}
+                              orderNumber={order.orderNumber}
+                              customerName={order.customerName}
+                              customerPhone={order.customerPhone}
+                            />
+                          )}
+                          <Link
+                            href={`/recepciones/${order.id}`}
+                            style={{
+                              color: "#2563EB",
+                              fontSize: 18,
+                              textDecoration: "none",
+                              fontWeight: 700,
+                              padding: "4px 8px",
+                              background: "#EFF6FF",
+                              borderRadius: 6,
+                              display: "inline-block",
+                            }}
+                          >
+                            →
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1359,6 +1371,14 @@ export default function RecepcionesClient({
                         />
                         {STATUS_LABEL[order.status] ?? order.status}
                       </span>
+                      {canShareTracking && order.qrCode && (
+                        <ShareTrackingButton
+                          qrCode={order.qrCode}
+                          orderNumber={order.orderNumber}
+                          customerName={order.customerName}
+                          customerPhone={order.customerPhone}
+                        />
+                      )}
                       <Link
                         href={`/recepciones/${order.id}`}
                         style={{
