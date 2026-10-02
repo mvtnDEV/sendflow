@@ -81,7 +81,10 @@ export async function getShopifyAccessToken(
   return entry
 }
 
-async function shopifyGraphQL<T>(domain: string, token: string, query: string, variables?: object): Promise<T> {
+/** `scopeHint`: permiso que se le pide a la tienda si Shopify responde "access denied". */
+export async function shopifyGraphQL<T>(
+  domain: string, token: string, query: string, variables?: object, scopeHint = 'read_orders',
+): Promise<T> {
   const res = await fetch(`https://${domain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
@@ -93,7 +96,7 @@ async function shopifyGraphQL<T>(domain: string, token: string, query: string, v
   if (json.errors?.length) {
     const msg = String(json.errors[0]?.message ?? '')
     if (/access denied|scope/i.test(msg)) {
-      throw new ShopifyError('A la app le faltan permisos. Activa el permiso read_orders en el Dev Dashboard y vuelve a instalarla.')
+      throw new ShopifyError(`A la app le faltan permisos. Activa el permiso ${scopeHint} en el Dev Dashboard y vuelve a instalarla.`)
     }
     throw new ShopifyError(`Error de Shopify: ${msg}`)
   }

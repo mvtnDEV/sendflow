@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { prisma } from '@/lib/db/prisma'
+import { syncShopifyStatus, syncShopifyStatusBatch } from '@/lib/integrations/shopify/fulfillment'
 
 function signPayload(payload: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(payload).digest('hex')
@@ -178,6 +179,13 @@ export async function notifyWebhooks(
 ) {
   if (isDuplicateNotification(orderId, newStatus)) return
 
+  await Promise.all([
+    notificarApiKeys(orderId, previousStatus),
+    syncShopifyStatus(orderId, newStatus),
+  ])
+}
+
+async function notificarApiKeys(orderId: string, previousStatus: string) {
   const order = await prisma.order.findUnique({
     where:  { id: orderId },
     select: { storeId: true },
@@ -231,6 +239,16 @@ export async function notifyWebhooksBatch(
 
   if (pending.length === 0) return
 
+  await Promise.all([
+    notificarApiKeysBatch(pending, opts?.concurrency),
+    syncShopifyStatusBatch(pending.map(u => u.orderId), newStatus),
+  ])
+}
+
+async function notificarApiKeysBatch(
+  pending:      Array<{ orderId: string; storeId: string; previousStatus: string }>,
+  concurrency?: number,
+) {
   const storeIds = Array.from(new Set(pending.map(u => u.storeId)))
   const apiKeys  = await prisma.apiKey.findMany({
     where: {
@@ -262,7 +280,7 @@ export async function notifyWebhooksBatch(
   if (tasks.length === 0) return
 
   const { mapWithConcurrency } = await import('@/lib/utils/concurrency')
-  await mapWithConcurrency(tasks, opts?.concurrency ?? 10, t =>
+  await mapWithConcurrency(tasks, concurrency ?? 10, t =>
     sendWebhookWithRetry(t.apiKey.id, t.orderId, t.apiKey.webhookUrl!, t.apiKey.webhookSecret ?? null, t.payloadStr, 'order.status_changed')
   )
 }
