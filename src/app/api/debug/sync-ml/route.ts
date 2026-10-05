@@ -1,35 +1,98 @@
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store"; // nunca usar la caché de datos de Next con APIs externas (ML)
+export const maxDuration = 300;
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { decrypt } from "@/lib/utils/crypto";
+import { decrypt, encrypt } from "@/lib/utils/crypto";
+import { refreshMLToken } from "@/lib/integrations/mercadolibre";
+import { getSessionUser } from "@/lib/utils/auth";
+
+/**
+ * GET /api/debug/sync-ml?store=<nombre>&days=7[&confirmar=1][&todos=1]
+ *
+ * Trae a Moovex los pedidos de Mercado Libre de una tienda que existían ANTES de
+ * conectarla (el webhook solo avisa de lo nuevo). Solo SUPER_ADMIN, desde el
+ * navegador con la sesión iniciada.
+ *
+ * - Sin `confirmar=1` es una VISTA PREVIA: lista lo que se crearía y no crea nada.
+ * - Solo importa envíos Flex (logistic_type self_service) que todavía no salen:
+ *   ready_to_ship / handling / pending. Lo entregado, en ruta o cancelado se
+ *   omite, para no facturar pedidos que Moovex no despachó. `todos=1` quita el
+ *   filtro de Flex (no el de estado).
+ */
+const PENDIENTES = ["ready_to_ship", "handling", "pending"];
+const MAX_PEDIDOS = 1000;
+
+async function getToken(integration: { id: string; apiKeyEnc: string }) {
+  const creds = decrypt(integration.apiKeyEnc);
+  let accessToken: string;
+  let refreshToken: string;
+  if (creds.startsWith("{")) {
+    const parsed = JSON.parse(creds);
+    accessToken = parsed.accessToken;
+    refreshToken = parsed.refreshToken;
+  } else {
+    [accessToken, refreshToken] = creds.split("|");
+  }
+  const test = await fetch("https://api.mercadolibre.com/users/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (test.status !== 401 && test.status !== 403) return accessToken;
+
+  const refreshed = await refreshMLToken(refreshToken);
+  await prisma.storeIntegration.update({
+    where: { id: integration.id },
+    data: {
+      apiKeyEnc: encrypt(`${refreshed.accessToken}|${refreshed.refreshToken}`),
+      refreshToken: refreshed.refreshToken,
+      lastSyncAt: new Date(),
+    },
+  });
+  return refreshed.accessToken;
+}
 
 export async function GET(req: NextRequest) {
-  const storeName = req.nextUrl.searchParams.get("store") ?? "";
-  const days = parseInt(req.nextUrl.searchParams.get("days") ?? "3");
+  const user = await getSessionUser();
+  if (!user || user.role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  const params = req.nextUrl.searchParams;
+  const storeName = (params.get("store") ?? "").trim();
+  const days = Math.min(30, Math.max(1, parseInt(params.get("days") ?? "7") || 7));
+  const confirmar = params.get("confirmar") === "1";
+  const soloFlex = params.get("todos") !== "1";
+
+  if (!storeName) {
+    return NextResponse.json({ error: "Falta ?store=<nombre de la tienda>" }, { status: 400 });
+  }
 
   const integration = await prisma.storeIntegration.findFirst({
-    where: { platform: "MERCADOLIBRE", isActive: true, store: { name: storeName } },
-    include: { store: { select: { name: true, puntoRetiroFret: true } } },
+    where: {
+      platform: "MERCADOLIBRE",
+      isActive: true,
+      store: { name: { equals: storeName, mode: "insensitive" } },
+    },
+    select: { id: true, storeId: true, apiKeyEnc: true, store: { select: { name: true } } },
   });
-
-  if (!integration) return NextResponse.json({ error: "no integration" });
+  if (!integration) {
+    return NextResponse.json({ error: `No hay integración ML activa para la tienda "${storeName}"` }, { status: 404 });
+  }
 
   let token: string;
   try {
-    const decrypted = decrypt(integration.apiKeyEnc);
-    token = decrypted.includes("|") ? decrypted.split("|")[0] : decrypted;
-  } catch {
-    return NextResponse.json({ error: "decrypt failed" });
+    token = await getToken(integration);
+  } catch (err: any) {
+    return NextResponse.json({ error: "No se pudo obtener el token de ML", detail: err.message }, { status: 502 });
   }
 
-  const testRes = await fetch("https://api.mercadolibre.com/users/me", {
+  const meRes = await fetch("https://api.mercadolibre.com/users/me", {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!testRes.ok) {
-    return NextResponse.json({ error: "token expired", status: testRes.status });
+  if (!meRes.ok) {
+    return NextResponse.json({ error: "Token de ML inválido", status: meRes.status }, { status: 502 });
   }
-  const mlUser = await testRes.json();
+  const mlUser = await meRes.json();
 
   const dateFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const results: any[] = [];
@@ -41,40 +104,26 @@ export async function GET(req: NextRequest) {
       `https://api.mercadolibre.com/orders/search?seller=${mlUser.id}&order.date_created.from=${dateFrom}&sort=date_desc&offset=${offset}&limit=50`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-
     if (!ordersRes.ok) {
-      results.push({ error: "orders search failed", status: ordersRes.status });
+      results.push({ status: "error", detail: `orders/search HTTP ${ordersRes.status}` });
       break;
     }
-
     const ordersData = await ordersRes.json();
     total = ordersData.paging?.total ?? 0;
-    const orders = ordersData.results ?? [];
 
-    for (const mlOrder of orders) {
+    for (const mlOrder of ordersData.results ?? []) {
       const orderId = String(mlOrder.id);
 
       const existing = await prisma.order.findFirst({
-        where: { integrationId: integration.id, sourceId: orderId },
-        select: { id: true, orderNumber: true, customerName: true, addressStreet: true, addressComuna: true, externalId: true, status: true },
+        where: { storeId: integration.storeId, sourceId: orderId },
+        select: { orderNumber: true, status: true },
       });
-
       if (existing) {
-        results.push({
-          orderId,
-          status: "ya_existe",
-          orderNumber: existing.orderNumber,
-          cliente: existing.customerName,
-          direccion: existing.addressStreet,
-          comuna: existing.addressComuna,
-          fret: existing.externalId,
-          estado: existing.status,
-        });
+        results.push({ orderId, status: "ya_existe", orderNumber: existing.orderNumber, estado: existing.status });
         continue;
       }
-
       if (mlOrder.status === "cancelled") {
-        results.push({ orderId, status: "cancelado" });
+        results.push({ orderId, status: "omitido", motivo: "orden cancelada" });
         continue;
       }
 
@@ -82,17 +131,22 @@ export async function GET(req: NextRequest) {
       let shipment: any = null;
       if (shippingId) {
         try {
-          const shipRes = await fetch(
-            `https://api.mercadolibre.com/shipments/${shippingId}`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          );
+          const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
           if (shipRes.ok) shipment = await shipRes.json();
         } catch {}
       }
-
-      const shipmentStatus = shipment?.status ?? "unknown";
-      if (shipmentStatus === "cancelled") {
-        results.push({ orderId, status: "envio_cancelado" });
+      if (!shipment) {
+        results.push({ orderId, status: "omitido", motivo: "sin envío" });
+        continue;
+      }
+      if (soloFlex && shipment.logistic_type !== "self_service") {
+        results.push({ orderId, status: "omitido", motivo: `no es Flex (${shipment.logistic_type ?? "?"})` });
+        continue;
+      }
+      if (!PENDIENTES.includes(shipment.status)) {
+        results.push({ orderId, status: "omitido", motivo: `envío ${shipment.status}/${shipment.substatus ?? "-"}` });
         continue;
       }
 
@@ -100,20 +154,23 @@ export async function GET(req: NextRequest) {
       let addressComuna = "Sin comuna";
       let addressRegion = "Región Metropolitana";
       let addressNotes = "";
-
-      if (shipment?.receiver_address) {
+      if (shipment.receiver_address) {
         const addr = shipment.receiver_address;
         addressStreet = [addr.street_name, addr.street_number].filter(Boolean).join(" ");
         addressComuna = addr.city?.name ?? addr.municipality?.name ?? "Sin comuna";
         addressRegion = addr.state?.name ?? "Región Metropolitana";
         if (addr.comment) addressNotes = addr.comment;
       }
-
       const buyer = mlOrder.buyer ?? {};
-      const items = mlOrder.order_items ?? [];
-      const totalBultos = items.reduce(
+      const bultos = (mlOrder.order_items ?? []).reduce(
         (sum: number, item: any) => sum + (item.quantity ?? 1), 0,
-      );
+      ) || 1;
+      const customerName = `${buyer.first_name ?? ""} ${buyer.last_name ?? ""}`.trim() || "Cliente ML";
+
+      if (!confirmar) {
+        results.push({ orderId, status: "se_crearia", cliente: customerName, comuna: addressComuna, envio: `${shipment.status}/${shipment.substatus ?? "-"}` });
+        continue;
+      }
 
       try {
         const { createOrder } = await import("@/lib/services/order.service");
@@ -122,49 +179,41 @@ export async function GET(req: NextRequest) {
           integrationId: integration.id,
           platform: "MERCADOLIBRE",
           sourceId: orderId,
-          customerName:
-            `${buyer.first_name ?? ""} ${buyer.last_name ?? ""}`.trim() || "Cliente ML",
+          customerName,
           customerPhone: buyer.phone?.number ?? null,
           customerEmail: buyer.email ?? null,
           addressStreet,
           addressComuna,
           addressRegion,
           addressNotes,
-          bultos: totalBultos || 1,
-          rawPayload: {
-            ...mlOrder,
-            shipping: shipment ?? mlOrder.shipping,
-            pack_id: mlOrder.pack_id,
-          },
+          bultos,
+          rawPayload: { ...mlOrder, shipping: shipment, pack_id: mlOrder.pack_id },
           createdBy: "sync-ml",
         });
-
-        results.push({
-          orderId,
-          status: "creado",
-          orderNumber: order.orderNumber,
-          cliente: order.customerName,
-          direccion: addressStreet,
-          comuna: addressComuna,
-        });
+        results.push({ orderId, status: "creado", orderNumber: order.orderNumber, cliente: customerName, comuna: addressComuna });
       } catch (err: any) {
-        results.push({ orderId, status: "error", detail: err.message });
+        if (err.code === "P2002") results.push({ orderId, status: "ya_existe" });
+        else results.push({ orderId, status: "error", detail: err.message });
       }
     }
 
     offset += 50;
-  } while (offset < total && offset < 200);
+  } while (offset < total && offset < MAX_PEDIDOS);
 
-  const creados = results.filter(r => r.status === "creado").length;
-  const existentes = results.filter(r => r.status === "ya_existe").length;
-
+  const cuenta = (s: string) => results.filter((r) => r.status === s).length;
   return NextResponse.json({
     ok: true,
-    store: storeName,
-    mlUser: mlUser.id,
+    modo: confirmar ? "IMPORTADO" : "VISTA PREVIA (agrega &confirmar=1 para crear)",
+    store: integration.store.name,
+    dias: days,
     totalML: total,
-    creados,
-    existentes,
+    resumen: {
+      creados: cuenta("creado"),
+      se_crearian: cuenta("se_crearia"),
+      ya_existian: cuenta("ya_existe"),
+      omitidos: cuenta("omitido"),
+      errores: cuenta("error"),
+    },
     results,
   });
 }
