@@ -35,12 +35,14 @@ interface StoreFactura {
     id: string; name: string; rut: string | null; encargado: string | null
     tarifaUrbana: number | null; tarifaExtraUrbana: number | null
     tarifaRural: number | null; tarifaRetiro: number | null
+    tarifaCambio: number | null
     fechaTarifa: string | null
   }
   orders: {
     id: string; orderNumber: string; customerName: string
     addressStreet: string; addressComuna: string; addressRegion: string
     deliveredAt: string; inTransitAt: string; bultos: number; platform: string
+    servicio: 'CAMBIO' | 'RETIRO' | null // tarifa fija (tiendas con tarifa de cambio)
   }[]
   total: number
 }
@@ -74,13 +76,16 @@ export default function FacturacionPage() {
 
   function calcFactura(sf: StoreFactura) {
     const { store, orders } = sf
-    let totalUrbana = 0, totalExtraUrbana = 0, totalRural = 0, totalRetiro = 0
-    let countUrbana = 0, countExtraUrbana = 0, countRural = 0, countRetiro = 0
+    let totalUrbana = 0, totalExtraUrbana = 0, totalRural = 0, totalRetiro = 0, totalCambio = 0
+    let countUrbana = 0, countExtraUrbana = 0, countRural = 0, countRetiro = 0, countCambio = 0
 
     orders.forEach(o => {
       const tipo     = getTipoTarifa(o.addressComuna)
-      const esRetiro = retiroMap[store.id]?.[o.id] ?? false
-      if (esRetiro) {
+      const esRetiro = o.servicio === 'RETIRO' || (retiroMap[store.id]?.[o.id] ?? false)
+      if (o.servicio === 'CAMBIO') {
+        totalCambio += store.tarifaCambio ?? 0
+        countCambio++
+      } else if (esRetiro) {
         totalRetiro += store.tarifaRetiro ?? 0
         countRetiro++
       } else if (tipo === 'urbana') {
@@ -95,13 +100,13 @@ export default function FacturacionPage() {
       }
     })
 
-    const neto         = totalUrbana + totalExtraUrbana + totalRural + totalRetiro
+    const neto         = totalUrbana + totalExtraUrbana + totalRural + totalRetiro + totalCambio
     const iva           = neto * IVA_RATE
     const totalConIva   = neto + iva
 
     return {
-      totalUrbana, totalExtraUrbana, totalRural, totalRetiro,
-      countUrbana, countExtraUrbana, countRural, countRetiro,
+      totalUrbana, totalExtraUrbana, totalRural, totalRetiro, totalCambio,
+      countUrbana, countExtraUrbana, countRural, countRetiro, countCambio,
       neto, iva, totalConIva,
       total: neto, // alias para no romper la UI existente que usa calc.total
     }
@@ -110,14 +115,16 @@ export default function FacturacionPage() {
   function getTarifaYTipo(sf: StoreFactura, o: StoreFactura['orders'][number]) {
     const { store } = sf
     const tipo     = getTipoTarifa(o.addressComuna)
-    const esRetiro = retiroMap[store.id]?.[o.id] ?? false
-    const tipoLabel = esRetiro ? 'Retiro' : tipo === 'urbana' ? 'Urbana' : tipo === 'extraUrbana' ? 'Extra Urbana' : 'Rural'
+    const esCambio = o.servicio === 'CAMBIO'
+    const esRetiro = !esCambio && (o.servicio === 'RETIRO' || (retiroMap[store.id]?.[o.id] ?? false))
+    const tipoLabel = esCambio ? 'Cambio' : esRetiro ? 'Retiro' : tipo === 'urbana' ? 'Urbana' : tipo === 'extraUrbana' ? 'Extra Urbana' : 'Rural'
     let tarifa = 0
-    if (esRetiro)                    tarifa = store.tarifaRetiro      ?? 0
+    if (esCambio)                    tarifa = store.tarifaCambio      ?? 0
+    else if (esRetiro)               tarifa = store.tarifaRetiro      ?? 0
     else if (tipo === 'urbana')      tarifa = store.tarifaUrbana      ?? 0
     else if (tipo === 'extraUrbana') tarifa = store.tarifaExtraUrbana ?? 0
     else                             tarifa = store.tarifaRural       ?? 0
-    return { tipo, tipoLabel, tarifa, esRetiro }
+    return { tipo, tipoLabel, tarifa, esRetiro, esCambio }
   }
 
   // ── Construye las filas de detalle por tienda con todos los campos pedidos ──
@@ -171,6 +178,7 @@ export default function FacturacionPage() {
       fila('Pedidos Extra Urbanos', calc.countExtraUrbana, store.tarifaExtraUrbana ?? 0),
       fila('Pedidos Rurales', calc.countRural, store.tarifaRural ?? 0),
       fila('Pedidos Retiro', calc.countRetiro, store.tarifaRetiro ?? 0),
+      ...(store.tarifaCambio !== null ? [fila('Pedidos Cambio', calc.countCambio, store.tarifaCambio)] : []),
       ['', '', '', '', ''],
       ['TOTAL PEDIDOS:', String(orders.length), '', '', ''],
       ['TOTAL NETO:', '', fmt(calc.neto), '', ''],
@@ -330,6 +338,7 @@ export default function FacturacionPage() {
                       {calc.countExtraUrbana > 0 && <span style={{ color:'#7C3AED' }}>{calc.countExtraUrbana} extra</span>}
                       {calc.countRural > 0       && <span style={{ color:'#166534' }}>{calc.countRural} rural</span>}
                       {calc.countRetiro > 0      && <span style={{ color:'#92400E' }}>{calc.countRetiro} retiro</span>}
+                      {calc.countCambio > 0      && <span style={{ color:'#9D174D' }}>{calc.countCambio} cambio</span>}
                     </div>
                     <div style={{ textAlign:'right' }}>
                       <div style={{ fontSize:18, fontWeight:700, color:'#16A34A' }}>{fmt(calc.totalConIva)}</div>
@@ -354,6 +363,9 @@ export default function FacturacionPage() {
                         { label:'Extra Urbana', count:calc.countExtraUrbana, total:calc.totalExtraUrbana, tarifa:sf.store.tarifaExtraUrbana, color:'#F5F3FF', text:'#5B21B6' },
                         { label:'Rural',        count:calc.countRural,       total:calc.totalRural,       tarifa:sf.store.tarifaRural,       color:'#F0FDF4', text:'#166534' },
                         { label:'Retiro',       count:calc.countRetiro,      total:calc.totalRetiro,      tarifa:sf.store.tarifaRetiro,      color:'#FFFBEB', text:'#92400E' },
+                        ...(sf.store.tarifaCambio !== null
+                          ? [{ label:'Cambio',  count:calc.countCambio,      total:calc.totalCambio,      tarifa:sf.store.tarifaCambio,      color:'#FDF2F8', text:'#9D174D' }]
+                          : []),
                       ].map(t => (
                         <div key={t.label} style={{ padding:'8px 14px', borderRadius:8, background:t.color, minWidth:140 }}>
                           <div style={{ fontSize:11, color:t.text, fontWeight:600, marginBottom:3 }}>{t.label}</div>
@@ -379,7 +391,7 @@ export default function FacturacionPage() {
                         </thead>
                         <tbody>
                           {sf.orders.map((o, i) => {
-                            const { tipo, tipoLabel, tarifa, esRetiro } = getTarifaYTipo(sf, o)
+                            const { tipo, tipoLabel, tarifa, esRetiro, esCambio } = getTarifaYTipo(sf, o)
                             const neto = tarifa
                             const iva  = neto * IVA_RATE
                             const totalConIva = neto + iva
@@ -393,8 +405,8 @@ export default function FacturacionPage() {
                                 <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9', fontSize:12, color:'#6B7280' }}>{sf.store.name}</td>
                                 <td style={{ padding:'10px 14px', borderBottom:'1px solid #F1F5F9' }}>
                                   <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, fontWeight:500,
-                                    background: esRetiro?'#FEF3C7':tipo==='urbana'?'#EFF6FF':tipo==='extraUrbana'?'#F5F3FF':'#F0FDF4',
-                                    color:      esRetiro?'#92400E':tipo==='urbana'?'#1D4ED8':tipo==='extraUrbana'?'#5B21B6':'#166534',
+                                    background: esCambio?'#FDF2F8':esRetiro?'#FEF3C7':tipo==='urbana'?'#EFF6FF':tipo==='extraUrbana'?'#F5F3FF':'#F0FDF4',
+                                    color:      esCambio?'#9D174D':esRetiro?'#92400E':tipo==='urbana'?'#1D4ED8':tipo==='extraUrbana'?'#5B21B6':'#166534',
                                   }}>
                                     {tipoLabel}
                                   </span>
@@ -406,6 +418,8 @@ export default function FacturacionPage() {
                                   <input
                                     type="checkbox"
                                     checked={esRetiro}
+                                    disabled={o.servicio !== null}
+                                    title={o.servicio ? `Creado como ${o.servicio === 'CAMBIO' ? 'cambio' : 'retiro'}: tarifa fija` : undefined}
                                     onChange={() => toggleRetiro(sf.store.id, o.id)}
                                     style={{ width:16, height:16, cursor:'pointer', accentColor:'#D97706' }}
                                   />

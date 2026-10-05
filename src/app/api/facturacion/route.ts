@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db/prisma";
 const TZ = "America/Santiago";
 const IVA_RATE = 0.19;
 
+type Servicio = "CAMBIO" | "RETIRO";
+
 function getChileOffsetStr(): string {
   const now = new Date();
   const utcDate = new Date(now.toLocaleString("en-US", { timeZone: "UTC" }));
@@ -90,6 +92,7 @@ export async function GET(req: NextRequest) {
       tarifaExtraUrbana: true,
       tarifaRural: true,
       tarifaRetiro: true,
+      tarifaCambio: true,
       fechaTarifa: true,
     },
   });
@@ -125,6 +128,7 @@ export async function GET(req: NextRequest) {
           status: true,
           bultos: true,
           platform: true,
+          subStoreName: true,
         },
       });
 
@@ -144,38 +148,64 @@ export async function GET(req: NextRequest) {
         : 0;
       const tarifaRural = store.tarifaRural ? Number(store.tarifaRural) : 0;
 
-      const ordersConZona = ordersEnPeriodo.map((o) => {
+      // Tiendas con tarifa de cambio (hoy solo Sigan Jugando): los pedidos
+      // creados como Cambio o Retiro en "Nuevo pedido" se cobran a tarifa fija,
+      // sin importar la zona. El resto de las tiendas sigue cobrando por zona.
+      const tarifaCambio = store.tarifaCambio ? Number(store.tarifaCambio) : null;
+      const tarifaRetiro = store.tarifaRetiro ? Number(store.tarifaRetiro) : 0;
+      const servicioDe = (subStoreName: string | null): Servicio | null =>
+        tarifaCambio !== null && (subStoreName === "CAMBIO" || subStoreName === "RETIRO")
+          ? subStoreName
+          : null;
+
+      const ordersConZona = ordersEnPeriodo.map(({ subStoreName, ...o }) => {
         const zona = clasificarZona(o.addressComuna);
+        const servicio = servicioDe(subStoreName);
         const tarifa =
-          zona === "RURAL"
-            ? tarifaRural
-            : zona === "EXTRA_URBANA"
-              ? tarifaExtraUrbana
-              : tarifaUrbana;
-        return { ...o, zona, tarifa, storeName: store.name };
+          servicio === "CAMBIO"
+            ? tarifaCambio!
+            : servicio === "RETIRO"
+              ? tarifaRetiro
+              : zona === "RURAL"
+                ? tarifaRural
+                : zona === "EXTRA_URBANA"
+                  ? tarifaExtraUrbana
+                  : tarifaUrbana;
+        return { ...o, zona, servicio, tarifa, storeName: store.name };
       });
 
       function zonaResumen(
         zona: "URBANA" | "EXTRA_URBANA" | "RURAL",
         tarifa: number,
       ) {
-        const cantidad = ordersConZona.filter((o) => o.zona === zona).length;
+        const cantidad = ordersConZona.filter((o) => !o.servicio && o.zona === zona).length;
         const subtotalNeto = cantidad * tarifa;
         const iva = Math.round(subtotalNeto * IVA_RATE);
         const totalConIva = subtotalNeto + iva;
         return { cantidad, tarifa, subtotalNeto, iva, totalConIva };
       }
 
+      function servicioResumen(servicio: Servicio, tarifa: number) {
+        const cantidad = ordersConZona.filter((o) => o.servicio === servicio).length;
+        const subtotalNeto = cantidad * tarifa;
+        const iva = Math.round(subtotalNeto * IVA_RATE);
+        return { cantidad, tarifa, subtotalNeto, iva, totalConIva: subtotalNeto + iva };
+      }
+
       const resumenZonas = {
         URBANA: zonaResumen("URBANA", tarifaUrbana),
         EXTRA_URBANA: zonaResumen("EXTRA_URBANA", tarifaExtraUrbana),
         RURAL: zonaResumen("RURAL", tarifaRural),
+        CAMBIO: servicioResumen("CAMBIO", tarifaCambio ?? 0),
+        RETIRO: servicioResumen("RETIRO", tarifaRetiro),
       };
 
       const netoGeneral =
         resumenZonas.URBANA.subtotalNeto +
         resumenZonas.EXTRA_URBANA.subtotalNeto +
-        resumenZonas.RURAL.subtotalNeto;
+        resumenZonas.RURAL.subtotalNeto +
+        resumenZonas.CAMBIO.subtotalNeto +
+        resumenZonas.RETIRO.subtotalNeto;
       const ivaGeneral = Math.round(netoGeneral * IVA_RATE);
       const totalGeneralConIva = netoGeneral + ivaGeneral;
 
@@ -191,6 +221,7 @@ export async function GET(req: NextRequest) {
             : null,
           tarifaRural: store.tarifaRural ? Number(store.tarifaRural) : null,
           tarifaRetiro: store.tarifaRetiro ? Number(store.tarifaRetiro) : null,
+          tarifaCambio,
           fechaTarifa: store.fechaTarifa,
         },
         orders: ordersConZona,

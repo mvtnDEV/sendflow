@@ -42,6 +42,7 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
       tarifaExtraUrbana: store.tarifaExtraUrbana ? String(store.tarifaExtraUrbana) : '',
       tarifaRural:       store.tarifaRural       ? String(store.tarifaRural)       : '',
       tarifaRetiro:      store.tarifaRetiro      ? String(store.tarifaRetiro)      : '',
+      tarifaCambio:      store.tarifaCambio      ? String(store.tarifaCambio)      : '',
       fechaTarifa:       store.fechaTarifa        || '',
     })
     setError('')
@@ -85,6 +86,7 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
           tarifaExtraUrbana: editForm.tarifaExtraUrbana ? parseFloat(editForm.tarifaExtraUrbana) : null,
           tarifaRural:       editForm.tarifaRural       ? parseFloat(editForm.tarifaRural)       : null,
           tarifaRetiro:      editForm.tarifaRetiro      ? parseFloat(editForm.tarifaRetiro)      : null,
+          tarifaCambio:      editForm.tarifaCambio      ? parseFloat(editForm.tarifaCambio)      : null,
           fechaTarifa:       editForm.fechaTarifa       || null,
         }),
       })
@@ -141,12 +143,13 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
                   {isSuperAdmin && store.fechaTarifa && <div style={{ fontSize:11, color:'#9CA3AF', marginTop:2 }}>Tarifa vigente: {store.fechaTarifa}</div>}
 
                   {/* Tarifas — solo SUPER_ADMIN */}
-                  {isSuperAdmin && (store.tarifaUrbana || store.tarifaExtraUrbana || store.tarifaRural || store.tarifaRetiro) && (
+                  {isSuperAdmin && (store.tarifaUrbana || store.tarifaExtraUrbana || store.tarifaRural || store.tarifaRetiro || store.tarifaCambio) && (
                     <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:8 }}>
                       {store.tarifaUrbana      && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#EFF6FF', color:'#1D4ED8', fontWeight:500 }}>Urbana {fmt(store.tarifaUrbana)}</span>}
                       {store.tarifaExtraUrbana && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FFF7ED', color:'#C2410C', fontWeight:500 }}>Extra {fmt(store.tarifaExtraUrbana)}</span>}
                       {store.tarifaRural       && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F0FDF4', color:'#166534', fontWeight:500 }}>Rural {fmt(store.tarifaRural)}</span>}
                       {store.tarifaRetiro      && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#F5F3FF', color:'#5B21B6', fontWeight:500 }}>Retiro {fmt(store.tarifaRetiro)}</span>}
+                      {store.tarifaCambio      && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#FDF2F8', color:'#9D174D', fontWeight:500 }}>Cambio {fmt(store.tarifaCambio)}</span>}
                     </div>
                   )}
                 </div>
@@ -256,6 +259,11 @@ export default function TiendasClient({ stores: initial, isSuperAdmin, platformL
                   <input type="number" style={inp} placeholder="3990" value={editForm.tarifaRural} onChange={e => setEdit('tarifaRural', e.target.value)}/></div>
                 <div><label style={lbl}>Tarifa Retiro</label>
                   <input type="number" style={inp} placeholder="3000" value={editForm.tarifaRetiro} onChange={e => setEdit('tarifaRetiro', e.target.value)}/></div>
+                <div><label style={lbl}>Tarifa Cambio</label>
+                  <input type="number" style={inp} placeholder="Vacío = cobra por zona" value={editForm.tarifaCambio} onChange={e => setEdit('tarifaCambio', e.target.value)}/></div>
+              </div>
+              <div style={{ fontSize:11.5, color:'#6B7280', lineHeight:1.5 }}>
+                Con Tarifa Cambio, los pedidos creados como Cambio o Retiro se cobran a tarifa fija en cualquier zona.
               </div>
               <div><label style={lbl}>Fecha vigencia tarifa</label>
                 <input style={inp} placeholder="abril 2026" value={editForm.fechaTarifa} onChange={e => setEdit('fechaTarifa', e.target.value)}/></div>

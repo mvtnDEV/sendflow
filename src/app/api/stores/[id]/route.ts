@@ -27,6 +27,7 @@ export async function PATCH(
       tarifaExtraUrbana: body.tarifaExtraUrbana ?? null,
       tarifaRural:       body.tarifaRural       ?? null,
       tarifaRetiro:      body.tarifaRetiro      ?? null,
+      tarifaCambio:      body.tarifaCambio      ?? null,
       fechaTarifa:       body.fechaTarifa       ?? null,
     },
   })
