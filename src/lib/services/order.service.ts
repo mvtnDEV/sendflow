@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import {
   generateOrderNumber,
@@ -479,14 +480,31 @@ export async function listOrders(filters: OrderFilters) {
         evidencePhoto1: true,
         labelUrl: true,
         mlShippedAt: true,
-        rawPayload: true,
         store: { select: { id: true, name: true } },
       },
     }),
     prisma.order.count({ where }),
   ]);
+
+  // La lista solo muestra rawPayload.status / financial_status: traemos esos dos
+  // campos desde Postgres en vez del JSON completo (50 filas × JSON de ML por
+  // cada carga de Recepciones era gran parte del egress de Supabase).
+  const estados = items.length
+    ? await prisma.$queryRaw<{ id: string; raw: unknown }[]>`
+        SELECT id, CASE WHEN "rawPayload" IS NULL THEN NULL ELSE jsonb_build_object(
+          'status', "rawPayload"->'status',
+          'financial_status', "rawPayload"->'financial_status'
+        ) END AS raw
+        FROM orders WHERE id IN (${Prisma.join(items.map((o) => o.id))})`
+    : [];
+  const rawPorId = new Map(estados.map((e) => [e.id, e.raw]));
+  const itemsConEstado = items.map((o) => ({
+    ...o,
+    rawPayload: (rawPorId.get(o.id) ?? null) as Prisma.JsonValue,
+  }));
+
   return {
-    items,
+    items: itemsConEstado,
     total,
     page,
     pageSize,

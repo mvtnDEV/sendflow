@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store"; // nunca usar la caché de datos de Next con APIs externas (ML)
 export const maxDuration = 300;
 import { NextResponse } from "next/server";
-import type { OrderStatus } from "@prisma/client";
+import { Prisma, type OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
@@ -106,11 +106,21 @@ export async function GET(req: Request) {
       storeId: true,
       status: true,
       externalId: true,
-      rawPayload: true,
       mlShippedAt: true,
     },
     orderBy: { createdAt: "desc" },
   });
+
+  // Solo necesitamos shipping.id: lo sacamos en Postgres en vez de traer el
+  // rawPayload completo cada 5 min (era la mayor parte del egress de Supabase).
+  const shippingIds = new Map<string, string>();
+  if (orders.length > 0) {
+    const rows = await prisma.$queryRaw<{ id: string; shipping_id: string | null }[]>`
+      SELECT id, "rawPayload"->'shipping'->>'id' AS shipping_id
+      FROM orders
+      WHERE id IN (${Prisma.join(orders.map((o) => o.id))})`;
+    for (const r of rows) if (r.shipping_id) shippingIds.set(r.id, r.shipping_id);
+  }
 
   console.log(`[ML cron] Revisando ${orders.length} pedidos ML activos`);
 
@@ -127,7 +137,7 @@ export async function GET(req: Request) {
     }
 
     try {
-      const shippingId = (order.rawPayload as any)?.shipping?.id;
+      const shippingId = shippingIds.get(order.id);
       if (!shippingId) return;
 
       // Consultar shipment directo (más rápido que consultar la orden)

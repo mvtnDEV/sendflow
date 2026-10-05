@@ -11,14 +11,14 @@ interface MLShipmentCheck {
 
 // ── Consulta el estado real del envío en ML Flex usando el shipping.id guardado en rawPayload ──
 export async function checkMLShipmentStatus(orderId: string): Promise<MLShipmentCheck | null> {
-  const order = await prisma.order.findUnique({
-    where:  { id: orderId },
-    select: { integrationId: true, rawPayload: true },
-  })
+  // Solo shipping.id, no el rawPayload completo (corre cada 3 min por pedido)
+  const [order] = await prisma.$queryRaw<{ integrationId: string | null; shipping_id: string | null }[]>`
+    SELECT "integrationId", "rawPayload"->'shipping'->>'id' AS shipping_id
+    FROM orders WHERE id = ${orderId}`
 
   if (!order?.integrationId) return null
 
-  const shippingId = (order.rawPayload as any)?.shipping?.id
+  const shippingId = order.shipping_id
   if (!shippingId) {
     console.log('[ML check] Pedido sin shipping.id en rawPayload:', orderId)
     return null

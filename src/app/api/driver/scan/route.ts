@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store"; // nunca usar la caché de datos de Next con APIs externas (ML)
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { idsPorShippingId } from "@/lib/db/ml-shipping";
 
 // ── Saca todos los posibles códigos que puede traer un QR ──
 function extraerCandidatos(raw: string): {
@@ -68,9 +69,8 @@ export async function GET(req: NextRequest) {
     );
   }
   if (shippingId) {
-    or.push({
-      rawPayload: { path: ["shipping", "id"], equals: Number(shippingId) },
-    });
+    const ids = await idsPorShippingId(shippingId);
+    if (ids.length) or.push({ id: { in: ids } });
   }
 
   const order = await prisma.order.findFirst({
@@ -103,13 +103,12 @@ export async function GET(req: NextRequest) {
     shipId &&
     /^\d+$/.test(String(shipId))
   ) {
-    pack = await prisma.order.findMany({
-      where: {
-        id: { not: order.id },
-        storeId: order.storeId,
-        platform: "MERCADOLIBRE",
-        rawPayload: { path: ["shipping", "id"], equals: Number(shipId) },
-      },
+    const packIds = await idsPorShippingId(String(shipId), {
+      storeId: order.storeId,
+      excluir: [order.id],
+    });
+    pack = packIds.length === 0 ? [] : await prisma.order.findMany({
+      where: { id: { in: packIds } },
       select: {
         id: true,
         orderNumber: true,

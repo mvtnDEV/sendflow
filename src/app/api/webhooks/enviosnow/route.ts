@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { idsPorShippingId } from "@/lib/db/ml-shipping";
 import { Prisma } from "@prisma/client";
 import { checkMLShipmentStatus } from "@/lib/integrations/mercadolibre-status";
 
@@ -96,12 +97,12 @@ export async function POST(req: NextRequest) {
       for (const o of encontrados) {
         const shipId = (o.rawPayload as any)?.shipping?.id;
         if (o.platform !== "MERCADOLIBRE" || !shipId) continue;
+        const hermanasIds = await idsPorShippingId(String(shipId), {
+          excluir: [...vistos],
+        });
+        if (hermanasIds.length === 0) continue;
         const hermanas = await prisma.order.findMany({
-          where: {
-            id: { notIn: [...vistos] },
-            platform: "MERCADOLIBRE",
-            rawPayload: { path: ["shipping", "id"], equals: Number(shipId) },
-          },
+          where: { id: { in: hermanasIds } },
           select: {
             id: true,
             orderNumber: true,
