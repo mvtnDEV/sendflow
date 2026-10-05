@@ -131,7 +131,12 @@ export async function POST(req: NextRequest) {
       addressNotes: addressNotes || undefined,
       bultos: bultos ?? 1,
       sourceId: undefined, // ← siempre null para Senby
-      subStoreName: subStoreName ?? undefined,
+      // CAMBIO y RETIRO están reservados al formulario de SendFlow: definen
+      // tarifa fija en Facturación y no se pueden fijar desde la API
+      subStoreName:
+        subStoreName && !["CAMBIO", "RETIRO"].includes(String(subStoreName).toUpperCase())
+          ? subStoreName
+          : undefined,
       createdBy: "api",
     });
 

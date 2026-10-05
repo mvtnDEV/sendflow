@@ -65,6 +65,8 @@ export async function POST(req: NextRequest) {
       addressNotes:  body.addressNotes,
       bultos:        body.bultos ?? 1,
       weightKg:      body.weightKg,
+      // Cambio / Retiro elegido en "Nuevo pedido": define la tarifa fija en Facturación
+      subStoreName:  body.subStoreName === 'CAMBIO' || body.subStoreName === 'RETIRO' ? body.subStoreName : undefined,
       createdBy:     user.id,
     })
     return NextResponse.json({ ok:true, data:order }, { status:201 })
