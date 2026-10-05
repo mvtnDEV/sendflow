@@ -158,21 +158,24 @@ export async function GET(req: NextRequest) {
           ? subStoreName
           : null;
 
-      const ordersConZona = ordersEnPeriodo.map(({ subStoreName, ...o }) => {
-        const zona = clasificarZona(o.addressComuna);
-        const servicio = servicioDe(subStoreName);
-        const tarifa =
-          servicio === "CAMBIO"
-            ? tarifaCambio!
-            : servicio === "RETIRO"
-              ? tarifaRetiro
-              : zona === "RURAL"
-                ? tarifaRural
-                : zona === "EXTRA_URBANA"
-                  ? tarifaExtraUrbana
-                  : tarifaUrbana;
-        return { ...o, zona, servicio, tarifa, storeName: store.name };
-      });
+      const ordersConZona = ordersEnPeriodo
+        // Un cambio o retiro que no se pudo hacer (incidencia) no se cobra
+        .filter((o) => !(o.status === "INCIDENT" && servicioDe(o.subStoreName)))
+        .map(({ subStoreName, ...o }) => {
+          const zona = clasificarZona(o.addressComuna);
+          const servicio = servicioDe(subStoreName);
+          const tarifa =
+            servicio === "CAMBIO"
+              ? tarifaCambio!
+              : servicio === "RETIRO"
+                ? tarifaRetiro
+                : zona === "RURAL"
+                  ? tarifaRural
+                  : zona === "EXTRA_URBANA"
+                    ? tarifaExtraUrbana
+                    : tarifaUrbana;
+          return { ...o, zona, servicio, tarifa, storeName: store.name };
+        });
 
       function zonaResumen(
         zona: "URBANA" | "EXTRA_URBANA" | "RURAL",
