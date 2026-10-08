@@ -4,6 +4,7 @@ import {
   generateOrderNumber,
   ensureUniqueQrCode,
 } from "@/lib/utils/order-number";
+import { TIENDAS_FRET_ACTIVAS } from "@/lib/config/operadores";
 import type { OrderFilters, NormalizedOrder, DashboardStats } from "@/types";
 import type { OrderStatus, Platform } from "@prisma/client";
 
@@ -119,11 +120,10 @@ export async function createOrder(input: CreateOrderInput) {
   });
 
   // ── Decidir si enviar a Fret ──
-  // Desde el 24-sep-2026 nada se envía a Fret al crear: todo va a Envios Now
-  // (al escanear en bodega, o automático para Senby). Para volver a Fret,
-  // restaurar la línea comentada.
-  // const enviarAFret = !TIENDAS_EXCLUIDAS_FRET.has(order.storeId);
-  const enviarAFret = false as boolean;
+  // Desde el 24-sep-2026 todo va a Envios Now (al escanear en bodega, o
+  // automático para Senby), excepto las tiendas de TIENDAS_FRET_ACTIVAS
+  // (NubiPlay y Sigan Jugando), que se envían a Fret al crearse.
+  const enviarAFret = TIENDAS_FRET_ACTIVAS.has(order.storeId);
 
   if (enviarAFret) {
     try {
