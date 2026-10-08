@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS order_events_fusion_backup AS TABLE order_events WITH
 ALTER TABLE orders_fusion_backup
   ADD COLUMN IF NOT EXISTS fusionado_en timestamptz DEFAULT now(),
   ADD COLUMN IF NOT EXISTS principal_id text;
+-- Datos personales de clientes: sin RLS la API REST pública de Supabase (clave
+-- anon) podría leerlas. Sin políticas = nadie vía API; Prisma/postgres no se afecta.
+ALTER TABLE orders_fusion_backup ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_events_fusion_backup ENABLE ROW LEVEL SECURITY;
 
 -- ─── PASO 2: fusión (todo o nada) ────────────────────────────────────────────
 DO $$
