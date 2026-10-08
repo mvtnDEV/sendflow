@@ -22,7 +22,7 @@ export function isRegionPermitida(region: string): boolean {
   );
 }
 
-function todayRange() {
+export function todayRange() {
   const now = new Date();
   const santiagoParts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Santiago",

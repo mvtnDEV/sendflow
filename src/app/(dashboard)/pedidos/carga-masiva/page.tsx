@@ -26,7 +26,7 @@ export default function CargaMasivaPage() {
   const [fileName, setFileName] = useState('')
   const [loading,  setLoading]  = useState(false)
   const [step,     setStep]     = useState<1|2|3>(1)
-  const [result,   setResult]   = useState<{ created: number; errors: string[] } | null>(null)
+  const [result,   setResult]   = useState<{ created: number; errors: string[]; skipped: RowPreview[] } | null>(null)
 
   useEffect(() => {
     fetch('/api/stores').then(r => r.json()).then(d => {
@@ -101,16 +101,33 @@ export default function CargaMasivaPage() {
     setLoading(false)
   }
 
-  async function handleImport() {
+  async function handleImport(only?: RowPreview[]) {
+    if (loading) return
     setLoading(true)
-    const validRows = rows.filter(r => r.valid)
-    const res = await fetch('/api/orders/bulk', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ platform: 'MANUAL', rows: validRows.map(r => ({ ...r, storeId: r.storeId })) }),
-    })
-    const data = await res.json()
-    setResult(data.ok ? data.data : { created: 0, errors: [data.error] })
+    const validRows = only ?? rows.filter(r => r.valid)
+    try {
+      const res = await fetch('/api/orders/bulk', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          platform: 'MANUAL',
+          rows: validRows.map(r => ({ ...r, storeId: r.storeId })),
+          // Al reimportar solo las omitidas, el usuario confirmó que son pedidos distintos
+          allowDuplicates: !!only,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        const skipped: RowPreview[] = (data.data.skipped ?? []).map((i: number) => validRows[i])
+        setResult({ created: data.data.created, errors: data.data.errors ?? [], skipped })
+      } else {
+        setResult({ created: 0, errors: [data.error], skipped: [] })
+      }
+    } catch {
+      setResult({ created: 0, errors: ['No se pudo contactar al servidor. Revisa en Recepciones si los pedidos se crearon antes de reintentar.'], skipped: [] })
+    }
+    // Se limpia la vista previa: el mismo lote no se puede volver a enviar desde aquí
+    setRows([])
     setStep(3)
     setLoading(false)
   }
@@ -248,7 +265,7 @@ export default function CargaMasivaPage() {
                   ← Cambiar archivo
                 </button>
                 {validCount > 0 && (
-                  <button onClick={handleImport} disabled={loading}
+                  <button onClick={() => handleImport()} disabled={loading}
                     style={{ padding:'7px 18px', background:loading?'#93C5FD':'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:loading?'not-allowed':'pointer' }}>
                     {loading ? 'Importando...' : `⬆ Importar ${validCount} pedido${validCount!==1?'s':''}`}
                   </button>
@@ -329,6 +346,16 @@ export default function CargaMasivaPage() {
                   {result.errors.map((e, i) => <div key={i} style={{ marginTop:4 }}>• {e}</div>)}
                 </div>
               )}
+              {result.skipped.length > 0 && (
+                <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:12, marginBottom:16, textAlign:'left', fontSize:12, color:'#1D4ED8' }}>
+                  <strong>{result.skipped.length} fila{result.skipped.length!==1?'s':''} omitida{result.skipped.length!==1?'s':''} por repetida{result.skipped.length!==1?'s':''}</strong> (mismo cliente, dirección y comuna hoy):
+                  {result.skipped.map((r, i) => <div key={i} style={{ marginTop:4 }}>• {r.customerName} — {r.addressStreet}, {r.addressComuna} ({r.storeName})</div>)}
+                  <button onClick={() => handleImport(result.skipped)} disabled={loading}
+                    style={{ marginTop:10, padding:'6px 14px', border:'1px solid #93C5FD', borderRadius:8, fontSize:12, background:'white', color:'#1D4ED8', cursor:loading?'not-allowed':'pointer' }}>
+                    {loading ? 'Importando...' : 'Son pedidos distintos: importarlas igual'}
+                  </button>
+                </div>
+              )}
               <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
                 <Link href="/recepciones" style={{ padding:'10px 22px', background:'#2563EB', color:'white', borderRadius:8, fontSize:13, fontWeight:500, textDecoration:'none' }}>
                   Ver pedidos →
@@ -343,6 +370,21 @@ export default function CargaMasivaPage() {
             <>
               <div style={{ fontSize:48, marginBottom:14 }}>❌</div>
               <div style={{ fontSize:18, fontWeight:500, marginBottom:16 }}>No se importó ningún pedido</div>
+              {result.errors.length > 0 && (
+                <div style={{ background:'#FFF7ED', border:'1px solid #FDE68A', borderRadius:8, padding:12, marginBottom:16, textAlign:'left', fontSize:12, color:'#92400E' }}>
+                  {result.errors.map((e, i) => <div key={i} style={{ marginTop:i?4:0 }}>• {e}</div>)}
+                </div>
+              )}
+              {result.skipped.length > 0 && (
+                <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:12, marginBottom:16, textAlign:'left', fontSize:12, color:'#1D4ED8' }}>
+                  <strong>{result.skipped.length} fila{result.skipped.length!==1?'s':''} omitida{result.skipped.length!==1?'s':''} por repetida{result.skipped.length!==1?'s':''}</strong> (mismo cliente, dirección y comuna hoy):
+                  {result.skipped.map((r, i) => <div key={i} style={{ marginTop:4 }}>• {r.customerName} — {r.addressStreet}, {r.addressComuna} ({r.storeName})</div>)}
+                  <button onClick={() => handleImport(result.skipped)} disabled={loading}
+                    style={{ marginTop:10, padding:'6px 14px', border:'1px solid #93C5FD', borderRadius:8, fontSize:12, background:'white', color:'#1D4ED8', cursor:loading?'not-allowed':'pointer' }}>
+                    {loading ? 'Importando...' : 'Son pedidos distintos: importarlas igual'}
+                  </button>
+                </div>
+              )}
               <button onClick={() => { setStep(1); setRows([]); setFileName(''); setResult(null) }}
                 style={{ padding:'10px 20px', background:'#2563EB', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:500, cursor:'pointer' }}>
                 Intentar de nuevo

@@ -4,6 +4,14 @@ import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 import { classifyFlex, closeFlexNotDelivered } from "@/lib/services/flex-close.service";
+import {
+  agruparPacksActivo,
+  pedidosDelEnvio,
+  pedidoQueContiene,
+  pedidoParaSumar,
+  sumarOrdenAlPack,
+  quitarOrdenDelPack,
+} from "@/lib/services/ml-pack.service";
 
 // ── Desde el 24-sep-2026 ninguna tienda nueva va a Fret. ──
 // Los pedidos viejos que tienen FR- se siguen notificando a Fret
@@ -135,17 +143,43 @@ export async function POST(req: NextRequest) {
       shipmentSubstatus,
     );
 
-    const existing = await prisma.order.findFirst({
+    const selectExistente = {
+      id: true,
+      orderNumber: true,
+      status: true,
+      storeId: true,
+      externalId: true,
+      rawPayload: true,
+    } as const;
+    let existing = await prisma.order.findFirst({
       where: { integrationId: integration.id, sourceId: orderId },
-      select: {
-        id: true,
-        orderNumber: true,
-        status: true,
-        storeId: true,
-        externalId: true,
-        rawPayload: true,
-      },
+      select: selectExistente,
     });
+
+    // ── Pack: la orden puede estar ya sumada como "extra" de otro pedido ──
+    // (mismo envío). En ese caso todo lo que le pase al envío le pasa al pedido.
+    let esExtraDePack = false;
+    const agrupar = agruparPacksActivo() && !!shippingId;
+    if (!existing && agrupar) {
+      const dueno = pedidoQueContiene(
+        await pedidosDelEnvio(shippingId, integration.storeId),
+        orderId,
+      );
+      if (dueno) {
+        existing = await prisma.order.findUnique({
+          where: { id: dueno.pedido.id },
+          select: selectExistente,
+        });
+        esExtraDePack = dueno.esExtra;
+      }
+    }
+
+    if (existing && esExtraDePack && mlOrder.status === "cancelled") {
+      // Se canceló solo UN producto del pack: restar sus bultos, no cerrar el paquete
+      const quitada = await quitarOrdenDelPack(existing.id, orderId);
+      console.log("[ML webhook] Pack: orden extra cancelada", orderId, quitada);
+      return NextResponse.json({ ok: true, pack_extra_cancelled: quitada });
+    }
 
     if (existing) {
       if (shipmentStatus === "delivered" && existing.status !== "DELIVERED") {
@@ -278,6 +312,33 @@ export async function POST(req: NextRequest) {
       0,
     );
 
+    // ── Pack: otra orden del mismo envío ya tiene pedido → sumar bultos ──
+    const sumarAlPack = async () => {
+      const objetivo = pedidoParaSumar(
+        await pedidosDelEnvio(shippingId, integration.storeId),
+      );
+      if (!objetivo) return null;
+      const sumada = await sumarOrdenAlPack(objetivo.id, {
+        sourceId: orderId,
+        bultos: totalBultos || 1,
+        items: items.map((i: any) => ({
+          title: String(i.item?.title ?? ""),
+          quantity: Number(i.quantity ?? 1),
+        })),
+      });
+      console.log(
+        "[ML webhook] 📦 Pack: orden",
+        orderId,
+        sumada ? "sumada a" : "ya estaba en",
+        objetivo.orderNumber,
+      );
+      return NextResponse.json({ ok: true, packed: true, into: objetivo.orderNumber });
+    };
+    if (agrupar) {
+      const r = await sumarAlPack();
+      if (r) return r;
+    }
+
     // ── Anti-duplicado: verificar una vez más antes de crear ──
     const dobleCheck = await prisma.order.findFirst({
       where: { sourceId: orderId, storeId: integration.storeId },
@@ -322,6 +383,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, created: true });
     } catch (createErr: any) {
       if (createErr.code === "P2002") {
+        // Carrera entre dos órdenes del mismo pack: la otra ganó, sumarse a ella
+        if (agrupar) {
+          const r = await sumarAlPack();
+          if (r) return r;
+        }
         console.log("[ML webhook] Anti-duplicado (DB):", orderId);
         return NextResponse.json({ ok: true, already_exists: true });
       }
