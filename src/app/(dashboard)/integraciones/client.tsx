@@ -227,7 +227,11 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
         ok: false,
         text: err === 'ml_en_otra_tienda'
           ? `Esa cuenta de Mercado Libre ya está conectada a la tienda "${q.get('tienda') ?? 'otra'}". Desconéctala allá primero o conecta una cuenta distinta.`
-          : 'No se pudo conectar la cuenta de Mercado Libre. Intenta de nuevo.',
+          : err === 'ml_sin_permiso'
+            ? 'No tienes permiso para conectar cuentas en esa tienda. Entra con un usuario de la tienda o con un administrador.'
+            : err === 'ml_estado_invalido'
+              ? 'La conexión venció o no se inició desde SendFlow. Vuelve a pulsar el botón de conectar y completa el proceso sin demorarte.'
+              : 'No se pudo conectar la cuenta de Mercado Libre. Intenta de nuevo.',
       })
     }
   }, [])

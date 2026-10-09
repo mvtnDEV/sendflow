@@ -3,16 +3,33 @@ export const fetchCache = "force-no-store"; // nunca usar la caché de datos de 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { encrypt } from "@/lib/utils/crypto";
+import { canAccessStore, canWrite, getSessionUser } from "@/lib/utils/auth";
+import { COOKIE_ML_OAUTH, leerEstadoML, nonceCoincide } from "@/lib/integrations/ml-oauth-state";
 
 export async function GET(req: NextRequest) {
-  const code = req.nextUrl.searchParams.get("code");
-  const storeId = req.nextUrl.searchParams.get("state");
+  // Toda salida limpia la cookie del flujo: el código es de un solo uso.
+  const volver = (query: string) => {
+    const res = NextResponse.redirect(`${process.env.APP_URL}/integraciones?${query}`);
+    res.cookies.set(COOKIE_ML_OAUTH, "", { path: "/api/auth/ml", maxAge: 0 });
+    return res;
+  };
 
-  if (!code) {
-    return NextResponse.redirect(
-      `${process.env.APP_URL}/integraciones?error=ml_no_code`,
-    );
+  const code = req.nextUrl.searchParams.get("code");
+  if (!code) return volver("error=ml_no_code");
+
+  // Quién inició el flujo: el `state` trae la tienda y un código que tiene que coincidir
+  // con el de la cookie (si no, el enlace lo armó un tercero), y el usuario con sesión
+  // tiene que poder escribir en esa tienda. Esta ruta está fuera del filtro de sesión del
+  // proyecto (/api/auth/*), por eso se comprueba acá y no en el middleware.
+  const estado = leerEstadoML(req.nextUrl.searchParams.get("state"));
+  const cookie = req.cookies.get(COOKIE_ML_OAUTH)?.value;
+  if (!estado || !nonceCoincide(estado.nonce, cookie)) return volver("error=ml_estado_invalido");
+
+  const user = await getSessionUser();
+  if (!user || !canWrite(user) || !canAccessStore(user, estado.storeId)) {
+    return volver("error=ml_sin_permiso");
   }
+  const storeId = estado.storeId;
 
   try {
     const res = await fetch("https://api.mercadolibre.com/oauth/token", {
@@ -44,7 +61,7 @@ export async function GET(req: NextRequest) {
     // Guardar como pipe: "accessToken|refreshToken" — mismo formato que lee el webhook
     const credentials = `${tokens.access_token}|${tokens.refresh_token}`;
 
-    if (storeId) {
+    {
       // Una cuenta de ML no puede estar activa en dos tiendas a la vez: el webhook de ML
       // identifica la tienda por el ID de usuario, y con dos coincidencias el pedido
       // podría caer en la equivocada.
@@ -59,9 +76,7 @@ export async function GET(req: NextRequest) {
       });
       if (enOtraTienda) {
         const tienda = encodeURIComponent(enOtraTienda.store.name);
-        return NextResponse.redirect(
-          `${process.env.APP_URL}/integraciones?error=ml_en_otra_tienda&tienda=${tienda}`,
-        );
+        return volver(`error=ml_en_otra_tienda&tienda=${tienda}`);
       }
 
       // Una tienda puede tener VARIAS cuentas de ML (se identifican por su ID de usuario).
@@ -96,13 +111,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.redirect(
-      `${process.env.APP_URL}/integraciones?success=ml`,
-    );
+    return volver("success=ml");
   } catch (err) {
     console.error("[ML OAuth callback]", err);
-    return NextResponse.redirect(
-      `${process.env.APP_URL}/integraciones?error=ml_auth_failed`,
-    );
+    return volver("error=ml_auth_failed");
   }
 }
