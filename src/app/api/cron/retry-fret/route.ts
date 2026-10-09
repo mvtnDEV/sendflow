@@ -21,10 +21,9 @@ export async function GET(req: Request) {
       status: "PENDING",
       storeId: { in: Array.from(TIENDAS_FRET) },
       createdAt: { lt: cincoMinAtras },
-      OR: [
-        { externalId: null },
-        { externalId: { not: { startsWith: "FR-" } } },
-      ],
+      // Solo pedidos sin ningún ID externo: si ya tiene el de Now (u otro) no se
+      // vuelve a mandar a Fret, para no entregarlo con dos operadores.
+      externalId: null,
     },
     include: {
       store: { select: { id: true, name: true, puntoRetiroFret: true } },

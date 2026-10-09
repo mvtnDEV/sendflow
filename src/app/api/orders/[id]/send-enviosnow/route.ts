@@ -30,7 +30,8 @@ export async function POST(
 
   try {
     // Usa el mismo envío que la app: agrupa packs y no pisa el ID de Senby
-    const r = await enviarPedidosANow([order.id]);
+    // Envío manual: se manda a Now aunque la tienda esté con Fret
+    const r = await enviarPedidosANow([order.id], { ignorarFret: true });
     if (r.errores.length > 0) {
       return NextResponse.json({ ok: false, error: r.errores[0].error });
     }

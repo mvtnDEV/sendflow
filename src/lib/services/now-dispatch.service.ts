@@ -30,6 +30,9 @@ export interface ResultadoNow {
  */
 export async function enviarPedidosANow(
   orderIds: string[],
+  // ignorarFret: el envío MANUAL a Now (botón del panel) manda el pedido aunque
+  // su tienda esté con Fret; el automático (recepción/Senby) sigue omitiéndolos.
+  opts: { ignorarFret?: boolean } = {},
 ): Promise<ResultadoNow> {
   const res: ResultadoNow = { envios: 0, okIds: [], errores: [], omitidos: 0 };
   if (orderIds.length === 0) return res;
@@ -55,7 +58,7 @@ export async function enviarPedidosANow(
   // ── Agrupar: packs ML por shipping_id, el resto uno por uno ──
   const grupos = new Map<string, typeof pedidos>();
   for (const p of pedidos) {
-    if (TIENDAS_FRET_ACTIVAS.has(p.storeId)) {
+    if (!opts.ignorarFret && TIENDAS_FRET_ACTIVAS.has(p.storeId)) {
       res.omitidos++;
       continue;
     }
