@@ -4,12 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
+import { integracionMLDelPedido } from "@/lib/integrations/ml-cuenta";
 import { encrypt } from "@/lib/utils/crypto";
 
-async function getMLToken(storeId: string): Promise<string | null> {
-  const integration = await prisma.storeIntegration.findFirst({
-    where: { storeId, platform: "MERCADOLIBRE", isActive: true },
-  });
+// El token es el de la CUENTA de ML de la que vino el pedido (una tienda puede tener varias).
+async function getMLToken(order: { integrationId: string | null; storeId: string }): Promise<string | null> {
+  const integration = await integracionMLDelPedido(order);
   if (!integration) return null;
 
   const creds = decrypt(integration.apiKeyEnc);
@@ -61,6 +61,7 @@ export async function GET(
       id: true,
       orderNumber: true,
       storeId: true,
+      integrationId: true,
       platform: true,
       rawPayload: true,
     },
@@ -88,7 +89,7 @@ export async function GET(
     );
   }
 
-  const token = await getMLToken(order.storeId);
+  const token = await getMLToken(order);
   if (!token) {
     return NextResponse.json(
       { error: "Token ML no disponible" },

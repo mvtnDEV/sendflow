@@ -6,6 +6,7 @@ import { Prisma, type OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
+import { claveCuentaML, integracionMLDelPedido } from "@/lib/integrations/ml-cuenta";
 import { classifyFlex, closeFlexNotDelivered, FLEX_RECHECK_WHERE } from "@/lib/services/flex-close.service";
 
 // ── Desde el 24-sep-2026 ninguna tienda nueva va a Fret. ──
@@ -15,12 +16,13 @@ const TIENDAS_FRET = new Set<string>([]);
 
 const tokenCache = new Map<string, string>();
 
-async function getTokenForStore(storeId: string): Promise<string | null> {
-  if (tokenCache.has(storeId)) return tokenCache.get(storeId)!;
+// Un token por CUENTA de ML (no por tienda): una tienda puede tener varias cuentas y cada
+// pedido tiene que consultar a ML con el token de la cuenta de la que vino.
+async function getTokenForCuenta(order: { integrationId: string | null; storeId: string }): Promise<string | null> {
+  const clave = claveCuentaML(order);
+  if (tokenCache.has(clave)) return tokenCache.get(clave)!;
 
-  const integration = await prisma.storeIntegration.findFirst({
-    where: { storeId, platform: "MERCADOLIBRE", isActive: true },
-  });
+  const integration = await integracionMLDelPedido(order);
   if (!integration) return null;
 
   const creds = decrypt(integration.apiKeyEnc);
@@ -52,16 +54,16 @@ async function getTokenForStore(storeId: string): Promise<string | null> {
           lastSyncAt: new Date(),
         },
       });
-      console.log("[ML cron] 🔄 Token renovado para storeId:", storeId);
-      tokenCache.set(storeId, refreshed.accessToken);
+      console.log("[ML cron] 🔄 Token renovado para cuenta:", clave);
+      tokenCache.set(clave, refreshed.accessToken);
       return refreshed.accessToken;
     } catch (err: any) {
-      console.error("[ML cron] ❌ Refresh falló:", storeId, err.message);
+      console.error("[ML cron] ❌ Refresh falló:", clave, err.message);
       return null;
     }
   }
 
-  tokenCache.set(storeId, accessToken);
+  tokenCache.set(clave, accessToken);
   return accessToken;
 }
 
@@ -104,6 +106,7 @@ export async function GET(req: Request) {
       orderNumber: true,
       sourceId: true,
       storeId: true,
+      integrationId: true,
       status: true,
       externalId: true,
       mlShippedAt: true,
@@ -130,7 +133,7 @@ export async function GET(req: Request) {
   let errores = 0;
 
   const procesar = async (order: (typeof orders)[number]) => {
-    const token = await getTokenForStore(order.storeId);
+    const token = await getTokenForCuenta(order);
     if (!token) {
       errores++;
       return;
@@ -269,10 +272,11 @@ export async function GET(req: Request) {
     }
   };
 
-  // Tokens primero, uno por tienda y en orden: ML invalida el refresh token al usarlo,
+  // Tokens primero, uno por cuenta y en orden: ML invalida el refresh token al usarlo,
   // así que no se debe renovar dos veces en paralelo.
-  for (const storeId of new Set(orders.map((o) => o.storeId))) {
-    await getTokenForStore(storeId);
+  const cuentas = new Map(orders.map((o) => [claveCuentaML(o), o]));
+  for (const o of cuentas.values()) {
+    await getTokenForCuenta(o);
   }
 
   // Todos a la vez: primero los en ruta sin escaneo de Flex, luego el resto.

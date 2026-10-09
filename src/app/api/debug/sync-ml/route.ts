@@ -8,7 +8,10 @@ import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 import { getSessionUser } from "@/lib/utils/auth";
 
 /**
- * GET /api/debug/sync-ml?store=<nombre>&days=7[&confirmar=1][&todos=1]
+ * GET /api/debug/sync-ml?store=<nombre>&days=7[&cuenta=<ID de usuario ML>][&confirmar=1][&todos=1]
+ *
+ * Una tienda puede tener varias cuentas de ML. Si tiene más de una, `cuenta` (el ID de
+ * usuario de ML, o su nickname) es obligatorio y la respuesta lista las disponibles.
  *
  * Trae a Moovex los pedidos de Mercado Libre de una tienda que existían ANTES de
  * conectarla (el webhook solo avisa de lo nuevo). Solo SUPER_ADMIN, desde el
@@ -67,16 +70,46 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Falta ?store=<nombre de la tienda>" }, { status: 400 });
   }
 
-  const integration = await prisma.storeIntegration.findFirst({
+  const cuentaPedida = (params.get("cuenta") ?? "").trim();
+  const cuentas = await prisma.storeIntegration.findMany({
     where: {
       platform: "MERCADOLIBRE",
       isActive: true,
       store: { name: { equals: storeName, mode: "insensitive" } },
     },
-    select: { id: true, storeId: true, apiKeyEnc: true, store: { select: { name: true } } },
+    select: {
+      id: true,
+      storeId: true,
+      apiKeyEnc: true,
+      externalStoreId: true,
+      accountLabel: true,
+      store: { select: { name: true } },
+    },
+    orderBy: { createdAt: "asc" },
   });
-  if (!integration) {
+  if (cuentas.length === 0) {
     return NextResponse.json({ error: `No hay integración ML activa para la tienda "${storeName}"` }, { status: 404 });
+  }
+
+  // Con varias cuentas no se adivina: importar de la equivocada traería pedidos ajenos.
+  const disponibles = cuentas.map((c) => ({ cuenta: c.externalStoreId, nickname: c.accountLabel }));
+  const integration = cuentaPedida
+    ? cuentas.find(
+        (c) => c.externalStoreId === cuentaPedida || (c.accountLabel ?? "").toLowerCase() === cuentaPedida.toLowerCase(),
+      )
+    : cuentas.length === 1
+      ? cuentas[0]
+      : undefined;
+  if (!integration) {
+    return NextResponse.json(
+      {
+        error: cuentaPedida
+          ? `La tienda "${storeName}" no tiene la cuenta ML "${cuentaPedida}"`
+          : `La tienda "${storeName}" tiene ${cuentas.length} cuentas de ML: agrega &cuenta=<ID o nickname>`,
+        disponibles,
+      },
+      { status: 400 },
+    );
   }
 
   let token: string;

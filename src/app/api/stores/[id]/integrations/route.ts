@@ -25,12 +25,18 @@ export async function POST(
     return NextResponse.json({ ok: false, error: 'platform y credentials requeridos' }, { status: 400 })
   }
 
+  // Mercado Libre se conecta solo por OAuth (/api/auth/ml): acá no hay credenciales que
+  // pegar, y esta ruta guardaría la cuenta sin identificarla (accountKey vacío).
+  if (platform === 'MERCADOLIBRE') {
+    return NextResponse.json({ ok: false, error: 'Mercado Libre se conecta con el botón de la pestaña ML Flex.' }, { status: 400 })
+  }
+
   // credentials es un objeto { key, secret, ... } según la plataforma
   // Se serializa como "key|secret|..." y se cifra
   const apiKeyEnc = encrypt(Object.values(credentials).join('|'))
 
   const integration = await prisma.storeIntegration.upsert({
-    where:  { storeId_platform: { storeId: params.id, platform: platform as Platform } },
+    where:  { storeId_platform_accountKey: { storeId: params.id, platform: platform as Platform, accountKey: '' } },
     create: {
       storeId:         params.id,
       platform:        platform as Platform,
@@ -61,10 +67,14 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: 'Sin acceso' }, { status: 403 })
   }
 
-  const { platform } = await req.json().catch(() => ({}))
+  // `integrationId` (opcional) desconecta UNA cuenta; es lo que hace falta en Mercado Libre,
+  // donde una tienda puede tener varias. Sin él se desconecta la plataforma entera.
+  const { platform, integrationId } = await req.json().catch(() => ({}))
 
   await prisma.storeIntegration.updateMany({
-    where:  { storeId: params.id, platform: platform as Platform },
+    where:  integrationId
+      ? { id: String(integrationId), storeId: params.id }
+      : { storeId: params.id, platform: platform as Platform },
     data:   { isActive: false },
   })
 

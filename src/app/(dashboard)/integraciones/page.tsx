@@ -10,7 +10,7 @@ export default async function IntegracionesPage() {
     where: user?.role === 'SUPER_ADMIN' ? {} : { id: user?.storeId ?? '' },
     include: {
       integrations: {
-        select: { id: true, platform: true, isActive: true, lastSyncAt: true, externalStoreId: true },
+        select: { id: true, platform: true, isActive: true, lastSyncAt: true, externalStoreId: true, accountLabel: true, accountKey: true },
       },
     },
     orderBy: { name: 'asc' },

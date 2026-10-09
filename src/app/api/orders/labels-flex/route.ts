@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
+import { claveCuentaML, integracionMLDelPedido } from "@/lib/integrations/ml-cuenta";
 
-async function getMLToken(storeId: string): Promise<string | null> {
-  const integration = await prisma.storeIntegration.findFirst({
-    where: { storeId, platform: "MERCADOLIBRE", isActive: true },
-  });
+// El token es el de la CUENTA de ML de la que vino el pedido (una tienda puede tener varias).
+async function getMLToken(order: { integrationId: string | null; storeId: string }): Promise<string | null> {
+  const integration = await integracionMLDelPedido(order);
   if (!integration) return null;
 
   const creds = decrypt(integration.apiKeyEnc);
@@ -61,25 +61,28 @@ export async function POST(req: NextRequest) {
       id: true,
       orderNumber: true,
       storeId: true,
+      integrationId: true,
       rawPayload: true,
     },
   });
 
-  // Agrupar shipping IDs por tienda
-  const byStore = new Map<string, string[]>();
+  // Agrupar shipping IDs por CUENTA de ML (no por tienda): una tienda puede tener varias
+  // cuentas y cada etiqueta solo se puede pedir con el token de su cuenta.
+  const byCuenta = new Map<string, { ref: { integrationId: string | null; storeId: string }; ids: string[] }>();
   for (const order of orders) {
     const shippingId = (order.rawPayload as any)?.shipping?.id;
     if (!shippingId) continue;
-    const ids = byStore.get(order.storeId) ?? [];
-    ids.push(String(shippingId));
-    byStore.set(order.storeId, ids);
+    const clave = claveCuentaML(order);
+    const grupo = byCuenta.get(clave) ?? { ref: order, ids: [] };
+    grupo.ids.push(String(shippingId));
+    byCuenta.set(clave, grupo);
   }
 
-  // Descargar etiquetas por tienda (ML permite hasta 50 por request)
+  // Descargar etiquetas por cuenta (ML permite hasta 50 por request)
   const pdfParts: ArrayBuffer[] = [];
 
-  for (const [storeId, shippingIds] of byStore) {
-    const token = await getMLToken(storeId);
+  for (const { ref, ids: shippingIds } of byCuenta.values()) {
+    const token = await getMLToken(ref);
     if (!token) continue;
 
     // ML acepta múltiples shipping IDs separados por coma

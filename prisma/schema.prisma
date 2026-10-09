@@ -80,6 +80,11 @@ model StoreIntegration {
   storeId         String
   platform        Platform
   externalStoreId String?
+  /// Nombre visible de la cuenta (nickname de ML) para listarlas en Integraciones.
+  accountLabel    String?
+  /// Distingue varias cuentas de la misma plataforma en una tienda. Mercado Libre: el
+  /// ID de usuario de ML (una tienda puede tener varias cuentas). Resto: "" (una sola).
+  accountKey      String    @default("")
   apiKeyEnc       String
   webhookSecret   String?
   isActive        Boolean   @default(true)
@@ -88,7 +93,7 @@ model StoreIntegration {
   store    Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   orders   Order[]
   syncLogs SyncLog[]
-  @@unique([storeId, platform])
+  @@unique([storeId, platform, accountKey])
   @@map("store_integrations")
     refreshToken       String?
 }

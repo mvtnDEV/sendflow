@@ -60,7 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       isActive:        true,
     }
     await prisma.storeIntegration.upsert({
-      where:  { storeId_platform: { storeId: params.id, platform: 'SHOPIFY' } },
+      where:  { storeId_platform_accountKey: { storeId: params.id, platform: 'SHOPIFY', accountKey: '' } },
       create: { storeId: params.id, platform: 'SHOPIFY', ...data },
       update: data,
     })

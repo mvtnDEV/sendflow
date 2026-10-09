@@ -44,7 +44,7 @@ const STEPS: Record<Exclude<Tab,'APIKEYS'>, string[]> = {
 
 interface Store {
   id: string; name: string
-  integrations: { id: string; platform: string; isActive: boolean; lastSyncAt: Date | null; externalStoreId: string | null }[]
+  integrations: { id: string; platform: string; isActive: boolean; lastSyncAt: Date | null; externalStoreId: string | null; accountLabel: string | null; accountKey: string }[]
 }
 
 interface ApiKey {
@@ -213,12 +213,43 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
   const [copied,  setCopied]  = useState(false)
   const [testOk,  setTestOk]  = useState<boolean|null>(null)
   const [shopifyMsg, setShopifyMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [avisoML, setAvisoML] = useState<{ ok: boolean; text: string } | null>(null)
+
+  // Mensaje de vuelta del flujo de conexión de Mercado Libre (/api/auth/ml/callback).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('success') === 'ml') {
+      setTab('MERCADOLIBRE'); setAvisoML({ ok: true, text: 'Cuenta de Mercado Libre conectada.' })
+    } else if (q.get('error')?.startsWith('ml_')) {
+      setTab('MERCADOLIBRE')
+      const err = q.get('error')
+      setAvisoML({
+        ok: false,
+        text: err === 'ml_en_otra_tienda'
+          ? `Esa cuenta de Mercado Libre ya está conectada a la tienda "${q.get('tienda') ?? 'otra'}". Desconéctala allá primero o conecta una cuenta distinta.`
+          : 'No se pudo conectar la cuenta de Mercado Libre. Intenta de nuevo.',
+      })
+    }
+  }, [])
 
   const set  = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
   const plat = PLATFORMS.find(p => p.key === tab)!
 
   const store       = stores.find(s => s.id === storeId)
   const integration = store?.integrations.find(i => i.platform === tab)
+  // Mercado Libre: una tienda puede tener varias cuentas activas.
+  const cuentasML   = store?.integrations.filter(i => i.platform === 'MERCADOLIBRE' && i.isActive) ?? []
+
+  async function desconectarCuentaML(id: string, nombre: string) {
+    if (!confirm(`¿Desconectar la cuenta ${nombre}? Dejarán de llegar sus pedidos a SendFlow.`)) return
+    const res = await fetch(`/api/stores/${storeId}/integrations`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: 'MERCADOLIBRE', integrationId: id }),
+    })
+    setAvisoML(res.ok ? { ok: true, text: 'Cuenta desconectada.' } : { ok: false, text: 'No se pudo desconectar.' })
+    router.refresh()
+  }
 
   async function handleSave() {
     if (!storeId) return
@@ -450,23 +481,40 @@ export default function IntegracionesClient({ stores }: { stores: Store[] }) {
               </div>
             </>)}
 
-            {/* ML FLEX — solo botón OAuth, sin credenciales */}
+            {/* ML FLEX — OAuth, sin credenciales. Una tienda puede tener varias cuentas. */}
             {tab === 'MERCADOLIBRE' && (
               <div>
-                {integration?.isActive ? (
+                {avisoML && (
+                  <div style={{ background: avisoML.ok ? '#F0FDF4' : '#FFF1F2', border:`1px solid ${avisoML.ok ? '#BBF7D0' : '#FECDD3'}`, borderRadius:10, padding:'12px 14px', marginBottom:14, fontSize:13, color: avisoML.ok ? '#166534' : '#9F1239' }}>
+                    {avisoML.text}
+                  </div>
+                )}
+                {cuentasML.length > 0 ? (
                   <div style={{ marginBottom:20 }}>
-                    <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
-                      <div style={{ fontSize:13, fontWeight:500, color:'#166534', marginBottom:4 }}>✅ Cuenta de ML conectada</div>
-                      <div style={{ fontSize:12, color:'#16A34A' }}>
-                        Los pedidos de ML Flex llegarán automáticamente a SendFlow.
+                    <div style={{ fontSize:13, fontWeight:500, marginBottom:8 }}>
+                      {cuentasML.length === 1 ? 'Cuenta de ML conectada' : `${cuentasML.length} cuentas de ML conectadas`}
+                    </div>
+                    {cuentasML.map(c => (
+                      <div key={c.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:10, padding:'12px 14px', marginBottom:8 }}>
+                        <div style={{ minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:500, color:'#166534' }}>✅ {c.accountLabel ?? 'Cuenta de ML'}</div>
+                          <div style={{ fontSize:11, color:'#16A34A' }}>ID {c.externalStoreId ?? 'sin ID'}</div>
+                        </div>
+                        <button onClick={() => desconectarCuentaML(c.id, c.accountLabel ?? c.externalStoreId ?? 'de ML')}
+                          style={{ padding:'6px 12px', border:'1px solid #FECDD3', borderRadius:8, fontSize:12, background:'white', color:'#9F1239', cursor:'pointer', flexShrink:0 }}>
+                          Desconectar
+                        </button>
                       </div>
+                    ))}
+                    <div style={{ fontSize:12, color:'#6B7280', margin:'4px 0 14px' }}>
+                      Los pedidos de todas estas cuentas llegan a esta tienda y se facturan juntos.
                     </div>
                     <a href={`/api/auth/ml?state=${storeId}`}
                       style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', padding:'11px', background:'#FFE600', color:'#333', borderRadius:8, fontSize:13, fontWeight:600, textDecoration:'none' }}>
-                      🔄 Reconectar cuenta de ML
+                      ➕ Conectar otra cuenta de ML
                     </a>
-                    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:5, textAlign:'center' }}>
-                      Reconecta si los pedidos dejaron de llegar
+                    <div style={{ fontSize:11, color:'#9CA3AF', marginTop:6, lineHeight:1.5 }}>
+                      Antes de conectar otra cuenta, cierra sesión de Mercado Libre en este navegador (o usa una ventana de incógnito): ML conecta la cuenta que tenga abierta. Si los pedidos de una cuenta dejaron de llegar, vuelve a conectarla con este mismo botón.
                     </div>
                   </div>
                 ) : (
