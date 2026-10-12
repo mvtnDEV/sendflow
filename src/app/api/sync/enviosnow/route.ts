@@ -1,19 +1,11 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { estadoDesdeNow } from '@/lib/integrations/enviosnow-estados'
 import { getSessionUser } from '@/lib/utils/auth'
 
 const API_BASE = 'https://api.enviosnow.cl/api/v1'
 const API_KEY  = () => process.env.ENVIOSNOW_API_KEY ?? ''
-
-const STATE_MAP: Record<string, string> = {
-  'entregado':    'DELIVERED',
-  'cancelado':    'CANCELLED',
-  'por entregar': 'IN_TRANSIT',
-  'pendiente':    'INCIDENT',
-  'no entregado': 'INCIDENT',
-  'fallido':      'INCIDENT',
-}
 
 export async function POST(req: NextRequest) {
   const secret     = req.headers.get('x-sync-secret')
@@ -93,8 +85,8 @@ async function processDelivery(order: any, data: any, results: any) {
     return
   }
 
-  const newStatus = STATE_MAP[String(nowStatus).toLowerCase()]
-  if (!newStatus || newStatus === 'IN_TRANSIT') {
+  const newStatus = estadoDesdeNow(nowStatus)
+  if (!newStatus) {
     results.noChanges++
     results.details.push({ orderNumber: order.orderNumber, nowStatus, action: 'sin_cambio' })
     return

@@ -3,17 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { idsPorShippingId } from "@/lib/db/ml-shipping";
 import { Prisma } from "@prisma/client";
+import { estadoDesdeNow } from "@/lib/integrations/enviosnow-estados";
 import { checkMLShipmentStatus } from "@/lib/integrations/mercadolibre-status";
-
-const STATE_MAP: Record<string, string> = {
-  entregado: "DELIVERED",
-  cancelado: "CANCELLED",
-  // ── 'por entregar' no se mapea: Now lo manda al crear el envío.
-  // El IN_TRANSIT lo pone la app Moovex con "Salir a ruta" (o el despacho automático de Senby).
-  pendiente: "INCIDENT",
-  "no entregado": "INCIDENT",
-  fallido: "INCIDENT",
-};
 
 const STATUS_PRIORITY: Record<string, number> = {
   PENDING: 0,
@@ -63,8 +54,9 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const newStatus = STATE_MAP[String(state).toLowerCase()];
+      const newStatus = estadoDesdeNow(state);
       if (!newStatus) {
+        console.warn("[EnviosNow] Estado desconocido, se ignora:", state, "| externalId:", externalId);
         results.push({ externalId, nowId, state, status: "unknown_state" });
         continue;
       }
@@ -127,6 +119,7 @@ export async function POST(req: NextRequest) {
       );
 
       if (ordenes.length === 0) {
+        console.warn("[EnviosNow] NO ENCONTRADO — el pedido no se actualizó:", { externalId, nowId, state });
         results.push({ externalId, nowId, status: "not_found" });
         continue;
       }
