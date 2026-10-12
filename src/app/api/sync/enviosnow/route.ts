@@ -7,12 +7,22 @@ import { getSessionUser } from '@/lib/utils/auth'
 const API_BASE = 'https://api.enviosnow.cl/api/v1'
 const API_KEY  = () => process.env.ENVIOSNOW_API_KEY ?? ''
 
-export async function POST(req: NextRequest) {
-  const secret     = req.headers.get('x-sync-secret')
-  const isCron     = req.headers.get('x-vercel-cron') === '1'
-  const isValidSecret = secret === 'moovex-sync-2026'
+export const maxDuration = 300
 
-  if (!isCron && !isValidSecret) {
+// Vercel Cron llama por GET con `Authorization: Bearer CRON_SECRET`.
+export async function GET(req: NextRequest) {
+  return sincronizar(req)
+}
+
+export async function POST(req: NextRequest) {
+  return sincronizar(req)
+}
+
+async function sincronizar(req: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET
+  const esCron     = !!cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`
+
+  if (!esCron) {
     const user = await getSessionUser()
     if (!user || user.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })

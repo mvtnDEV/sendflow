@@ -24,6 +24,10 @@
       "schedule": "0 */4 * * *"
     },
     {
+      "path": "/api/sync/enviosnow",
+      "schedule": "0 */2 * * *"
+    },
+    {
       "path": "/api/cron/flex-sweep",
       "schedule": "30 7 * * *"
     }
