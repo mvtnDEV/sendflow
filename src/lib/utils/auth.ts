@@ -21,6 +21,11 @@ async function checkRateLimit(email: string, ip: string): Promise<boolean> {
 async function recordAttempt(email: string, ip: string, success: boolean) {
   await prisma.loginAttempt.create({ data: { email, ip, success } })
 
+  // Un login correcto deja el contador de fallos en cero
+  if (success) {
+    await prisma.loginAttempt.deleteMany({ where: { email, success: false } })
+  }
+
   // Limpiar intentos antiguos
   await prisma.loginAttempt.deleteMany({
     where: { createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },

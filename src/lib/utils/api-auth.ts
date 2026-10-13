@@ -27,11 +27,15 @@ export async function verifyApiKey(req: NextRequest): Promise<ApiKeyPayload | nu
   const permitido = await checkRateLimit(`apikey:${apiKey.id}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW)
   if (!permitido) return null
 
-  // Actualizar lastUsedAt
-  await prisma.apiKey.update({
-    where: { id: apiKey.id },
-    data:  { lastUsedAt: new Date() },
-  })
+  // lastUsedAt es informativo: se actualiza como máximo una vez por minuto
+  // para no escribir en la base de datos en cada request.
+  const hace1min = Date.now() - 60 * 1000
+  if (!apiKey.lastUsedAt || apiKey.lastUsedAt.getTime() < hace1min) {
+    await prisma.apiKey.update({
+      where: { id: apiKey.id },
+      data:  { lastUsedAt: new Date() },
+    })
+  }
 
   return { id: apiKey.id, name: apiKey.name, storeId: apiKey.storeId }
 }

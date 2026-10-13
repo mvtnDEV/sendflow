@@ -18,7 +18,7 @@ const STATUS_PRIORITY: Record<string, number> = {
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
-    console.log("[EnviosNow] Raw body:", rawBody);
+    console.log("[EnviosNow] Webhook recibido:", rawBody.length, "bytes");
     let body: any;
     try {
       body = JSON.parse(rawBody);

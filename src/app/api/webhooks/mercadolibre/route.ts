@@ -60,14 +60,17 @@ async function getToken(integration: {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  console.log("[ML webhook] body:", JSON.stringify(body).slice(0, 300));
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ ok: true, ignored: true });
+  }
 
   const topic = body.topic;
   const resource = body.resource;
   const userId = body.user_id;
+  console.log("[ML webhook]", topic, resource, userId);
 
-  if (topic !== "orders_v2" || !resource) {
+  if (topic !== "orders_v2" || typeof resource !== "string" || userId == null) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 

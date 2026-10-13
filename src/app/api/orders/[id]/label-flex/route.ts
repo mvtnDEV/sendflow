@@ -6,6 +6,7 @@ import { decrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
 import { integracionMLDelPedido } from "@/lib/integrations/ml-cuenta";
 import { encrypt } from "@/lib/utils/crypto";
+import { getSessionUser, canAccessStore } from "@/lib/utils/auth";
 
 // El token es el de la CUENTA de ML de la que vino el pedido (una tienda puede tener varias).
 async function getMLToken(order: { integrationId: string | null; storeId: string }): Promise<string | null> {
@@ -55,6 +56,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   const order = await prisma.order.findUnique({
     where: { id: params.id },
     select: {
@@ -72,6 +76,10 @@ export async function GET(
       { error: "Pedido no encontrado" },
       { status: 404 },
     );
+  }
+
+  if (!canAccessStore(user, order.storeId)) {
+    return NextResponse.json({ error: "Sin acceso" }, { status: 403 });
   }
 
   if (order.platform !== "MERCADOLIBRE") {

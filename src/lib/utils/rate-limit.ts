@@ -15,17 +15,19 @@ export async function checkRateLimit(
   try {
     const since = new Date(Date.now() - windowSeconds * 1000)
 
+    // Se registra el hit primero y luego se cuenta: así dos requests simultáneos
+    // se ven entre sí y no pueden pasar ambos por la misma "última plaza".
+    await prisma.rateLimitHit.create({ data: { bucket } })
+
     const hits = await prisma.rateLimitHit.count({
       where: { bucket, createdAt: { gt: since } },
     })
 
-    if (hits >= max) return false
-
-    await prisma.rateLimitHit.create({ data: { bucket } })
+    if (hits > max) return false
 
     // Limpieza oportunista, mismo criterio que el api-auth original:
     // cada ~100 hits se borra lo que ya no sirve para ninguna ventana.
-    if (hits > 0 && hits % 100 === 0) {
+    if (hits % 100 === 0) {
       await prisma.rateLimitHit.deleteMany({
         where: { createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } },
       })

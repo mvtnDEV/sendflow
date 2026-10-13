@@ -3,8 +3,12 @@ export const fetchCache = "force-no-store"; // nunca usar la caché de datos de 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt } from "@/lib/utils/crypto";
+import { autorizadoDebug } from "@/lib/utils/debug-auth";
 
 export async function GET(req: Request) {
+  if (!(await autorizadoDebug(req))) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
   const url = new URL(req.url);
   const store = url.searchParams.get("store") ?? "";
 

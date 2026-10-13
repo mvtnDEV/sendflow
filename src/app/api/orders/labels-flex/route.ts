@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { decrypt, encrypt } from "@/lib/utils/crypto";
 import { refreshMLToken } from "@/lib/integrations/mercadolibre";
+import { getSessionUser, canAccessStore } from "@/lib/utils/auth";
 import { claveCuentaML, integracionMLDelPedido } from "@/lib/integrations/ml-cuenta";
 
 // El token es el de la CUENTA de ML de la que vino el pedido (una tienda puede tener varias).
@@ -49,13 +50,16 @@ async function getMLToken(order: { integrationId: string | null; storeId: string
 }
 
 export async function POST(req: NextRequest) {
-  const { orderIds } = await req.json();
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+  const { orderIds } = await req.json().catch(() => ({}));
 
   if (!Array.isArray(orderIds) || orderIds.length === 0) {
     return NextResponse.json({ error: "orderIds requerido" }, { status: 400 });
   }
 
-  const orders = await prisma.order.findMany({
+  const todas = await prisma.order.findMany({
     where: { id: { in: orderIds }, platform: "MERCADOLIBRE" },
     select: {
       id: true,
@@ -65,6 +69,7 @@ export async function POST(req: NextRequest) {
       rawPayload: true,
     },
   });
+  const orders = todas.filter((o) => canAccessStore(user, o.storeId));
 
   // Agrupar shipping IDs por CUENTA de ML (no por tienda): una tienda puede tener varias
   // cuentas y cada etiqueta solo se puede pedir con el token de su cuenta.
