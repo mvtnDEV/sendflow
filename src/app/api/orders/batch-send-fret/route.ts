@@ -66,12 +66,12 @@ export async function POST(req: NextRequest) {
       const result = await createFretOrders([payload]);
 
       if (result.ok && result.created[0]) {
+        // El pedido queda en PENDING ("creado"): pasa a RECEIVED cuando Fret
+        // avisa por webhook que lo retiró (picked_up).
         const updateData: any = {
-          status: "RECEIVED",
-          receivedAt: new Date(),
           events: {
             create: {
-              status: "RECEIVED",
+              status: "PENDING",
               note: "Enviado a Moovex (operador logístico)",
               createdBy: "super-admin",
             },
@@ -90,12 +90,12 @@ export async function POST(req: NextRequest) {
           fr: result.created[0].order_code,
         });
       } else if (result.duplicated[0]) {
+        // El pedido queda en PENDING ("creado"): pasa a RECEIVED cuando Fret
+        // avisa por webhook que lo retiró (picked_up).
         const updateData: any = {
-          status: "RECEIVED",
-          receivedAt: new Date(),
           events: {
             create: {
-              status: "RECEIVED",
+              status: "PENDING",
               note: "Enviado a Moovex (operador logístico)",
               createdBy: "super-admin",
             },
