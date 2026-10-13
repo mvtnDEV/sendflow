@@ -395,10 +395,11 @@ export async function findOrderByQr(qrCode: string) {
   });
 }
 
-export async function listOrders(filters: OrderFilters) {
-  const page = filters.page ?? 1;
-  const pageSize = filters.pageSize ?? 10;
-  const skip = (page - 1) * pageSize;
+/**
+ * Condiciones de búsqueda de pedidos. Es la ÚNICA definición de "hoy" y de los filtros de la
+ * pantalla Recepciones: la lista y la descarga de Excel la comparten, así lo que se ve es lo que se descarga.
+ */
+export function buildOrdersWhere(filters: OrderFilters) {
   const today = todayRange();
   const where: any = {};
   if (filters.storeId) where.storeId = filters.storeId;
@@ -456,6 +457,15 @@ export async function listOrders(filters: OrderFilters) {
       ...(filters.dateTo && { lte: new Date(filters.dateTo + "T23:59:59") }),
     };
   }
+
+  return where;
+}
+
+export async function listOrders(filters: OrderFilters) {
+  const page = filters.page ?? 1;
+  const pageSize = filters.pageSize ?? 10;
+  const skip = (page - 1) * pageSize;
+  const where = buildOrdersWhere(filters);
 
   const [items, total] = await Promise.all([
     prisma.order.findMany({
