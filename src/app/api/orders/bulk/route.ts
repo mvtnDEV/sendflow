@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/utils/auth";
 import { createOrder, todayRange } from "@/lib/services/order.service";
 import { audit } from "@/lib/services/audit.service";
 import { despachoAutomaticoNow } from "@/lib/services/now-dispatch.service";
-import { TIENDAS_AUTO_NOW } from "@/lib/config/operadores";
+import { vaANowAutomatico } from "@/lib/config/operadores";
 import { prisma } from "@/lib/db/prisma";
 import type { Platform } from "@prisma/client";
 
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
         createdBy: user.id,
       });
       created++;
-      if (TIENDAS_AUTO_NOW.has(row.storeId)) autoNowIds.push(order.id);
+      if (vaANowAutomatico({ storeId: row.storeId, subStoreName: order.subStoreName, createdAt: order.createdAt })) autoNowIds.push(order.id);
     } catch (e: any) {
       errors.push(`${row.customerName}: ${e.message}`);
     }

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db/prisma";
 import { verifyApiKey } from "@/lib/utils/api-auth";
 import { createOrder } from "@/lib/services/order.service";
 import { despachoAutomaticoNow } from "@/lib/services/now-dispatch.service";
-import { TIENDAS_AUTO_NOW } from "@/lib/config/operadores";
+import { vaANowAutomatico } from "@/lib/config/operadores";
 
 const ENVIAME_STORE_ID = "cmovuegdk000051ctcljm2ort";
 
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
 
     // ── Despacho automático (Senby): RECEIVED → Now → IN_TRANSIT ──
     let statusFinal: string = order.status;
-    if (TIENDAS_AUTO_NOW.has(resolvedStoreId)) {
+    if (vaANowAutomatico({ storeId: resolvedStoreId, subStoreName: order.subStoreName, createdAt: order.createdAt })) {
       try {
         const auto = await despachoAutomaticoNow([order.id], "auto-now");
         const actual = await prisma.order.findUnique({

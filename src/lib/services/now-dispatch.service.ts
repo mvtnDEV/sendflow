@@ -6,8 +6,8 @@ import {
 import { batchTransitionOrders } from "@/lib/services/order-batch.service";
 import { deferAfterResponse } from "@/lib/utils/defer";
 import {
-  TIENDAS_FRET_ACTIVAS,
   TIENDAS_PRESERVAN_EXTERNAL_ID,
+  vaAFret,
 } from "@/lib/config/operadores";
 
 export interface ResultadoNow {
@@ -17,7 +17,7 @@ export interface ResultadoNow {
   okIds: string[];
   /** Pedidos que Now rechazó o fallaron. */
   errores: { orderNumber: string; error: string }[];
-  /** Pedidos que no se mandaron porque su tienda sigue con Fret. */
+  /** Pedidos que no se mandaron porque su tienda o sub-tienda va con Fret. */
   omitidos: number;
 }
 
@@ -44,6 +44,7 @@ export async function enviarPedidosANow(
       id: true,
       orderNumber: true,
       storeId: true,
+      subStoreName: true,
       platform: true,
       externalId: true,
       rawPayload: true,
@@ -58,7 +59,7 @@ export async function enviarPedidosANow(
   // ── Agrupar: packs ML por shipping_id, el resto uno por uno ──
   const grupos = new Map<string, typeof pedidos>();
   for (const p of pedidos) {
-    if (!opts.ignorarFret && TIENDAS_FRET_ACTIVAS.has(p.storeId)) {
+    if (!opts.ignorarFret && vaAFret(p)) {
       res.omitidos++;
       continue;
     }
