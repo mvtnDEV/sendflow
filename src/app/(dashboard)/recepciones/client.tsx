@@ -294,19 +294,28 @@ export default function RecepcionesClient({
   }
 
   async function enviarAFretSeleccionados() {
+    // Sin selección: los "Creado" de la vista. Con selección: cualquiera de los elegidos que esté
+    // creado, recepcionado o en camino (los dos últimos se reasignan a Fret).
+    const enviables = orders.filter((o) =>
+      ["PENDING", "RECEIVED", "IN_TRANSIT"].includes(o.status),
+    );
     const ids =
       selected.size > 0
-        ? Array.from(selected).filter((id) =>
-            pendientes.some((o) => o.id === id),
-          )
+        ? Array.from(selected).filter((id) => enviables.some((o) => o.id === id))
         : pendientes.map((o) => o.id);
     if (ids.length === 0) {
-      alert("Selecciona pedidos PENDING para enviar a Fret");
+      alert("Selecciona pedidos para enviar a Fret");
       return;
     }
+    const aReasignar = ids.filter((id) => !pendientes.some((o) => o.id === id));
+    const aviso =
+      aReasignar.length > 0
+        ? `\n\n⚠ ${aReasignar.length} de ellos ya están recepcionados o en camino (probablemente con Now). ` +
+          `Volverán a "Creado" y se enviarán a Fret. Cancélalos en Now para que no queden con dos operadores.`
+        : "";
     if (
       !confirm(
-        `¿Enviar ${ids.length} pedido${ids.length !== 1 ? "s" : ""} a Fret?\n\nSe enviarán con punto_retiro: sendby y en_bodega: true`,
+        `¿Enviar ${ids.length} pedido${ids.length !== 1 ? "s" : ""} a Fret?\n\nSe enviarán con punto_retiro: sendby y en_bodega: true${aviso}`,
       )
     )
       return;
@@ -316,7 +325,7 @@ export default function RecepcionesClient({
       const res = await fetch("/api/orders/batch-send-fret", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderIds: ids }),
+        body: JSON.stringify({ orderIds: ids, reasignar: aReasignar.length > 0 }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -446,27 +455,27 @@ export default function RecepcionesClient({
                 ? `⏳ Recepcionando…`
                 : `📥 Recepcionar Now (${selected.size > 0 ? selected.size : pendientes.length})`}
             </button>
-            {isSuperAdmin && pendientes.length > 0 && (
-              <button
-                onClick={enviarAFretSeleccionados}
-                disabled={loadingFret}
-                style={{
-                  padding: "7px 14px",
-                  background: loadingFret ? "#93C5FD" : "#2563EB",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  cursor: loadingFret ? "not-allowed" : "pointer",
-                }}
-              >
-                {loadingFret
-                  ? `⏳ Enviando a Fret…`
-                  : `🚚 Enviar a Fret (${selected.size > 0 ? selected.size : pendientes.length})`}
-              </button>
-            )}
           </>
+        )}
+        {isSuperAdmin && (pendientes.length > 0 || selected.size > 0) && (
+          <button
+            onClick={enviarAFretSeleccionados}
+            disabled={loadingFret}
+            style={{
+              padding: "7px 14px",
+              background: loadingFret ? "#93C5FD" : "#2563EB",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: loadingFret ? "not-allowed" : "pointer",
+            }}
+          >
+            {loadingFret
+              ? `⏳ Enviando a Fret…`
+              : `🚚 Enviar a Fret (${selected.size > 0 ? selected.size : pendientes.length})`}
+          </button>
         )}
         {isSuperAdmin && esSenby && recibidos.length > 0 && (
           <button

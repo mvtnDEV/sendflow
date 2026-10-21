@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/utils/auth";
 import { prisma } from "@/lib/db/prisma";
+import { TIENDAS_PRESERVAN_EXTERNAL_ID } from "@/lib/config/operadores";
 
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { orderIds } = await req.json();
+  const { orderIds, reasignar } = await req.json();
   if (!Array.isArray(orderIds) || orderIds.length === 0) {
     return NextResponse.json(
       { ok: false, error: "orderIds requerido" },
@@ -21,7 +22,12 @@ export async function POST(req: NextRequest) {
   }
 
   const orders = await prisma.order.findMany({
-    where: { id: { in: orderIds }, status: "PENDING" },
+    // Normalmente solo pedidos "Creado". Con `reasignar` también los que ya están recepcionados o en
+    // camino (por ejemplo, enviados a Now por error): vuelven a "Creado" y se mandan a Fret.
+    where: {
+      id: { in: orderIds },
+      status: { in: reasignar ? ["PENDING", "RECEIVED", "IN_TRANSIT"] : ["PENDING"] },
+    },
     include: {
       store: { select: { id: true, name: true, puntoRetiroFret: true } },
     },
@@ -29,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   if (orders.length === 0) {
     return NextResponse.json(
-      { ok: false, error: "No hay pedidos PENDING para enviar" },
+      { ok: false, error: reasignar ? "No hay pedidos que se puedan enviar a Fret" : "No hay pedidos PENDING para enviar" },
       { status: 400 },
     );
   }
@@ -63,51 +69,44 @@ export async function POST(req: NextRequest) {
         rawPayload: order.rawPayload,
       });
 
-      const result = await createFretOrders([payload]);
-
-      if (result.ok && result.created[0]) {
-        // El pedido queda en PENDING ("creado"): pasa a RECEIVED cuando Fret
-        // avisa por webhook que lo retiró (picked_up).
-        const updateData: any = {
+      // Pedido que ya estaba recepcionado o en camino: se devuelve a "Creado" y queda en Fret
+      // (pasa a "Recepcionado" cuando Fret avise por webhook que lo retiró).
+      const reasignado = order.status !== "PENDING";
+      const marcarEnviado = async (orderCode: string) => {
+        const data: any = {
           events: {
             create: {
               status: "PENDING",
-              note: "Enviado a Moovex (operador logístico)",
+              note: reasignado
+                ? `Reasignado a Fret (estaba ${order.status === "IN_TRANSIT" ? "en camino" : "recepcionado"}): vuelve a Creado`
+                : "Enviado a Moovex (operador logístico)",
               createdBy: "super-admin",
             },
           },
         };
-        if (!preservarExternalId) {
-          updateData.externalId = result.created[0].order_code;
+        if (reasignado) {
+          data.status = "PENDING";
+          data.inTransitAt = null;
+          data.receivedAt = null;
         }
-        await prisma.order.update({
-          where: { id: order.id },
-          data: updateData,
-        });
+        // El ID de Senby nunca se pisa; en el resto, un pedido reasignado deja de apuntar al ID del otro operador
+        if (!preservarExternalId || (reasignado && !TIENDAS_PRESERVAN_EXTERNAL_ID.has(order.storeId))) {
+          data.externalId = orderCode;
+        }
+        await prisma.order.update({ where: { id: order.id }, data });
+      };
+
+      const result = await createFretOrders([payload]);
+
+      if (result.ok && result.created[0]) {
+        await marcarEnviado(result.created[0].order_code);
         resultados.push({
           orderNumber: order.orderNumber,
           status: "created",
           fr: result.created[0].order_code,
         });
       } else if (result.duplicated[0]) {
-        // El pedido queda en PENDING ("creado"): pasa a RECEIVED cuando Fret
-        // avisa por webhook que lo retiró (picked_up).
-        const updateData: any = {
-          events: {
-            create: {
-              status: "PENDING",
-              note: "Enviado a Moovex (operador logístico)",
-              createdBy: "super-admin",
-            },
-          },
-        };
-        if (!preservarExternalId) {
-          updateData.externalId = result.duplicated[0].order_code;
-        }
-        await prisma.order.update({
-          where: { id: order.id },
-          data: updateData,
-        });
+        await marcarEnviado(result.duplicated[0].order_code);
         resultados.push({
           orderNumber: order.orderNumber,
           status: "duplicated",
