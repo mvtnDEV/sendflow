@@ -101,6 +101,8 @@ export async function GET(req: NextRequest) {
     stores.map(async (store) => {
       // ── Traer pedidos con receivedAt O inTransitAt dentro del mes ──
       // La fecha efectiva de facturación es receivedAt (con fallback a inTransitAt).
+      // Tercer caso: pedido entregado (ej: por Flex) que nunca se escaneó y luego se
+      // cargó a mano en Now: no tiene receivedAt ni inTransitAt, se factura por deliveredAt.
       const orders = await prisma.order.findMany({
         where: {
           storeId: store.id,
@@ -111,6 +113,17 @@ export async function GET(req: NextRequest) {
               AND: [
                 { receivedAt: null },
                 { inTransitAt: { gte: start, lte: endDate } },
+              ],
+            },
+            {
+              AND: [
+                { receivedAt: null },
+                { inTransitAt: null },
+                { status: "DELIVERED" },
+                { deliveredAt: { gte: start, lte: endDate } },
+                // cargado en Now: tiene ID de Now (los de Fret llevan FR-)
+                { externalId: { not: null } },
+                { NOT: { externalId: { startsWith: "FR-" } } },
               ],
             },
           ],
@@ -132,9 +145,12 @@ export async function GET(req: NextRequest) {
         },
       });
 
-      // ── Fecha efectiva de facturación: receivedAt || inTransitAt ──
+      // ── Fecha efectiva de facturación: receivedAt || inTransitAt || deliveredAt ──
       const ordersEnPeriodo = orders
-        .map((o) => ({ ...o, fechaFacturacion: o.receivedAt ?? o.inTransitAt }))
+        .map((o) => ({
+          ...o,
+          fechaFacturacion: o.receivedAt ?? o.inTransitAt ?? o.deliveredAt,
+        }))
         .filter((o) => o.fechaFacturacion) // seguridad: descartar los sin ninguna fecha
         .sort(
           (a, b) =>
