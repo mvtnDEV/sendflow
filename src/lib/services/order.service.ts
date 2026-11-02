@@ -122,7 +122,7 @@ export async function createOrder(input: CreateOrderInput) {
   // ── Decidir si enviar a Fret ──
   // Desde el 24-sep-2026 todo va a Envios Now (al escanear en bodega, o
   // automático para Senby), excepto lo que dice vaAFret (operadores.ts): las tiendas
-  // NubiPlay y Sigan Jugando y la sub-tienda "Tienda de Jacinta" de Senby se envían a Fret al crearse.
+  // NubiPlay y Sigan Jugando (y las sub-tiendas de SUBTIENDAS_FRET) se envían a Fret al crearse.
   const enviarAFret = vaAFret(order); // order trae storeId, subStoreName y createdAt
 
   if (enviarAFret) {

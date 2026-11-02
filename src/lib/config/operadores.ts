@@ -32,11 +32,11 @@ export const TIENDAS_AUTO_NOW = new Set<string>([SENBY_STORE_ID]);
 /**
  * Sub-tiendas que van a Fret aunque el resto de su tienda vaya a Now.
  * tienda → nombres de sub-tienda. Se comparan sin distinguir mayúsculas, acentos ni espacios de más.
- * Senby / "Tienda de Jacinta" va a Fret; el resto de Senby sigue con despacho automático a Now.
+ * Hoy ninguna: Senby / "Tienda de Jacinta" fue a Fret entre el 21-oct-2026 y el 02-nov-2026
+ * y volvió a Now con despacho automático, igual que el resto de Senby.
+ * Para reactivarla: [SENBY_STORE_ID]: ["Tienda de Jacinta"].
  */
-export const SUBTIENDAS_FRET: Record<string, string[]> = {
-  [SENBY_STORE_ID]: ["Tienda de Jacinta"],
-};
+export const SUBTIENDAS_FRET: Record<string, string[]> = {};
 
 /**
  * La regla de SUBTIENDAS_FRET vale solo para pedidos creados desde esta fecha (00:00 hora de Chile,
